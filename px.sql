@@ -312,10 +312,10 @@ CREATE TABLE px.stations (
 ALTER TABLE px.stations OWNER TO lsadmin;
 GRANT SELECT ON px.stations TO PUBLIC;
 
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-D', 'idd', '/data');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-E', 'ide', '/data');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-F', 'idf', '/data');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-G', 'idg', '/data');
+INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-D', 'idd', 'd');
+INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-E', 'ide', 'e');
+INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-F', 'idf', 'f');
+INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-G', 'idg', 'g');
 
 
 CREATE TABLE px._config (
@@ -646,7 +646,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
     rtn text;		-- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
-    INSERT INTO px.datasets (dspid, dsstn, dsesaf) VALUES (rtn, px.getstation(), expid);
+    INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, px.getstation(), expid, (select stndataroot from px.stations where stnkey=px.getstation()));
     PERFORM px.chkdir( rtn);
     PERFORM px.mkshots( rtn);
     RETURN rtn;
@@ -662,7 +662,7 @@ CREATE OR REPLACE FUNCTION px.newdataset() RETURNS text AS $$
     rtn text;		-- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
-    INSERT INTO px.datasets (dspid, dsstn) VALUES (rtn, px.getstation());
+    INSERT INTO px.datasets (dspid, dsstn, dsdir) VALUES (rtn, px.getstation(), (select stndataroot from px.stations where stnkey=px.getstation()));
     PERFORM px.chkdir( rtn);
     PERFORM px.mkshots( rtn);
     RETURN rtn;
@@ -2175,3 +2175,5 @@ CREATE OR REPLACE FUNCTION px.rt_close_ss() returns void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_close_ss() OWNER TO lsadmin;
+
+
