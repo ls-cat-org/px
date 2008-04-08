@@ -1,6 +1,6 @@
 #! /usr/bin/python
 
-import sys, os, select, pg, time, traceback
+import sys, os, select, pg, time, traceback, datetime
 
 #
 # Program States
@@ -70,8 +70,70 @@ class PxMarServer:
     fn = None           # filename from "collect" meta command
     collectingFlag=False # indicates we are integrating and should only look for aborts
     outputBlocked=True  # indicates we have blocked the output to the marccd program
-    needReadout = False # next command must be readout or else we need to send an abort instead
     flushStatus = True  # flush status buff so we do not get old status
+    hlList      = []    # dictionary of hardlinks to make
+
+    def hlPush( self, d, f, expt, token):
+        #
+        #
+        # Don't add something already in the list
+        for hl in self.hlList:
+            od = hl[0]
+            of = hl[1]
+            if od == d and of == f:
+                print >> sys.stderr, "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
+                return
+
+        print >> sys.stderr, "queued link dir=%s and file=%s" %(d, f)
+        self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), token))
+
+    def hlPop( self):
+        cpy = list(self.hlList)
+        for hl in cpy:
+            d,f,t,token = hl
+            print >> sys.stderr,d,f,t,token
+            #
+            # Watchout, hardwired timeout
+            # delete entry without action if it is over 10 seconds over due
+            #
+            if (datetime.datetime.now() - t).seconds > 10:
+                self.hlList.pop( self.hlList.index(hl))
+            else:
+                try:
+                    os.stat( path)
+                except:
+                    # the file does not yet exist
+                    pass
+                else:
+                    #
+                    # find the backup home directory
+                    qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets where dspid='%s'" % (token)
+                    qr = self.query( qs)
+                    r = qr.dictresult()[0]
+                    bp = r["bp"]
+                    #
+                    # create the path components if needed
+                    #
+                    try:
+                        print >> sys.stderr, "making directory %s" % ( bp+d)
+                        os.makedirs( bp+d)
+                    except OSError, (errno, strerr):
+                        if errno != 17:
+                            print >> sys.stderr, "Failed to make backup directory %s" % (bp+d)
+                            self.hlList.pop( self.hlList.index(hl))
+                            return
+                    try:
+                        if d[0] == '/':
+                            bud = bp+d[1:]
+                        else:
+                            bud = bp+d
+
+                        print >> sys.stderr, "making hard link %s to file %s\n" % ( bud+'/'+f, d+'/'+f)
+                        os.link( d+'/'+f, bud+'/'+f)
+                    except:
+                        print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bud+'/'+f, d+'/'+f)
+                    
+                    self.hlList.pop( self.hlList.index(hl))
 
     def close( self):
         if self.dbfd != None and self.p != None:
@@ -117,7 +179,7 @@ class PxMarServer:
         self.dbfd     = self.db.fileno()
         self.p.register( self.dbfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
 
-        self.dblock   = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
+        self.dblock   = pg.connect(dbname='lslocks',user='lsuser', host='contrabass.ls-cat.org')
         self.dblockfd = self.dblock.fileno()
         self.p.register( self.dblockfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
 
@@ -133,7 +195,6 @@ class PxMarServer:
         self.haveLock       = False
         self.collectingFlag = False
         self.outputBlocked  = True
-        self.needReadout    = False
         self.flushStatus    = True
 
         raise PxMarError( 'Reset Complete')
@@ -207,6 +268,7 @@ class PxMarServer:
 
         self.query( "update px.datasets set dsdirs='%s' where dskey=%d" % (theDirState, theKey))
 
+
     def serviceIn( self, event):
         #
         # An error on reading the input stream is probably because the marccd program has terminated
@@ -277,17 +339,6 @@ class PxMarServer:
                     self.waitForStatus = True
                     self.blockOutput()
 
-                    #
-                    # if the next command should be a readout but isn't, abort instead
-                    #if self.needReadout and (cmd.find("readout") != 0):
-                    #    print >> sys.stderr, "Needed readout, got %s, changing to abort" % (cmd)
-                    #    print >> sys.stderr, "cmd.find('readout') is %d" % (cmd.find("readout"))
-                    #    self.queue=[]
-                    #    cmd = "abort"
-
-                    #
-                    # regardless, this should be false now
-                    self.needReadout = False
 
                     #
                     # see if we have the "meta command" collect
@@ -308,6 +359,7 @@ class PxMarServer:
 
                         #
                         # Try to create directory
+                        # This should already have happened: could probably do away with this block
                         try:
                             os.makedirs( r["dsdir"])
                         except OSError, (errno, strerror):
@@ -330,6 +382,8 @@ class PxMarServer:
                         self.collectingFlag = True
                         self.flushStatus    = True
                         print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
+
+                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
 
                     #
                     # finally, write the command to marccd
@@ -412,7 +466,6 @@ class PxMarServer:
                     #
                     # Signal we are done collecting
                     self.collectingFlag = False
-                    self.needReadout    = True
 
     def blockOutput( self):
         print >> sys.stderr, "blocking output"
@@ -493,7 +546,13 @@ class PxMarServer:
 
             #
             # See if it's time do do "stuff"
+            # Hardwired time = bad
+            #
             if self.ltime + 2.0 < time.time():
+                #
+                # see if we need to make a hard link
+                self.hlPop()
+
                 #
                 # see if there is a new command
                 #

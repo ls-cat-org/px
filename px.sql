@@ -613,7 +613,11 @@ ALTER TABLE px.datasets OWNER TO lsadmin;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets_dskey_seq TO PUBLIC;
 
-
+--
+-- kludge: we should have a Reference to esaf.esafs as that is what is intended
+-- postgres would then automatically add the index
+--
+create index esaf_idx on px.datasets (dsesaf);
 
 
 CREATE OR REPLACE FUNCTION px.next_prefix( prefix text) RETURNS text AS $$
@@ -743,6 +747,28 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS t
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( text, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
+  DECLARE
+    pfx text;		-- prefix after being cleaned up
+    dir text;		-- directory after being cleaned up
+    rtn text;		-- new token
+  BEGIN
+    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    pfx := px.fix_fn( newPrefix);
+    dir := px.fix_dir( newDir);
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsdir=''' || dir || ''', dsstn=px.getstation()';
+    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
+    EXECUTE 'DROP TABLE "' || rtn || '"';
+    PERFORM px.chkdir( rtn);
+    PERFORM px.mkshots( rtn);
+
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
 
 --
 -- getdataset returns one row for a given dataset
@@ -1627,13 +1653,13 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ispaused() OWNER TO lsadmin;
 
 
-CREATE FUNCTION px.pauseRequest() RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.pauseRequest() RETURNS VOID AS $$
   DECLARE
     ntfy text;
   BEGIN
     PERFORM 1 FROM px.pause where pStn=px.getstation();
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Please Pause';
+      UPDATE px.pause set ptc=now(), pps='Please Pause' where pStn=px.getStation();
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),px.getStation(),'Please Pause');
     END IF;
@@ -1649,7 +1675,7 @@ CREATE OR REPLACE FUNCTION px.pauseRequest( stn bigint) RETURNS VOID AS $$
   BEGIN
     PERFORM 1 FROM px.pause where pStn=stn;
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Please Pause';
+      UPDATE px.pause set ptc=now(), pps='Please Pause' where pStn=px.getStation();
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),stn,'Please Pause');
     END IF;
@@ -1659,12 +1685,12 @@ CREATE OR REPLACE FUNCTION px.pauseRequest( stn bigint) RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pauseRequest( bigint) OWNER TO lsadmin;
 
-CREATE FUNCTION px.pauseTell() RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.pauseTell() RETURNS VOID AS $$
   DECLARE
   BEGIN
     PERFORM 1 FROM px.pause where pStn=px.getstation();
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='I Paused';
+      UPDATE px.pause set ptc=now(), pps='I Paused' where pStn=px.getStation();
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),px.getStation(),'I Paused');
     END IF;
@@ -1672,12 +1698,12 @@ CREATE FUNCTION px.pauseTell() RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pauseTell() OWNER TO lsadmin;
 
-CREATE FUNCTION px.unpause() RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.unpause() RETURNS VOID AS $$
   DECLARE
   BEGIN
     PERFORM 1 FROM px.pause where pStn=px.getstation();
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Not Paused';
+      UPDATE px.pause set ptc=now(), pps='Not Paused' where pStn=px.getStation();
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),px.getStation(),'Not Paused');
     END IF;
@@ -1685,12 +1711,12 @@ CREATE FUNCTION px.unpause() RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.unpause() OWNER TO lsadmin;
 
-CREATE FUNCTION px.unpause( stn bigint) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.unpause( stn bigint) RETURNS VOID AS $$
   DECLARE
   BEGIN
     PERFORM 1 FROM px.pause where pStn=stn;
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Not Paused';
+      UPDATE px.pause set ptc=now(), pps='Not Paused' where pStn=px.getStation();
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(), stn,'Not Paused');
     END IF;
@@ -1953,7 +1979,7 @@ ALTER FUNCTION px.rt_can_home_omega() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
   DECLARE
   BEGIN
-    -- PERFORM px.moveit( 'distance', d::numeric);
+    PERFORM px.moveit( 'distance', d::numeric);
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2001,7 +2027,7 @@ ALTER FUNCTION px._moveDetectorOut( bigint, numeric) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px._moveDetectorIn( pvmk bigint, value numeric) RETURNS void AS $$
--- _moveDetectorOut
+-- _moveDetectorIn
 -- "Action" function called when an epics variable (pvmk is the pvmonitors key) changes.  See actions in epics.sql
 --
   DECLARE
