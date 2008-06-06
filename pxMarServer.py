@@ -94,9 +94,9 @@ class PxMarServer:
             print >> sys.stderr,d,f,t,token
             #
             # Watchout, hardwired timeout
-            # delete entry without action if it is over 10 seconds over due
+            # delete entry without action if it is over 100 seconds over due
             #
-            if (datetime.datetime.now() - t).seconds > 10:
+            if (datetime.datetime.now() - t).seconds > 100:
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 try:
@@ -111,27 +111,51 @@ class PxMarServer:
                     qr = self.query( qs)
                     r = qr.dictresult()[0]
                     bp = r["bp"]
-                    #
-                    # create the path components if needed
-                    #
-                    try:
-                        print >> sys.stderr, "making directory %s" % ( bp+d)
-                        os.makedirs( bp+d)
-                    except OSError, (errno, strerr):
-                        if errno != 17:
-                            print >> sys.stderr, "Failed to make backup directory %s" % (bp+d)
-                            self.hlList.pop( self.hlList.index(hl))
-                            return
-                    try:
-                        if d[0] == '/':
-                            bud = bp+d[1:]
-                        else:
-                            bud = bp+d
+                    if len(bp) > 0:
+                        #
+                        # create the path components if needed
+                        #
+                        try:
+                            print >> sys.stderr, "making directory %s" % ( bp+d)
+                            os.makedirs( bp+d)
+                        except OSError, (errno, strerr):
+                            if errno != 17:
+                                print >> sys.stderr, "Failed to make backup directory %s" % (bp+d)
+                                self.hlList.pop( self.hlList.index(hl))
+                                return
+                        try:
+                            if d[0] == '/':
+                                bud = bp+d[1:]
+                            else:
+                                bud = bp+d
 
-                        print >> sys.stderr, "making hard link %s to file %s\n" % ( bud+'/'+f, d+'/'+f)
-                        os.link( d+'/'+f, bud+'/'+f)
-                    except:
-                        print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bud+'/'+f, d+'/'+f)
+                            bfn = bud+'/'+f
+
+                            #
+                            # see if the link already exists
+                            # If so, alter the file name and try again
+                            i = 0
+                            found = True
+                            while found:
+                                # assume we found it
+                                found = True
+
+                                # add a "_ddd" if the link already exists
+                                # this prevents someone from overwriting their own data
+                                if i==0:
+                                    bfn = bud+'/'+f
+                                else:
+                                    bfn = "%s/%s_%03d" % (bud, f, i)
+                                try:
+                                    os.stat( bfn)
+                                except:
+                                    found=False
+                                i = i+1
+
+                            print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                            os.link( d+'/'+f, bfn)
+                        except:
+                            print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     
                     self.hlList.pop( self.hlList.index(hl))
 
