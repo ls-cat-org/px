@@ -73,7 +73,7 @@ class PxMarServer:
     flushStatus = True  # flush status buff so we do not get old status
     hlList      = []    # dictionary of hardlinks to make
 
-    def hlPush( self, d, f, expt, token):
+    def hlPush( self, d, f, expt, shotKey):
         #
         #
         # Don't add something already in the list
@@ -85,77 +85,83 @@ class PxMarServer:
                 return
 
         print >> sys.stderr, "queued link dir=%s and file=%s" %(d, f)
-        self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), token))
+        self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
 
     def hlPop( self):
         cpy = list(self.hlList)
         for hl in cpy:
-            d,f,t,token = hl
-            print >> sys.stderr,d,f,t,token
+            d,f,t,shotKey = hl
+
+            print >> sys.stderr,">>>>>>>>>>>>>>>>>>",d,f,t,shotKey
             #
             # Watchout, hardwired timeout
             # delete entry without action if it is over 100 seconds over due
             #
-            if (datetime.datetime.now() - t).seconds > 100:
+            if (datetime.datetime.now() - t) > datetime.timedelta(0, 100):
+                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,timedelta(datetime.datetime.now()-t),(datetime.datetime.now()-t).seconds
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 try:
-                    os.stat( path)
+                    os.stat( d+"/"+f)
                 except:
                     # the file does not yet exist
-                    pass
-                else:
+                    print >> sys.stderr, "%s/%s does not yet exist" % (d,f)
+                    return
+
+                print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
+                #
+                # find the backup home directory
+                qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets left join px.shots on dspid=sdspid where skey='%s'" % (shotKey)
+                qr = self.query( qs)
+                r = qr.dictresult()[0]
+                bp = r["bp"]
+                if len(bp) > 0:
                     #
-                    # find the backup home directory
-                    qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets where dspid='%s'" % (token)
-                    qr = self.query( qs)
-                    r = qr.dictresult()[0]
-                    bp = r["bp"]
-                    if len(bp) > 0:
-                        #
-                        # create the path components if needed
-                        #
-                        try:
-                            print >> sys.stderr, "making directory %s" % ( bp+d)
-                            os.makedirs( bp+d)
-                        except OSError, (errno, strerr):
-                            if errno != 17:
-                                print >> sys.stderr, "Failed to make backup directory %s" % (bp+d)
-                                self.hlList.pop( self.hlList.index(hl))
-                                return
-                        try:
-                            if d[0] == '/':
-                                bud = bp+d[1:]
-                            else:
-                                bud = bp+d
+                    # create the path components if needed
+                    #
+                    if d[0] == '/':
+                        bud = bp+"/"+d[1:]
+                    else:
+                        bud = bp+"/"+d
+                            
+                    bfn = bud+'/'+f
 
+                    try:
+                        print >> sys.stderr, "making directory %s" % ( bud)
+                        os.makedirs( bud)
+                    except OSError, (errno, strerr):
+                        if errno != 17:
+                            print >> sys.stderr, "Failed to make backup directory %s" % (bud)
+                            self.hlList.pop( self.hlList.index(hl))
+                            return
+
+
+                    #
+                    # see if the link already exists
+                    # If so, alter the file name and try again
+                    i = 0
+                    found = True
+                    while found:
+                        # assume we found it
+                        found = True
+
+                        # add a "_ddd" if the link already exists
+                        # this prevents someone from overwriting their own data
+                        if i==0:
                             bfn = bud+'/'+f
-
-                            #
-                            # see if the link already exists
-                            # If so, alter the file name and try again
-                            i = 0
-                            found = True
-                            while found:
-                                # assume we found it
-                                found = True
-
-                                # add a "_ddd" if the link already exists
-                                # this prevents someone from overwriting their own data
-                                if i==0:
-                                    bfn = bud+'/'+f
-                                else:
-                                    bfn = "%s/%s_%03d" % (bud, f, i)
-                                try:
-                                    os.stat( bfn)
-                                except:
-                                    found=False
-                                i = i+1
-
-                            print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
-                            os.link( d+'/'+f, bfn)
+                        else:
+                            bfn = "%s/%s_%03d" % (bud, f, i)
+                        try:
+                            os.stat( bfn)
                         except:
-                            print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                            found=False
+                        i = i+1
+
+                    print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    try:
+                        os.link( d+'/'+f, bfn)
+                    except:
+                        print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     
                     self.hlList.pop( self.hlList.index(hl))
 
