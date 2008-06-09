@@ -1,0 +1,28 @@
+#! /bin/bash
+
+# make sure the marccd/log file is writable
+sudo /usr/local/bin/fixMarccdLog
+
+# kill off any stray pxMarServer processes
+sudo /usr/bin/killall -q pxMarServer.py
+
+# wait for a gracefull exit
+sleep 2
+
+# kill off any stray pxMarServer processes, make sure they are dead
+sudo /usr/bin/killall -q -s KILL pxMarServer.py
+
+. /home/marccd/marccd_setup.sh
+
+xrdb -merge <<EOF
+Marccd*Stop*background: grey80
+Marccd*Stop*foreground: grey80
+Marccd*Stop*Sensitive: False
+Marccd*ShutterMenuBar*background: grey80
+Marccd*ShutterMenuBar*foreground: grey80
+Marccd*ShutterMenuBar*Sensitive: False
+EOF
+
+
+/home/marccd/bin/linux/marccd -rf
+
