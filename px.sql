@@ -2203,3 +2203,140 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_close_ss() OWNER TO lsadmin;
 
 
+CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
+  DECLARE
+  BEGIN
+    return 'The Name';
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getName( int)	OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
+  DECLARE
+    rtn text;
+  BEGIN
+    rtn := '<?xml version="1.0" encoding="UTF-8"?>';
+  --
+  -- Config files are different for samples
+  -- if LSB is non-zero then we have a sample
+  if theid & 255 == 0 THEN
+      -- This is not a sample (150 by 150 images)
+      rtn := rtn || '<Config baseImage="http://contrabass.ls-cat.org/puck.png" overlayImage="http://contrabass.ls-cat.org/puck_overlay.png"  size = "3" >';
+      rtn := rtn || '  <Selection r="120" g="120" b="0" a="127" />';
+      rtn := rtn || '  <Disable   r="10" g="10" b="10" a="10" />';
+      rtn := rtn || '</Config>';
+    ELSE
+      -- This is a sample  (75 by 75 image)
+      rtn := rtn || '<Config image="http://contrabass.ls-cat.org/puck.png">';
+      rtn := rtn || 'This is the caption text';
+      rtn := rtn || '</Config>';
+    END IF;      
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getConfigFile( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
+  BEGIN
+    return x'01000000'::int;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.nextAction() returns int as $$
+  BEGIN
+    -- 0 = Pause
+    -- 1 = Transfer
+    -- 2 = Collect
+    -- 3 = Center
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextAction() OWNER TO lsadmin;
+
+
+
+
+CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
+  BEGIN
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentSampleID() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
+  BEGIN
+    return x'01010101'::int;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
+ 
+CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
+  DECLARE
+    rtn int;
+  BEGIN
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getContents( int) OWNER TO lsadmin;
+
+
+CREATE TABLE px.holderstates (
+       ss text primary key
+);
+ALTER TABLE px.holderstates OWNER TO lsadmin;
+
+INSERT INTO px.holderstates (ss) VALUES ('Unknown');
+INSERT INTO px.holderstates (ss) VALUES ('Present');
+INSERT INTO px.holderstates (ss) VALUES ('Absent');
+INSERT INTO px.holderstates (ss) VALUES ('TempStorage');
+INSERT INTO px.holderstates (ss) VALUES ('Inactive');		-- set if this position is not currently installed
+
+
+CREATE TABLE px.holderPositions (
+       -- This is a table of all the positions for sample holders
+       --
+       -- The ID is given by a 32 bit integer
+       -- Bits  0 -  7 : sample number
+       -- Bits  8 - 15 : puck number 
+       -- Bits 16 - 23 : dewar number (diffractometer and tool each are considered a type of dewar and have a location defined in this table)
+       -- Bits 24 - 31 : station number
+       --
+       -- | Station | Dewar  |  Puck  | Sample |
+       --    MSB                          LSB
+
+       -- Sample  = 0 means entry defines a puck position
+       -- Puck    = 0 means entry defines a dewar position
+       -- Dewar   = 0 means entry defines a station position
+       -- Station = 0 means location is unknown
+
+       hpKey serial primary key,		-- our key
+       hpId int unique,				-- unique idenifier for this location
+       hpName text,				-- name of this item
+       hpState text default 'Unknown' not null references px.holderstates (ss) on update cascade,
+       hpTempLoc int default 0			-- current location id of sample normally stored here (0 means item not in temp storage)
+       );
+ALTER TABLE px.holderPositions OWNER TO lsadmin;
+
+
+CREATE TABLE px.holders (
+       hKey serial primary key,		-- Our key
+       hName text,			-- Whatever name we want for this holder
+       hBarCode text unique,		-- unique id for this sample: NULL means we don't know or don't care
+       hRFID text unique,		-- unique id for this sample: NULL means we don't know or don't care
+       hExpId int default null,		-- The experiment id that includes this sample: should be a reference
+       hMaterial text default null	-- name of the sample from ESAF: should be a reference to esaf.materials (matname) but this requires a different mechanism for esaf updates than is currently employed
+);
+ALTER TABLE px.holders OWNER TO lsadmin;
+
+
+CREATE TABLE px.holderHistory (
+       hhKey serial primary key,		-- our key
+       hhPosition int references px.holderPositions (hpId),
+       hhHolder   bigint references px.holders (hKey),
+       hhStart timestamp with time zone default now(),
+       hhLast  timestamp with time Zone default now()
+);
+ALTER TABLE px.holderHistory OWNER TO lsadmin;
+
+       
