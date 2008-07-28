@@ -307,7 +307,8 @@ CREATE TABLE px.stations (
 	stnkey       serial primary key,	-- table key
 	stnname      text not null unique,	-- station name
 	stnshortname text not null unique,	-- short name used to create leagle variable names
-	stndataroot  text not null		-- default root data directory
+	stndataroot  text not null,		-- default root data directory
+	stnid        int references px.holderpositions (hpid)
 );
 ALTER TABLE px.stations OWNER TO lsadmin;
 GRANT SELECT ON px.stations TO PUBLIC;
@@ -331,15 +332,22 @@ CREATE TABLE px._config (
 	ckey             serial primary key,		-- table key
 	cdetector        inet   not null,		-- ip address of the detector computer
 	cdiffractometer  inet   not null,		-- ip address of the diffractometer
+	crobot           inet   not null,		-- ip address of the robot process
 	cstation         text				-- station where detector and diffractometer live
 		references px.stations (stnname),
+        cstnkey          bigint
+                references px.stations (stnkey),
 	cdifflocktable   text   not null,		-- name of diffractometer locking table
 	cdetectlocktable text   not null,		-- name of detector locking table
 	cnotifykill      text   not null,
 	cnotifysnap      text   not null,
 	cnotifyrun       text   not null,
 	cnotifydetector  text   not null,
-	cnotifypause	 text   not null
+	cnotifydiffractometer text not null,
+	cnotifypause	 text   not null,
+	cnotifymessage   text   not null,
+	cnotifywarning   text   not null,
+        cnotifyerror     text   not null
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -607,7 +615,8 @@ CREATE TABLE px.datasets (
 	dskappa    numeric DEFAULT NULL,			-- set kappa (NULL means don't touch)
 	dsdist     numeric DEFAULT NULL,			-- set distance (NULL means don't touch)
 	dsnrg      numeric DEFAULT NULL,			-- set energy (NULL means don't touch)
-        dscomment  text DEFAULT NULL				-- comment
+        dscomment  text DEFAULT NULL,				-- comment
+        dsposition int default 0 references px.holderpositions (hpid)	-- holder position for new shots
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
@@ -640,6 +649,7 @@ CREATE OR REPLACE FUNCTION px.next_prefix( prefix text) RETURNS text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.next_prefix( text) OWNER TO lsadmin;
+
 
 
 
@@ -684,8 +694,8 @@ CREATE OR REPLACE FUNCTION px.newdataset( token text) RETURNS text AS $$
 
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
 
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=\'' || token || '\'';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=\'' || rtn || '\', dskey=nextval( \'px.datasets_dskey_seq\'), dsstn=px.getstation()';
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsstn=px.getstation()';
     EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
     EXECUTE 'DROP TABLE "' || rtn || '"';
     PERFORM px.chkdir( rtn);
@@ -717,8 +727,8 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text) RETURNS text AS $$
     rtn text;		-- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=\'' || token || '\'';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=\'' || rtn || '\', dskey=nextval( \'px.datasets_dskey_seq\'), dsfp=px.next_prefix(dsfp), dsstn=px.getstation()';
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp), dsstn=px.getstation()';
     EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
     EXECUTE 'DROP TABLE "' || rtn || '"';
     PERFORM px.chkdir( rtn);
@@ -736,8 +746,8 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS t
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     pfx := px.fix_fn( newPrefix);
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=\'' || token || '\'';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=\'' || rtn || '\', dskey=nextval( \'px.datasets_dskey_seq\'), dsfp=\'' || pfx || '\', dsstn=px.getstation()';
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsstn=px.getstation()';
     EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
     EXECUTE 'DROP TABLE "' || rtn || '"';
     PERFORM px.chkdir( rtn);
@@ -816,6 +826,21 @@ CREATE OR REPLACE FUNCTION px.ds_get_esaf( token text) RETURNS int as $$
   SELECT dsesaf from px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_esaf( text) OWNER TO lsadmin;
+
+
+--
+-- Sample
+CREATE OR REPLACE FUNCTION px.ds_set_sample( token text, arg2 int) RETURNS void AS $$
+  BEGIN UPDATE px.datasets set dsposition=arg2 WHERE dspid=token; END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_sample( text, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ds_get_sample( token text) RETURNS int as $$
+  SELECT dsposition from px.datasets WHERE dspid=$1;
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.ds_get_sample( text) OWNER TO lsadmin;
+
+
 
 
 --
@@ -1047,6 +1072,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_nframes( token text, nframes int) RETURNS v
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ds_set_nframes( text, int) OWNER TO lsadmin;
 
+
 CREATE OR REPLACE FUNCTION px.ds_get_nframes( token text) RETURNS int AS $$
   DECLARE
     rtn int;	-- the return values
@@ -1234,7 +1260,7 @@ CREATE TABLE px.shots (
 	sts	timestamp with time zone default now(),	-- time of creation or last status change
 	sdspid	 text					-- PID of dataset
 		references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
-	stype    text           NOT NULL		-- type of dataset this is part of (needed to uniquely identify shot
+	stype    text           NOT NULL		-- type of dataset this is part of (needed to uniquely identify shot)
 		references px.stypes ON UPDATE CASCADE,
 	sindex	 int		NOT NULL,		-- frame number within this sequence
 	sfn      text		DEFAULT NULL,		-- the file name
@@ -1252,6 +1278,7 @@ CREATE TABLE px.shots (
         scmt     text           DEFAULT NULL,		-- comment
 	sstate   text					-- current state of the shot
 		 references px.shotstates (ssstate) ON UPDATE CASCADE,
+        sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted)
 	UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1273,7 +1300,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
 
 CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
-	dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric);
+	dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int);
 
 CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
   DECLARE
@@ -1283,7 +1310,7 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg
+      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done'
@@ -1575,13 +1602,14 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
         IF NOT FOUND THEN
           fn := fp || '.' || trim(to_char(i, fmt));
           angle := ds.dsstart + (i-1) * delta;
-	  INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate) VALUES (
+	  INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
             token,	-- sdspid
             'normal',	-- stype
             fn,		-- sfn
             angle,	-- sstart
             i,		-- sindex
-            'NotTaken'	-- sstate
+            'NotTaken',	-- sstate
+            ds.dsposition -- the sample
         );
         END IF;
       END LOOP;
@@ -1601,7 +1629,8 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
               fn,		-- sfn
               angle,		-- sstart
               n+i,		-- sindex
-              'NotTaken'	-- sstate
+              'NotTaken',	-- sstate
+              ds.dsposition -- the sample
             );
           END IF;
 	END LOOP;
@@ -1616,7 +1645,8 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
               fn,		-- sfn
               angle,		-- sstart
               n+ds.dsnwedge+i,	-- sindex
-              'NotTaken'	-- sstate
+              'NotTaken',	-- sstate
+              ds.dsposition -- the sample
             );
           END IF;
 	END LOOP;
@@ -2205,77 +2235,167 @@ ALTER FUNCTION px.rt_close_ss() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
   DECLARE
+    rtn text;	-- our return value
+    hn  text;   -- name from holder
   BEGIN
-    return 'The Name';
+    --
+    -- Get the name of the holder position
+    --
+    SELECT hpname INTO rtn FROM px.holderpositions WHERE hpid=theId;
+
+    IF NOT FOUND THEN
+      -- Not every 32 bit integer corresponds to a valid holder position
+      return 'Not Found';
+    END IF;
+    --
+    --  if there is a holder in this position use that name
+    --
+    SELECT hname INTO hn FROM px.holders LEFT JOIN px.holderhistory ON hhHolder=hkey WHERE hhState='Present' and hhPosition=theId ORDER BY hhLast DESC LIMIT 1;
+    IF FOUND THEN
+      rtn := hn;
+    END IF;
+    return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getName( int)	OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
   DECLARE
-    rtn text;
+    itm record;		-- the record of the item pointed to by theId
+    chitms record;	-- the record(s) of the child items under theId
+    rtn text;		-- xml return text
+    inf text;		-- Information on this ID
   BEGIN
-    rtn := '<?xml version="1.0" encoding="UTF-8"?>';
-  --
-  -- Config files are different for samples
-  -- if LSB is non-zero then we have a sample
-  if theid & 255 == 0 THEN
-      -- This is not a sample (150 by 150 images)
-      rtn := rtn || '<Config baseImage="http://contrabass.ls-cat.org/puck.png" overlayImage="http://contrabass.ls-cat.org/puck_overlay.png"  size = "3" >';
-      rtn := rtn || '  <Selection r="120" g="120" b="0" a="127" />';
-      rtn := rtn || '  <Disable   r="10" g="10" b="10" a="10" />';
-      rtn := rtn || '</Config>';
-    ELSE
-      -- This is a sample  (75 by 75 image)
-      rtn := rtn || '<Config image="http://contrabass.ls-cat.org/puck.png">';
-      rtn := rtn || 'This is the caption text';
-      rtn := rtn || '</Config>';
-    END IF;      
+    rtn := '';
+    SELECT *  INTO itm FROM px.holderPositions WHERE hpId = theId;
+    IF FOUND THEN
+      rtn := '<?xml version="1.0" encoding="UTF-8"?>';
+      --
+      -- Config files are different for samples
+      -- if LSB is non-zero then we have a sample
+      rtn := rtn || '<Config ';
+        -- This is not a sample (150 by 150 images)
+      IF itm.hpImageURL IS NOT NULL THEN
+        rtn = rtn || 'image="' || itm.hpImageURL || '" ';
+      END IF;
+      IF itm.hpImageMaskURL IS NOT NULL THEN
+        rtn = rtn || 'overlayImage="' || itm.hpImageMaskURL || '" ';
+      END IF;
+      rtn = rtn || E'>\n';
+      rtn = rtn || E'  <Selected r="120" g="120" b = "0" a="127" />\n';
+      rtn = rtn || E'  <Disabled r="10"  g="10"  b = "10" a="127" />\n';
+      FOR chitms IN SELECT * FROM px.holderPositions WHERE hpId > theId and hpId < (theId + itm.hpIdRes) LOOP
+        rtn = rtn || '<Child id="' || chitms.hpId || '" index="' || chitms.hpIndex || E'" />\n';
+      END LOOP;
+
+      SELECT hname || E'\n' ||
+        coalesce( 'ESAF: ' || hhExpId, 'None') || E'\n' ||
+        coalesce( hhMaterial, 'No Material Info') || E'\n'
+        -- Stick in total exposure here once px.hots supports the sample
+        INTO inf
+        FROM px.holders LEFT JOIN px.holderhistory ON hhHolder=hkey
+	WHERE hhPosition=theId and (hhstate='Present' or hhstate='TempStorage')
+	ORDER BY hhLast DESC
+        LIMIT 1;
+      IF FOUND THEN
+        rtn := rtn || inf;
+      ELSE
+        rtn := rtn || coalesce( itm.hpName,'Unknown');
+      END IF;
+      rtn = rtn || E'</Config>\n';
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getConfigFile( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
+  DECLARE
+    rtn int;
   BEGIN
-    return x'01000000'::int;
+    SELECT hhPosition
+      INTO rtn
+      FROM px.holders
+      LEFT JOIN px.stations ON hname=stnname
+      LEFT JOIN px.holderhistory ON hkey=hhholder
+      WHERE htype='Station' AND stnkey=px.getstation() AND hhstate='Present';
+    IF NOT FOUND THEN
+      return 0;
+    END IF;
+    return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.nextAction() returns int as $$
-  BEGIN
     -- 0 = Pause
     -- 1 = Transfer
     -- 2 = Collect
     -- 3 = Center
-    return 0;
+  DECLARE
+    rtn int;    -- return value
+    cmd text;	-- value from queue
+  BEGIN
+    rtn = 0;
+    SELECT px.md2popqueue() INTO cmd;
+    IF FOUND THEN
+      IF cmd = 'Transfer' THEN
+        rtn := 1;
+      ELSEIF cmd = 'Collect' THEN
+        rtn := 2;
+      ELSEIF cmd = 'Center' THEN
+        rtn := 3;
+      ELSE
+        rtn := 0;
+      END IF;
+    END IF;
+
+    return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextAction() OWNER TO lsadmin;
 
-
-
-
 CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
+  DECLARE
+    rtn int;
+    stnid int;
+    diffid int;
   BEGIN
-    return 0;
+    rtn := 0;
+    SELECT px.getCurrentStationId() INTO stnid;
+    IF stnid > 0 THEN
+      diffid := stnid + x'00020000'::int;
+      SELECT hpid
+        INTO rtn
+        FROM px.holderPositions
+	WHERE hpId > stnid and hpId < stnid+x'01000000'::int and hpTempLoc=diffid;
+      IF NOT FOUND THEN
+        return 0;
+      END IF;
+    END IF;
+    return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentSampleID() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
-  BEGIN
-    return x'01010101'::int;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
  
 CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
   DECLARE
+    res int;
     rtn int;
   BEGIN
-    RETURN;
+    SELECT hpidres INTO res FROM px.holderpositions WHERE hpid=theId;
+    IF NOT FOUND THEN
+      RETURN;
+    END IF;
+    FOR rtn IN SELECT hpid
+                 FROM px.holderpositions
+                 LEFT JOIN px.holderhistory ON hhPosition=hpid
+                 WHERE hpid>theId and hpid<theid+res and hpidres = res>>8 and hhState != 'Inactive'
+                 LOOP
+      return next rtn;
+    END LOOP;
+    return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getContents( int) OWNER TO lsadmin;
@@ -2312,20 +2432,37 @@ CREATE TABLE px.holderPositions (
 
        hpKey serial primary key,		-- our key
        hpId int unique,				-- unique idenifier for this location
+       hpIdRes int NOT NULL,			-- children have ids > hpId and < hpId+hpIdRes
+       hpIndex int,				-- Parent's selection index
        hpName text,				-- name of this item
-       hpState text default 'Unknown' not null references px.holderstates (ss) on update cascade,
+       hpImageURL text default NULL,		-- Image, if any, to use for this holder position
+       hpImageMaskURL text default NULL,	-- Image, if any, to use for the selection mask for position contained herein
        hpTempLoc int default 0			-- current location id of sample normally stored here (0 means item not in temp storage)
        );
 ALTER TABLE px.holderPositions OWNER TO lsadmin;
 
 
+CREATE TABLE px.holderTypes (
+       ht text primary key
+);
+ALTER TABLE px.holdertypes OWNER TO lsadmin;
+INSERT INTO px.holdertypes (ht) VALUES ('Station');
+INSERT INTO px.holdertypes (ht) VALUES ('Dewar');
+INSERT INTO px.holdertypes (ht) VALUES ('SPINE Basket');
+INSERT INTO px.holdertypes (ht) VALUES ('Rigaku Magazine');
+INSERT INTO px.holdertypes (ht) VALUES ('ALS Puck');
+INSERT INTO px.holdertypes (ht) VALUES ('UNI Puck');
+INSERT INTO px.holdertypes (ht) VALUES ('CrystalCap HT   HR8');
+INSERT INTO px.holdertypes (ht) VALUES ('CrystalCap Magnetic (ALS) HR4');
+
+
+
 CREATE TABLE px.holders (
        hKey serial primary key,		-- Our key
+       hType text references px.holdertypes (ht) on update cascade,
        hName text,			-- Whatever name we want for this holder
        hBarCode text unique,		-- unique id for this sample: NULL means we don't know or don't care
-       hRFID text unique,		-- unique id for this sample: NULL means we don't know or don't care
-       hExpId int default null,		-- The experiment id that includes this sample: should be a reference
-       hMaterial text default null	-- name of the sample from ESAF: should be a reference to esaf.materials (matname) but this requires a different mechanism for esaf updates than is currently employed
+       hRFID text unique		-- unique id for this sample: NULL means we don't know or don't care
 );
 ALTER TABLE px.holders OWNER TO lsadmin;
 
@@ -2334,9 +2471,60 @@ CREATE TABLE px.holderHistory (
        hhKey serial primary key,		-- our key
        hhPosition int references px.holderPositions (hpId),
        hhHolder   bigint references px.holders (hKey),
+       hhState text default 'Unknown' not null references px.holderstates (ss) on update cascade,
+       hhExpId int default null,		-- The experiment id that includes this sample: should be a reference
+       hhMaterial text default null,	-- name of the sample from ESAF: should be a reference to esaf.materials (matname) but this requires a different mechanism for esaf updates than is currently employed
        hhStart timestamp with time zone default now(),
        hhLast  timestamp with time Zone default now()
 );
 ALTER TABLE px.holderHistory OWNER TO lsadmin;
 
        
+CREATE TABLE px._md2queue (
+       md2Key serial primary key,	-- our key
+       md2ts timestamp with time zone not null default now(),
+       md2Addr inet not null,		-- IP Address of the MD2
+       md2Cmd text not null		-- the Command
+);
+ALTER TABLE px._md2queue OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
+  DECLARE
+    c text;	-- trimmed command
+    ntfy text;	-- used to generate notify command
+  BEGIN
+    SELECT cnotifydiffractometer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
+    IF NOT FOUND THEN
+      RETURN;
+    END IF;
+    c := trim( cmd);
+    IF length( c) > 0 THEN
+      INSERT INTO cats._md2queue (md2Cmd, md2Addr)
+        SELECT c, cdiffractometer
+          FROM px._config
+          WHERE cdiffractometer=inet_client_addr() or cdetector=inet_client_addr() or crobot=inet_client_addr()
+          LIMIT 1;
+      IF FOUND THEN
+        EXECUTE 'NOTIFY ' || ntfy;
+      END IF;
+    END IF;
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.md2popqueue() returns text AS $$
+  DECLARE
+    rtn text;		-- return value
+    qk bigint;		-- queue key of item
+  BEGIN
+    rtn := '';
+    SELECT md2Cmd, md2Key INTO rtn, qk FROM px._md2queue WHERE md2Addr=inet_client_addr() ORDER BY md2Key ASC LIMIT 1;
+    IF NOT FOUND THEN
+      return '';
+    END IF;
+    DELETE FROM px._md2queue WHERE md2Key=qk;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
