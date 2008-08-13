@@ -404,6 +404,22 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.inidetector() OWNER TO lsadmin;
 
 
+CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
+  DECLARE
+  BEGIN
+  PERFORM pg_advisory_lock( px.getstation(), 1);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.demandDiffractometerOn() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
+  DECLARE
+  BEGIN
+  PERFORM pg_advisory_unlock( px.getstation(), 1);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.dropDiffractometerOn() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
 --
 -- Used by the MD2 seqRun support code to setup notifies for the correct station
@@ -1623,7 +1639,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
           IF NOT FOUND THEN
             fn := fp || '_' || 'A' || '.' || trim( to_char( wnn+i, fmt));
             angle := ds.dsstart + (an+i-1) * delta;
-            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate) VALUES (
+            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
               token,		-- sdspid
               'normal',		-- stype
               fn,		-- sfn
@@ -1639,7 +1655,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
           IF NOT FOUND THEN
             fn := fp || '_' || 'B' || '.' || trim( to_char( wnn+i, fmt));
             angle := ds.dsstart + (an+i-1) * delta + 180;
-            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate) VALUES (
+            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
               token,		-- sdspid
               'normal',		-- stype
               fn,		-- sfn
@@ -2284,7 +2300,11 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
       rtn = rtn || E'>\n';
       rtn = rtn || E'  <Selected r="120" g="120" b = "0" a="127" />\n';
       rtn = rtn || E'  <Disabled r="10"  g="10"  b = "10" a="127" />\n';
-      FOR chitms IN SELECT * FROM px.holderPositions WHERE hpId > theId and hpId < (theId + itm.hpIdRes) LOOP
+      FOR chitms IN SELECT *
+          FROM px.holderPositions
+          LEFT JOIN px.holderHistory on hpid=hhPosition
+          WHERE hpId > theId and hpidres=itm.hpidres>>8 and hpId < (theId + itm.hpIdRes) and hpIndex>0 and hhstate!='Inactive'
+          LOOP
         rtn = rtn || '<Child id="' || chitms.hpId || '" index="' || chitms.hpIndex || E'" />\n';
       END LOOP;
 
@@ -2327,33 +2347,101 @@ CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.nextAction() returns int as $$
-    -- 0 = Pause
-    -- 1 = Transfer
-    -- 2 = Collect
-    -- 3 = Center
-  DECLARE
-    rtn int;    -- return value
-    cmd text;	-- value from queue
-  BEGIN
-    rtn = 0;
-    SELECT px.md2popqueue() INTO cmd;
-    IF FOUND THEN
-      IF cmd = 'Transfer' THEN
-        rtn := 1;
-      ELSEIF cmd = 'Collect' THEN
-        rtn := 2;
-      ELSEIF cmd = 'Center' THEN
-        rtn := 3;
-      ELSE
-        rtn := 0;
-      END IF;
-    END IF;
+CREATE TYPE px.nextActionType AS ( key bigint, action text);
 
+CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
+    -- pause
+    -- collect
+    -- transfer
+    -- center
+  DECLARE
+    rtn px.nextActionType;    -- return value
+    tmp px._md2queue;    --
+  BEGIN
+    rtn.key    := 0;
+    rtn.action := 'pause';
+    SELECT * INTO tmp FROM px.md2popqueue();
+    IF length( tmp.md2cmd)>0 THEN
+      rtn.action := tmp.md2Cmd;
+      rtn.key    := tmp.md2Key;
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextAction() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint, val text) RETURNS VOID AS $$
+  DECLARE
+  BEGIN
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2ReturnValue( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint) RETURNS VOID AS $$
+  DECLARE
+  BEGIN
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2ReturnValue( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.md2CallFailed( key bigint) RETURNS VOID  AS $$
+  DECLARE
+  BEGIN
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2CallFailed( bigint) OWNER TO lsadmin;
+
+
+
+CREATE TABLE px.nextSamples ( 
+       nsKey serial primary key,
+       nsStn int not null references px.stations (stnKey) on update cascade,
+       nsId int not null
+);
+ALTER TABLE px.nextSamples OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
+  DECLARE
+    rtn int;
+    k  bigint;
+  BEGIN
+    rtn = 0;
+    SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() ORDER BY nsKey DESC LIMIT 1;
+    IF FOUND THEN
+      DELETE FROM px.nextSamples WHERE nsKey=k;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
+  DECLARE
+  BEGIN
+    INSERT INTO px.nextSamples (nsStn, nsId) VALUES (px.getstation(), theId);
+    PERFORM px.md2pushqueue( 'transfer');
+    PERFORM cats.put( theId);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
+  BEGIN
+    PERFORM pg_advisory_unlock( px.getstation(), 2);
+  END;    
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.dropAirRights()  OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.demandAirRights( ) returns VOID AS $$
+  BEGIN
+    PERFORM pg_advisory_lock( px.getstation(), 2);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.demandAirRights() OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
   DECLARE
@@ -2391,7 +2479,7 @@ CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
     FOR rtn IN SELECT hpid
                  FROM px.holderpositions
                  LEFT JOIN px.holderhistory ON hhPosition=hpid
-                 WHERE hpid>theId and hpid<theid+res and hpidres = res>>8 and hhState != 'Inactive'
+                 WHERE hpid>theId and hpid<theid+res and hpidres = res>>8 and hhState != 'Inactive' and hpIndex>0
                  LOOP
       return next rtn;
     END LOOP;
@@ -2499,7 +2587,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
     END IF;
     c := trim( cmd);
     IF length( c) > 0 THEN
-      INSERT INTO cats._md2queue (md2Cmd, md2Addr)
+      INSERT INTO px._md2queue (md2Cmd, md2Addr)
         SELECT c, cdiffractometer
           FROM px._config
           WHERE cdiffractometer=inet_client_addr() or cdetector=inet_client_addr() or crobot=inet_client_addr()
@@ -2514,17 +2602,116 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.md2popqueue() returns text AS $$
+CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
   DECLARE
-    rtn text;		-- return value
-    qk bigint;		-- queue key of item
+    rtn px._md2queue;		-- return value
   BEGIN
-    rtn := '';
-    SELECT md2Cmd, md2Key INTO rtn, qk FROM px._md2queue WHERE md2Addr=inet_client_addr() ORDER BY md2Key ASC LIMIT 1;
+--    rtn := NULL;
+    SELECT md2key, md2cmd INTO rtn.md2key, rtn.md2cmd FROM px._md2queue WHERE md2Addr=inet_client_addr() ORDER BY md2Key ASC LIMIT 1;
     IF NOT FOUND THEN
-      return '';
+      return NULL;
     END IF;
-    DELETE FROM px._md2queue WHERE md2Key=qk;
+    DELETE FROM px._md2queue WHERE md2Key=rtn.md2key;
+    RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    rtn := 'Unknown';
+    SELECT hhState INTO rtn FROM px.holderHistory WHERE hhPosition=theId ORDER BY hhKey DESC LIMIT 1;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getHolderPositionState( int) OWNER TO lsadmin;
+
+
+CREATE TABLE px.errorSeverity (
+       es text primary key,		-- text version of message
+       ess int not null unique		-- sort order of severity (0=message, 2=fatal)
+);
+ALTER TABLE px.errorSeverity OWNER TO lsadmin;
+INSERT INTO px.errorSeverity (ess, es) VALUES ( 0, 'message');
+INSERT INTO px.errorSeverity (ess, es) VALUES ( 1, 'warning');
+INSERT INTO px.errorSeverity (ess, es) VALUES ( 2, 'fatal');
+
+CREATE TABLE px.errors (
+       eKey serial primary key,					-- the Key
+       eSeverity text not null references px.errorSeverity (es),	-- severity of error
+       eid int not null unique,					-- identifier for this error (for client processing)
+       eTerse text not null,					-- terse error
+       eVerbose text not null					-- long winded version of the error
+);
+ALTER TABLE px.errors OWNER TO lsadmin;
+
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('message', 1, 'Test Message 1', 'This message is here to test the error handling severity 0');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('message', 2, 'Test Message 2', 'This alternate message is here to test the error handling severity 0');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 3, 'Test Warning 1', 'This warning is here to test the error handling severity 1');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 4, 'Test Warning 2', 'This alternate warning is here to test the error handling severity 1');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   5, 'Test Error 1',   'This error is here to test the error handling severity 2');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   6, 'Test Error 2',   'This alternate error is here to test the error handling severity 2');
+
+
+CREATE TABLE px.activeErrors (
+       eaKey serial primary key,			-- the key
+       eaId int not null references px.errors (eid),	-- the error
+       eaTs timestamp with time zone not null default now(),
+       eaStn int not null references px.stations (stnKey),
+       eaDetails text,
+       eaAcknowledged boolean not null default False
+);
+ALTER TABLE px.activeErrors OWNER TO lsadmin;
+
+
+CREATE TYPE px.errorType AS ( etKey bigint, etSeverity text, etId int, etTerse text, etVerbose text, etDetails text, etts timestamptz);
+
+CREATE OR REPLACE FUNCTION px.nextErrors() returns setof px.errorType AS $$
+  DECLARE
+    rtn px.errorType;
+  BEGIN
+    FOR rtn IN SELECT eaKey, es, eiD, eTerse, eVerbose, eaDetails, eaTs
+                 FROM px.activeErrors
+                 LEFT JOIN px.errors ON eaId=eId
+                 WHERE eaStn=px.getstation() and eaAcknowledged = False
+                 ORDER BY ess desc,eaTs desc LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextErrors() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.acknowledgeError( theId int) RETURNS VOID AS $$
+  DECLARE
+  BEGIN
+    UPDATE px.activeErrors SET eaAcknowledged=True WHERE eaId=theId and eaStn=px.getstation();
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.acknowledgeError( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.pushError( theId int, theDetails text) RETURNS VOID AS $$
+  DECLARE
+   sever int;
+   ntfy text;
+  BEGIN
+    INSERT INTO px.activeErrors (eaId, eaStn, eaDetails) VALUES (theId, px.getstation(), theDetails);
+    SELECT ess INTO sever FROM px.errors LEFT JOIN px.errorSeverity on eSeverity=es WHERE eid = theId;
+    IF FOUND THEN
+      SELECT CASE WHEN sever=0 THEN cnotifymessage
+                  WHEN sever=1 THEN cnotifywarning
+                  ELSE cnotifyerror
+                  END
+             INTO ntfy
+             FROM px._config
+             LEFT JOIN px.stations ON stnname=cstation
+             WHERE stnkey=px.getstation();
+      IF FOUND THEN
+        EXECUTE 'NOTIFY ' || ntfy;
+      END IF;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.pushError( int, text) OWNER TO lsadmin;
