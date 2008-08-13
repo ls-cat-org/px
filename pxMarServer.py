@@ -93,10 +93,10 @@ class PxMarServer:
             print >> sys.stderr,">>>>>>>>>>>>>>>>>>",d,f,t,shotKey
             #
             # Watchout, hardwired timeout
-            # delete entry without action if it is over 100 seconds over due
+            # delete entry without action if it is over 100 seconds overdue
             #
             if (datetime.datetime.now() - t) > datetime.timedelta(0, 100):
-                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,timedelta(datetime.datetime.now()-t),(datetime.datetime.now()-t).seconds
+                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,datetime.timedelta(datetime.datetime.now()-t),(datetime.datetime.now()-t).seconds
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 try:
