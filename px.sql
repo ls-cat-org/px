@@ -2602,7 +2602,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
     c := trim( cmd);
     IF length( c) > 0 THEN
       INSERT INTO px._md2queue (md2Cmd, md2Addr)
-        SELECT c, cdiffractometer
+        SELECT c, cdiffractometer::inet
           FROM px._config
           WHERE cstnkey=px.getstation()
           LIMIT 1;
