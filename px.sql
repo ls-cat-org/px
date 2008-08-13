@@ -432,6 +432,7 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
     notifypause text;	-- notify name for pause
     rtn         text;   -- prefix for all the notify names: SEE KLUDGE ABOVE
   BEGIN
+    PERFORM px.demandDiffractometerOn();
     rtn := NULL;
     SELECT INTO rtn, notifykill, notifysnap, notifyrun, notifypause split_part(cnotifykill,'_',1),cnotifykill, cnotifysnap, cnotifyrun, cnotifypause FROM px._config WHERE px.getstation( cstation)=px.getstation();
     IF FOUND THEN
@@ -447,56 +448,66 @@ ALTER FUNCTION px.ininotifies() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.lock_detector() RETURNS void AS $$
---
--- Used by pxMarServer to let everyone know its idle and waiting for a command
---
-  DECLARE
-    cmd text;
+-- indicate that the detector is ready for action but isn't doing anything right now
   BEGIN
-    SELECT INTO cmd 'LOCK TABLE ' || cdetectlocktable || ' IN ACCESS EXCLUSIVE MODE' FROM px._config WHERE cdetector=inet_client_addr() OR cdiffractometer=inet_client_addr() LIMIT 1;
-    EXECUTE cmd;
+    PERFORM pg_advisory_lock( px.getstation(), 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS void AS $$
---
--- Used by seqRun to test if the detecor is running
---
+CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS int AS $$
+-- test to see if the detector is integrating (1 means no but we are running)
   DECLARE
-    cmd text;
+    tmp boolean;
   BEGIN
-    SELECT INTO cmd 'LOCK TABLE ' || cdetectlocktable || ' IN ACCESS EXCLUSIVE MODE NOWAIT' FROM px._config WHERE cdetector=inet_client_addr() OR cdiffractometer=inet_client_addr() LIMIT 1;
-    EXECUTE cmd;
+    SELECT pg_try_advisory_lock( px.getstation(), 3) INTO tmp;
+    IF tmp THEN
+      return 1;
+    END IF;
+    return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector_nowait() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
---
--- Used by seqRun to synchronize the detector: seqRun drops the lock when it's time to end the exposure
---
-  DECLARE
-    cmd text;
+CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
+-- indicate the start of integration
   BEGIN
-    SELECT INTO cmd 'LOCK TABLE ' || cdifflocktable || ' IN ACCESS EXCLUSIVE MODE' FROM px._config WHERE cdetector=inet_client_addr() OR cdiffractometer=inet_client_addr() LIMIT 1;
-    EXECUTE cmd;
+    PERFORM pg_advisory_unlock( px.getstation(), 3);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.unlock_detector() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
+-- indicate we are either exposing or are ready to start exposing
+  BEGIN
+    PERFORM pg_advisory_lock( px.getstation(), 4);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_diffractometer() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS void AS $$
---
--- Used to test if the diffractometer is busy performing the exposure
---
+CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS int AS $$
+-- test to see if the MD2 is ready to start exposing
   DECLARE
-    cmd text;
+    tmp boolean;
   BEGIN
-    SELECT INTO cmd 'LOCK TABLE ' || cdifflocktable || ' IN ACCESS EXCLUSIVE MODE NOWAIT' FROM px._config WHERE cdetector=inet_client_addr() OR cdiffractometer=inet_client_addr() LIMIT 1;
-    EXECUTE cmd;
+    SELECT pg_try_advisory_lock( px.getstation(), 4) INTO tmp;
+    IF tmp THEN
+      return 1;
+    END IF;
+    return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_diffractometer_nowait() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
+  -- grabs the diffractometer lock indicating ready to start exposure
+  BEGIN
+    PERFORM pg_advisory_unlock( px.getstation(), 4);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.unlock_diffractometer() OWNER TO lsadmin;
+
 
 CREATE TABLE px.axes (
 --
@@ -1460,6 +1471,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
+      PERFORM px._md2pushqueue( 'collect');
     END IF;
 --    IF typ = 'snap' THEN
 --      PERFORM px.startrun();
@@ -1479,6 +1491,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
+      PERFORM px._md2pushqueue( 'collect');
     END IF;
 --    IF typ = 'snap' THEN
 --      PERFORM px.startrun();
@@ -1507,6 +1520,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
       pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken'
     );
     PERFORM px.pushrunqueue( pid, 'snap');
+    PERFORM px._md2pushqueue( 'collect');
 --    PERFORM px.startrun();
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2590,7 +2604,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
       INSERT INTO px._md2queue (md2Cmd, md2Addr)
         SELECT c, cdiffractometer
           FROM px._config
-          WHERE cdiffractometer=inet_client_addr() or cdetector=inet_client_addr() or crobot=inet_client_addr()
+          WHERE cstnkey=px.getstation()
           LIMIT 1;
       IF FOUND THEN
         EXECUTE 'NOTIFY ' || ntfy;
