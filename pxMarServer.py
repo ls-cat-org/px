@@ -459,6 +459,9 @@ class PxMarServer:
                     print >> sys.stderr, "trying to get md2lock..."
                     self.db.query( "select px.lock_diffractometer()")
 
+                    # eventually we'll get the lock, give it up immediately
+                    self.db.query( "select px.unlock_diffractometer()")
+
                     #
                     # allow sending the next command in the queue (should be the readout)
                     self.enableOutput()
