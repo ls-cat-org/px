@@ -444,17 +444,13 @@ class PxMarServer:
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
                     print >> sys.stderr, "grabbing marlock"
-                    try:
-                        self.db.query( "px.lock_detector()")
-                    except:
-                        self.haveLock = False
-                    else:
-                        self.haveLock = True
+                    self.db.query( "select px.lock_detector()")
+                    self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
                     print >> sys.stderr, "giving up marlock"
-                    self.db.query( "px.unlock_detector()")  # give up mar lock
+                    self.db.query( "select px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
