@@ -53,8 +53,6 @@ class PxMarServer:
 
     db = None           # database connection
     dbfd = None         # file descriptor for database connection
-    dblock = None       # database connection for table locking semaphores
-    dblockfd = None     # file descriptor for locking database connection
     fdin  = None        # our input file descriptor as passed by environment variable FD_IN
     fdout = None        # our output file descriptor as passed by environment variable FD_OUT
     fdoutFlags = None   # flags for polling fdout: used to toggle POLLOUT
@@ -185,33 +183,10 @@ class PxMarServer:
             self.db = None
             self.dbfd = None
 
-        if self.dblockfd != None and self.p != None:
-            try:
-                self.p.unregister( self.dblockfd)
-            except:
-                pass
-            self.dblockfd = None
-        if self.dblock != None and self.dblock.status == 1:
-            if self.dblock.transaction() >0:
-                try:
-                    self.dblock.query( "rollback")
-                except:
-                    pass
-            try:
-                self.dblock.close()
-            except:
-                pass
-            self.dblock = None
-            self.dblockfd = None
-
     def open( self):
         self.db       = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
         self.dbfd     = self.db.fileno()
         self.p.register( self.dbfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
-
-        self.dblock   = pg.connect(dbname='lslocks',user='lsuser', host='contrabass.ls-cat.org')
-        self.dblockfd = self.dblock.fileno()
-        self.p.register( self.dblockfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
 
     def reset( self):
         succeeded = False
@@ -470,8 +445,7 @@ class PxMarServer:
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
                     print >> sys.stderr, "grabbing marlock"
                     try:
-                        self.dblock.query( "begin")
-                        self.dblock.query( "select px.lock_detector()")
+                        self.db.query( "px.lock_detector()")
                     except:
                         self.haveLock = False
                     else:
@@ -480,14 +454,14 @@ class PxMarServer:
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
                     print >> sys.stderr, "giving up marlock"
-                    self.dblock.query( "commit")    # give up mar lock
+                    self.db.query( "px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
                     # this is the exposure, command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
                     print >> sys.stderr, "trying to get md2lock..."
-                    self.dblock.query( "select px.lock_diffractometer()")
+                    self.db.query( "select px.lock_diffractometer()")
 
                     #
                     # allow sending the next command in the queue (should be the readout)
@@ -530,10 +504,6 @@ class PxMarServer:
                 # queue it
                 self.pushCmd( cmd)
 
-    def dbLockServiceIn( self, event):
-        while self.dblock.getnotify() != None:
-            pass
-
     def __init__( self):
         self.fdin = int(os.getenv( "IN_FD"))
         self.fdout = int(os.getenv("OUT_FD"))
@@ -553,7 +523,6 @@ class PxMarServer:
             self.fdin      : self.serviceIn,
             self.fdout     : self.serviceOut,
             self.dbfd      : self.dbServiceIn,
-            self.dblockfd  : self.dbLockServiceIn
             }
 
     def run( self):
