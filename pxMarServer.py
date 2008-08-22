@@ -403,9 +403,9 @@ class PxMarServer:
                         print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
 
                             
-                        #
-                        # finally, write the command to marccd
-                        os.write( self.fdout, cmd + "\n")
+                    #
+                    # finally, write the command to marccd
+                    os.write( self.fdout, cmd + "\n")
 
     def abort( self):
         self.queue=[]
