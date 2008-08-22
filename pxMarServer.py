@@ -111,6 +111,10 @@ class PxMarServer:
                 # find the backup home directory
                 qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets left join px.shots on dspid=sdspid where skey='%s'" % (shotKey)
                 qr = self.query( qs)
+                rd = qr.dictresult()
+                if len( rd) == 0:
+                    print >> sys.stderr, "Shot no longer exists, abandoning it"
+                    return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
                 if len(bp) > 0:
@@ -220,10 +224,10 @@ class PxMarServer:
             print >> sys.stderr, '-'*60
 
             self.reset()
+            rtn = self.db.query( qs)
+
         return rtn
             
-        return self.db.query( qs)
-
     def waitdist( self):
         print >> sys.stderr, "Enter waitdist"
         qr = self.query( "select px.isthere( 'distance') as isthere" )
@@ -248,6 +252,9 @@ class PxMarServer:
 
     def checkdir( self, token):
         qr = self.query( "select dskey, dsdir from px.datasets where dspid='"+token+"'")
+        rd = qr.dictresult()
+        if len(rd) == 0:
+            return
         r = qr.dictresult()[0]
         theDir = r["dsdir"]
         theKey = r["dskey"]
@@ -362,37 +369,43 @@ class PxMarServer:
 
                         print >> sys.stderr, "Header Info:", r
 
-                        #
-                        # Try to create directory
-                        # This should already have happened: could probably do away with this block
-                        try:
-                            os.makedirs( r["dsdir"])
-                        except OSError, (errno, strerror):
-                            if errno != 17:
-                                print "Error creating directory: %s" % (strerror)
-                        
-                        #
-                        # Wait for the detector movement
-                        # Currently the detector is moved by the MD2 code.  Change this to movedist(r["sdist"]) if the detector control moves here
-                        self.waitdist()
+                        if r["dsdir"] != None and r["sfn"] != None:
+                            try:
+                                os.makedirs( r["dsdir"])
+                            except OSError, (errno, strerror):
+                                if errno != 17:
+                                    print "Error creating directory: %s" % (strerror)
 
-                        self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                        hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                            r["sdist"], r["sexpt"],r["sstart"],r["saxis"],r["swidth"],r["thelambda"]
-                            )
-                        print >> sys.stderr, hs
-                        self.queue.insert( 0, hs)
+                            #
+                            # Wait for the detector movement
+                            # Currently the detector is moved by the MD2 code.  Change this to movedist(r["sdist"]) if the detector control moves here
+                            self.waitdist()
+                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                                r["sdist"], r["sexpt"],r["sstart"],r["saxis"],r["swidth"],r["thelambda"]
+                                )
+                            print >> sys.stderr, hs
+                            self.queue.insert( 0, hs)
+
+                            self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
+
+                        else:
+                            # the shot was not found: send the data to the bit bucket but go through the motions of collecting
+                            r["dsdir"] = "/dev"
+                            r["sfn"]   = "null"
+                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                            print >> sys.stderr, "Request for a non-existant frame: data sent to /dev/null"
+
 
                         cmd = "start"
                         self.collectingFlag = True
                         self.flushStatus    = True
                         print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
 
-                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
-
-                    #
-                    # finally, write the command to marccd
-                    os.write( self.fdout, cmd + "\n")
+                            
+                        #
+                        # finally, write the command to marccd
+                        os.write( self.fdout, cmd + "\n")
 
     def abort( self):
         self.queue=[]
