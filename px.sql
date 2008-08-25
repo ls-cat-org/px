@@ -2,8 +2,8 @@
 -- Support for px data collection
 --
 --
-DROP SCHEMA px CASCADE;
-CREATE SCHEMA px;
+--DROP SCHEMA px CASCADE;
+--CREATE SCHEMA px;
 GRANT USAGE ON SCHEMA px TO PUBLIC;
 
 DROP SCHEMA pxlocks CASCADE;
@@ -293,6 +293,9 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
                     from px.shots
                     left join px.datasets on sdspid=dspid
                     where skey=k;
+    IF NOT FOUND THEN
+      return NULL;
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -306,7 +309,7 @@ CREATE TABLE px.stations (
 --
 	stnkey       serial primary key,	-- table key
 	stnname      text not null unique,	-- station name
-	stnshortname text not null unique,	-- short name used to create leagle variable names
+	stnshortname text not null unique,	-- short name used to create legal variable names
 	stndataroot  text not null,		-- default root data directory
 	stnid        int references px.holderpositions (hpid)
 );
@@ -347,7 +350,9 @@ CREATE TABLE px._config (
 	cnotifypause	 text   not null,
 	cnotifymessage   text   not null,
 	cnotifywarning   text   not null,
-        cnotifyerror     text   not null
+        cnotifyerror     text   not null,
+        cnotifyxfer      text   not null,
+        cnotifyrobot     text   not null
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -372,8 +377,8 @@ CREATE OR REPLACE FUNCTION px.getstation( theip inet) RETURNS int AS $$
 --
 -- Returns the station key given an ip address
 --
-  SELECT  stnkey FROM px.stations left join px._config on stnname=cstation where $1=cdetector or $1=cdiffractometer;
-$$ LANGUAGE sql SECURITY DEFINER;
+  SELECT  stnkey FROM px.stations left join px._config on stnname=cstation where $1=cdetector or $1=cdiffractometer or $1=crobot
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
 ALTER FUNCTION px.getstation( inet) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getstation() RETURNS int AS $$
@@ -420,6 +425,19 @@ CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.dropDiffractometerOn() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 1) INTO rtn;
+    IF rtn THEN
+      PERFORM pg_advisory_unlock( px.getstation(), 1);
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
 --
 -- Used by the MD2 seqRun support code to setup notifies for the correct station
@@ -430,16 +448,21 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
     notifysnap  text;	-- notify name for snap
     notifykill  text;	-- notify name for kill
     notifypause text;	-- notify name for pause
+    notifyxfer  text;	-- notify name for xfer
     rtn         text;   -- prefix for all the notify names: SEE KLUDGE ABOVE
   BEGIN
     PERFORM px.demandDiffractometerOn();
     rtn := NULL;
-    SELECT INTO rtn, notifykill, notifysnap, notifyrun, notifypause split_part(cnotifykill,'_',1),cnotifykill, cnotifysnap, cnotifyrun, cnotifypause FROM px._config WHERE px.getstation( cstation)=px.getstation();
+    SELECT  split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer
+       INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer
+       FROM px._config WHERE px.getstation( cstation)=px.getstation();
+
     IF FOUND THEN
       EXECUTE 'LISTEN ' || notifykill;
       EXECUTE 'LISTEN ' || notifysnap;
       EXECUTE 'LISTEN ' || notifyrun;
       EXECUTE 'LISTEN ' || notifypause;
+      EXECUTE 'LISTEN ' || notifyxfer;
     END IF;
     return rtn;
   END;
@@ -468,6 +491,36 @@ CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS int AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector_nowait() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_detector_test() RETURNS int AS $$
+-- test to see if the detector is integrating (1 means no but we are running)
+  DECLARE
+    tmp boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 3) INTO tmp;
+    IF tmp THEN
+      PERFORM pg_advisory_unlock( px.getstation(), 3);
+      return 1;
+    END IF;
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_detector_test() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_detector_test( stn int) RETURNS int AS $$
+-- test to see if the detector is integrating (1 means no but we are running)
+  DECLARE
+    tmp boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( stn, 3) into tmp;
+    IF tmp THEN
+      PERFORM pg_advisory_unlock( stn, 3);
+      return 1;
+    END IF;
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_detector_test( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
 -- indicate the start of integration
@@ -499,6 +552,36 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS int AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_diffractometer_nowait() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_diffractometer_test() RETURNS int AS $$
+-- test to see if the MD2 is ready to start exposing
+  DECLARE
+    tmp boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 4) INTO tmp;
+    IF tmp THEN
+      PERFORM pg_advisory_unlock( px.getstation(), 4);
+      return 1;
+    END IF;
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_diffractometer_test() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_diffractometer_test( stn int) RETURNS int AS $$
+-- test to see if the MD2 is ready to start exposing
+  DECLARE
+    tmp boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( stn, 4) INTO tmp;
+    IF tmp THEN
+      PERFORM pg_advisory_unlock( stn, 4);
+      return 1;
+    END IF;
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_diffractometer_test( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
   -- grabs the diffractometer lock indicating ready to start exposure
@@ -643,9 +726,12 @@ CREATE TABLE px.datasets (
 	dsdist     numeric DEFAULT NULL,			-- set distance (NULL means don't touch)
 	dsnrg      numeric DEFAULT NULL,			-- set energy (NULL means don't touch)
         dscomment  text DEFAULT NULL,				-- comment
-        dsposition int default 0 references px.holderpositions (hpid)	-- holder position for new shots
+	dsparent   text DEFAULT NULL references px.datasets (dspid),
+        dspositions int[] default '{0}'				-- references px.holderpositions (hpid)	-- holder positions for new shots (should be a reference)
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
+CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets_dskey_seq TO PUBLIC;
 
@@ -676,6 +762,26 @@ CREATE OR REPLACE FUNCTION px.next_prefix( prefix text) RETURNS text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.next_prefix( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text AS $$
+  DECLARE
+    rtn   text;
+    stn   int;
+    dwr   int;
+    cyl   int;
+    smp   int;
+  BEGIN
+    stn := (sample & x'ff000000'::int) >> 24;
+    dwr := ((sample & x'00ff0000'::int) >> 16) - 2;		-- the "lids" are dewars 3,4,5 but the user knows them as 1,2,3
+    cyl := (((sample & x'0000ff00'::int) >>  8)-1) % 3 + 1;	-- This converts the puck number stored in the ID into something the user _might_ understand
+    smp := (sample & x'000000ff'::int);
+
+    rtn := prefix || '_' || dwr || '_' || cyl || '_' || trim(to_char(smp,'00'));
+    return rtn;    
+
+  END
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.next_prefix( text, int) OWNER TO lsadmin;
 
 
 
@@ -807,6 +913,43 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix te
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text AS $$
+  DECLARE
+    tmp text;		-- used to see if the directory needs checking
+    p  record;		-- parent datasets
+    rtn text;		-- new token
+  BEGIN
+    SELECT dspid INTO rtn FROM px.datasets WHERE dsparent=token and dspositions=array[sample];
+    IF FOUND THEN
+      --
+      -- Change everything to match the parent except dsfn, dspid, and dspositions
+      SELECT * INTO p FROM px.datasets WHERE dspid=token;
+      UPDATE px.datasets SET
+        dsesaf = p.dsesaf, dsdir = p.dsdir, dsdirs = p.dsdirs, dsstn = p.dsstn, dsoscaxis = p.dsoscaxis,
+        dsowidth = p.dsowidth, dsnoscs = p.dsnoscs, dsoscsense = p.dsoscsense, dsnwedge = p.dsnwedge,
+        dsend = p.dsend, dsexp = p.dsexp, dsexpunit = p.dsexpunit, dsphi = p.dsphi, dsomega = p.dsomega,
+        dskappa = p.dskappa, dsdist = p.dsdist, dsnrg = p.dsnrg, dscomment = p.dscomment
+        WHERE dspid = rtn;
+      
+    ELSE
+      SELECT md5( nextval( 'px.datasets_dskey_seq')+random()) INTO rtn;
+      EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+      EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp,'||sample||'), dsstn=px.getstation(), dsparent='''||token||''', dspositions=''{'||sample||'}''';
+      EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
+      EXECUTE 'DROP TABLE "' || rtn || '"';
+    END IF;
+
+    SELECT dsdirs INTO tmp FROM px.datasets WHERE dspid = rtn;
+    IF tmp != 'Valid' THEN
+      PERFORM px.chkdir( rtn);
+    END IF;
+    PERFORM px.mkshots( rtn);
+
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.spawndataset( text, int) OWNER TO lsadmin;
+
 --
 -- getdataset returns one row for a given dataset
 --
@@ -858,17 +1001,35 @@ ALTER FUNCTION px.ds_get_esaf( text) OWNER TO lsadmin;
 --
 -- Sample
 CREATE OR REPLACE FUNCTION px.ds_set_sample( token text, arg2 int) RETURNS void AS $$
-  BEGIN UPDATE px.datasets set dsposition=arg2 WHERE dspid=token; END;
+  BEGIN
+    UPDATE px.datasets set dspositions[1]=arg2 WHERE dspid=token;
+    PERFORM px.mkshots( token);
+  END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ds_set_sample( text, int) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.ds_get_sample( token text) RETURNS int as $$
-  SELECT dsposition from px.datasets WHERE dspid=$1;
-$$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_sample( text) OWNER TO lsadmin;
+CREATE OR REPLACE FUNCTION px.ds_set_samples( token text, arg2 int[]) RETURNS void AS $$
+  BEGIN
+    UPDATE px.datasets set dspositions=arg2 WHERE dspid=token;
+    PERFORM px.mkshots( token);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_samples( text, int[]) OWNER TO lsadmin;
 
-
-
+CREATE OR REPLACE FUNCTION px.ds_get_samples( token text) RETURNS setof int as $$
+  DECLARE
+    samples int[];  
+  BEGIN
+    SELECT dspositions INTO samples FROM px.datasets WHERE dspid = token;
+    IF FOUND THEN
+      FOR i IN array_lower( samples, 1) .. array_upper( samples, 1) LOOP
+        return next samples[i];
+      END LOOP;
+    END IF;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_get_samples( text) OWNER TO lsadmin;
 
 --
 -- WHO
@@ -1309,6 +1470,8 @@ CREATE TABLE px.shots (
 	UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
+CREATE INDEX shotsTsIndex ON px.shots (sts);
+CREATE INDEX shotsTsIndex ON px.shots (sfn);
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
 
@@ -1471,7 +1634,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
-      PERFORM px._md2pushqueue( 'collect');
+      PERFORM px.md2pushqueue( 'collect');
     END IF;
 --    IF typ = 'snap' THEN
 --      PERFORM px.startrun();
@@ -1491,7 +1654,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
-      PERFORM px._md2pushqueue( 'collect');
+      PERFORM px.md2pushqueue( 'collect');
     END IF;
 --    IF typ = 'snap' THEN
 --      PERFORM px.startrun();
@@ -1520,7 +1683,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
       pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken'
     );
     PERFORM px.pushrunqueue( pid, 'snap');
-    PERFORM px._md2pushqueue( 'collect');
+    PERFORM px.md2pushqueue( 'collect');
 --    PERFORM px.startrun();
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1561,7 +1724,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mkorthoindexsnap( text, numeric, numeric, int) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
+CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
   DECLARE
     nframes int;		-- number of frames (1/2 # frames if wedges)
     newend  numeric;		-- caluculated end point
@@ -1577,115 +1740,144 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS text as $$
     oldcnt  int;		-- count of old frames in this dataset
     ds      record;		-- dataset definition
     fmt     text;               -- format string for frame numbers
+    sample  int;		-- current sample number
+    kidtok  text;		-- dspid of children: used to find and kill orphans
+    kidsample int;		-- dsposition[1] of children: used to find and kill orphans
 
   BEGIN
+
     SELECT INTO ds * from px.datasets where dspid=token;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'token % not found', token;
     END IF;
 
-    --
-    -- get file prefix
-    --
-    fp := ds.dsfp;
-
-    --
-    -- Delete untaken frames
-    PERFORM 1 FROM px.nextshot() WHERE dspid=token;
-    IF FOUND THEN
-      DELETE FROM px.shots WHERE sstate = 'NotTaken' and sdspid=token;
+    IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
+        -- Here we have more than one sample.   Make shots for each but not for this one
+	-- Remove parent shots if they have not been taken
+	FOR kidtok, kidsample IN SELECT dspid,dspositions[1] FROM px.datasets WHERE dsparent = token LOOP
+	  -- Delete children that are no longer in the parent's list of children
+          IF not (kidsample = any( ds.dspositions)) THEN
+	    -- Only delete shots that are not taken
+	    DELETE FROM px.shots WHERE sdspid=kidtok and sstate != 'Done';
+	    PERFORM 1 FROM px.shots WHERE sdspid=kidtok;
+	    IF NOT FOUND THEN
+              -- If no shots were taken then also delete the dataset
+	      DELETE FROM px.datasets WHERE dspid = kidtok;
+            END IF;
+          END IF;
+        END LOOP;
+	DELETE FROM px.shots WHERE sdspid=token and sstate != 'Done';
+        FOR i IN array_lower( ds.dspositions, 1) .. array_upper( ds.dspositions, 1) LOOP
+    	  sample := ds.dspositions[i];
+	  PERFORM px.spawndataset( token, sample);
+	END LOOP;
     ELSE
-      DELETE FROM px.shots WHERE sstate != 'Done' and sdspid=token;
-    END IF;
+      -- Here we have only one sample.  Just make the shots.
+      sample := ds.dspositions[1];
 
-    --
-    -- calculate delta and number of frames
-    --
-    delta := ds.dsdelta;
-    IF ds.dsend = ds.dsstart+ds.dsowidth THEN
-      delta = ds.dsowidth;
-      nframes = 1;
-    ELSE
-      IF delta=0 THEN
-        delta := ds.dsowidth;
+      --
+      -- get file prefix
+      --
+      fp := ds.dsfp;
+    
+      --
+      -- Delete untaken frames
+      PERFORM 1 FROM px.nextshot() WHERE dspid=token;
+      IF FOUND THEN
+        DELETE FROM px.shots WHERE sstate = 'NotTaken' and sdspid=token;
+      ELSE
+        DELETE FROM px.shots WHERE sstate != 'Done' and sdspid=token;
       END IF;
-      IF delta = 0 THEN
-        RAISE EXCEPTION 'delta not given and cannot be calculated';
-      END IF;
-      nframes := CAST((ds.dsend-ds.dsstart)/delta AS int);
-    END IF;
-
-    UPDATE px.datasets set dsend=ds.dsstart+delta*nframes WHERE dspid=token;
-    SELECT INTO ds.dsend dsend FROM px.datasets WHERE dspid=token;
-
-    --
-    -- set the format for the frame numbers
-    -- not general but it is unlikely we'll need to worry about 10,000 or more for a while
-    fmt := '099';
-    if nframes > 999 THEN
-      fmt := '0999';
-    END IF;
-
-    IF ds.dsnwedge = 0 THEN
-      FOR i IN 1..nframes LOOP
-        PERFORM skey FROM px.shots WHERE sdspid=token and sindex=i and stype='normal';
-        IF NOT FOUND THEN
-          fn := fp || '.' || trim(to_char(i, fmt));
-          angle := ds.dsstart + (i-1) * delta;
-	  INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
-            token,	-- sdspid
-            'normal',	-- stype
-            fn,		-- sfn
-            angle,	-- sstart
-            i,		-- sindex
-            'NotTaken',	-- sstate
-            ds.dsposition -- the sample
-        );
+    
+      --
+      -- calculate delta and number of frames
+      --
+      delta := ds.dsdelta;
+      IF ds.dsend = ds.dsstart+ds.dsowidth THEN
+        delta = ds.dsowidth;
+        nframes = 1;
+      ELSE
+        IF delta=0 THEN
+          delta := ds.dsowidth;
         END IF;
-      END LOOP;
-    ELSE
-      wnn := 0;
-      n   := 0;
-      an  := 0;
-      WHILE n < 2*nframes LOOP
-        FOR i IN 1..ds.dsnwedge LOOP
-          PERFORM skey FROM px.shots WHERE sdspid=token and sindex=n+i and stype='normal';
+        IF delta = 0 THEN
+          RAISE EXCEPTION 'delta not given and cannot be calculated';
+        END IF;
+        nframes := CAST((ds.dsend-ds.dsstart)/delta AS int);
+      END IF;
+    
+      UPDATE px.datasets set dsend=ds.dsstart+delta*nframes WHERE dspid=token;
+      SELECT INTO ds.dsend dsend FROM px.datasets WHERE dspid=token;
+    
+      --
+      -- set the format for the frame numbers
+      -- not general but it is unlikely we'll need to worry about 10,000 or more for a while
+      fmt := '099';
+      if nframes > 999 THEN
+        fmt := '0999';
+      END IF;
+    
+      IF ds.dsnwedge = 0 THEN
+        FOR i IN 1..nframes LOOP
+          PERFORM skey FROM px.shots WHERE sdspid=token and sindex=i and stype='normal';
           IF NOT FOUND THEN
-            fn := fp || '_' || 'A' || '.' || trim( to_char( wnn+i, fmt));
-            angle := ds.dsstart + (an+i-1) * delta;
-            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
-              token,		-- sdspid
-              'normal',		-- stype
-              fn,		-- sfn
-              angle,		-- sstart
-              n+i,		-- sindex
-              'NotTaken',	-- sstate
-              ds.dsposition -- the sample
-            );
+            fn := fp || '.' || trim(to_char(i, fmt));
+            angle := ds.dsstart + (i-1) * delta;
+    	  INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
+              token,        -- sdspid
+              'normal',     -- stype
+              fn,           -- sfn
+              angle,        -- sstart
+              i,            -- sindex
+              'NotTaken',   -- sstate
+              sample        -- the sample
+          );
           END IF;
-	END LOOP;
-        FOR i IN 1..ds.dsnwedge LOOP
-          PERFORM skey FROM px.shots WHERE sdspid=token and sindex=n+ds.dsnwedge+i and stype='normal';
-          IF NOT FOUND THEN
-            fn := fp || '_' || 'B' || '.' || trim( to_char( wnn+i, fmt));
-            angle := ds.dsstart + (an+i-1) * delta + 180;
-            INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
-              token,		-- sdspid
-              'normal',		-- stype
-              fn,		-- sfn
-              angle,		-- sstart
-              n+ds.dsnwedge+i,	-- sindex
-              'NotTaken',	-- sstate
-              ds.dsposition -- the sample
-            );
-          END IF;
-	END LOOP;
-        n   := n   + 2*ds.dsnwedge;
-        an  := an  + ds.dsnwedge;
-        wnn := wnn + ds.dsnwedge;
-      END LOOP;
+        END LOOP;
+      ELSE
+        wnn := 0;
+        n   := 0;
+        an  := 0;
+        WHILE n < 2*nframes LOOP
+          FOR i IN 1..ds.dsnwedge LOOP
+            PERFORM skey FROM px.shots WHERE sdspid=token and sindex=n+i and stype='normal';
+            IF NOT FOUND THEN
+              fn := fp || '_' || 'A' || '.' || trim( to_char( wnn+i, fmt));
+              angle := ds.dsstart + (an+i-1) * delta;
+              INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
+                token,          -- sdspid
+                'normal',       -- stype
+                fn,             -- sfn
+                angle,          -- sstart
+                n+i,            -- sindex
+                'NotTaken',     -- sstate
+                sample          -- the sample
+              );
+            END IF;
+    	END LOOP;
+          FOR i IN 1..ds.dsnwedge LOOP
+            PERFORM skey FROM px.shots WHERE sdspid=token and sindex=n+ds.dsnwedge+i and stype='normal';
+            IF NOT FOUND THEN
+              fn := fp || '_' || 'B' || '.' || trim( to_char( wnn+i, fmt));
+              angle := ds.dsstart + (an+i-1) * delta + 180;
+              INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
+                token,             -- sdspid
+                'normal',          -- stype
+                fn,                -- sfn
+                angle,             -- sstart
+                n+ds.dsnwedge+i,   -- sindex
+                'NotTaken',        -- sstate
+                sample             -- the sample
+              );
+            END IF;
+    	END LOOP;
+          n   := n   + 2*ds.dsnwedge;
+          an  := an  + ds.dsnwedge;
+          wnn := wnn + ds.dsnwedge;
+        END LOOP;
+      END IF;
     END IF;
-    RETURN token;
+    RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mkshots( text) OWNER TO lsadmin;
@@ -1791,9 +1983,9 @@ CREATE TABLE px.runqueue (
     rqCTS timestamp with time zone default now(),	-- creatation time stamp
     rqOrder int not null,			-- order to be taken
     rqToken text not null				-- dataset
-	references px.datasets (dspid),
+	references px.datasets (dspid) on update cascade,
     rqType  text not null				-- type of frame to run
-	references px.stypes (st),
+	references px.stypes (st) on update cascade,
     UNIQUE (rqStn, rqOrder)
 );
 ALTER TABLE px.runqueue OWNER TO lsadmin;
@@ -1815,16 +2007,31 @@ CREATE TRIGGER runqueue_delete_trigger AFTER DELETE ON px.runqueue FOR EACH STAT
 
 CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void AS $$
   DECLARE
+    samples int[];	-- Array of samples in the dataset
+    pid text;		-- dspid from a child
   BEGIN
-    PERFORM dskey FROM px.datasets WHERE dspid=token and dsdirs='Valid';
-    IF FOUND THEN
-      PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
-      IF NOT FOUND THEN
-        INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( px.getstation(), token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=px.getStation()));
-        PERFORM 1 FROM px.pause WHERE pStn=px.getstation() and pps='Not Paused';
-        IF FOUND THEN
-          PERFORM px.startrun();
+    SELECT dspositions INTO samples FROM px.datasets WHERE dspid=token;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'token % not found', token;
+    END IF;
+
+    IF array_lower( samples, 1) != array_upper( samples, 1) THEN
+      FOR pid IN SELECT dspid FROM px.datasets WHERE dsparent=token ORDER BY dspositions[1] LOOP
+        PERFORM px.pushrunqueue( pid, stype);
+      END LOOP;
+    ELSE
+      PERFORM dskey FROM px.datasets WHERE dspid=token and dsdirs='Valid';
+      IF FOUND THEN
+        PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
+        IF NOT FOUND THEN
+          INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( px.getstation(), token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=px.getStation()));
+          PERFORM 1 FROM px.pause WHERE pStn=px.getstation() and pps='Not Paused';
+          IF FOUND THEN
+            PERFORM px.startrun();
+          END IF;
         END IF;
+      ELSE
+        PERFORM px.pusherror( 20001, 'Directory ' || dsdir || ' not proven valid') FROM px.datasets WHERE dsdir=token;
       END IF;
     END IF;
   END;
@@ -2364,7 +2571,7 @@ ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
 CREATE TYPE px.nextActionType AS ( key bigint, action text);
 
 CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
-    -- pause
+    -- noAction
     -- collect
     -- transfer
     -- center
@@ -2373,11 +2580,19 @@ CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
     tmp px._md2queue;    --
   BEGIN
     rtn.key    := 0;
-    rtn.action := 'pause';
+    rtn.action := 'noAction';
     SELECT * INTO tmp FROM px.md2popqueue();
     IF length( tmp.md2cmd)>0 THEN
       rtn.action := tmp.md2Cmd;
       rtn.key    := tmp.md2Key;
+    ELSE
+      IF not px.ispaused() THEN
+        PERFORM 1 FROM px.runqueue WHERE rqstn = px.getstation();
+        IF FOUND THEN
+          rtn.action := 'collect';
+          rtn.key    := 0;
+        END IF;
+      END IF;
     END IF;
     return rtn;
   END;
@@ -2432,22 +2647,62 @@ CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
 
+
+
 CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
   DECLARE
   BEGIN
     INSERT INTO px.nextSamples (nsStn, nsId) VALUES (px.getstation(), theId);
     PERFORM px.md2pushqueue( 'transfer');
-    PERFORM cats.put( theId);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns int AS $$
+  -- returns 1 if transfer is allowed, 0 if unknown sample is already present
+  DECLARE
+    cursam int;	-- the current sample
+  BEGIN
+    SELECT px.getCurrentSampleID() INTO cursam;
+    IF NOT FOUND THEN
+      return 0;
+    END IF;
+
+    IF cursam = 0 and present THEN
+      -- manually mounted sample, 
+      return 0;
+    END IF;
+    IF cursam = 0 THEN
+      PERFORM cats.put( theId);
+    ELSE
+      PERFORM cats.getput( theId);
+    END IF;
+    return 1;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.startTransfer( int, boolean) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.endTransfer() RETURNS void AS $$
+  DECLARE
+    ntfy text;
+  BEGIN
+    SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
+    IF FOUND THEN
+      EXECUTE 'NOTIFY ' || ntfy;
+    END IF;        
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.endTransfer() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
+  DECLARE
   BEGIN
     PERFORM pg_advisory_unlock( px.getstation(), 2);
   END;    
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.dropAirRights()  OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.demandAirRights( ) returns VOID AS $$
   BEGIN
@@ -2455,6 +2710,62 @@ CREATE OR REPLACE FUNCTION px.demandAirRights( ) returns VOID AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.demandAirRights() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.checkAirRights( ) returns boolean AS $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 2) INTO rtn;
+    IF rtn THEN
+      PERFORM pg_advisory_unlock( px.getstation(), 2);
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.checkAirRights() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.requestAirRights( ) returns boolean AS $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 2) INTO rtn;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.requestAirRights() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
+  DECLARE
+    rtn boolean;
+    md2on boolean;
+  BEGIN
+    rtn = False;
+    SELECT not px.checkDiffractometerOn() INTO md2on;
+    IF md2on THEN
+      SELECT px.requestAirRights() INTO rtn;
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.requestRobotAirRights() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
+  DECLARE
+    ntfy text;	-- notify to send
+    smpl int;	-- the mounted sample
+  BEGIN
+    PERFORM px.dropAirRights();
+    SELECT px.getCurrentSampleId() INTO smpl;
+
+    IF smpl != 0 THEN
+      SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
+      EXECUTE 'NOTIFY ' || ntfy;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.dropRobotAirRights() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
@@ -2668,6 +2979,15 @@ INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 4, '
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   5, 'Test Error 1',   'This error is here to test the error handling severity 2');
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   6, 'Test Error 2',   'This alternate error is here to test the error handling severity 2');
 
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 10001, 'Backup file not written: timeout', 'The hard link to the data file was not made due to a timeout');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 10002, 'Backup directory not created', 'A system error occured when attempting to create the backup directory');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 10003, 'Could not create link to data file', 'A backup copy of the data file could not be made');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   10004, 'Could not create data directory', 'An attempt to create the data directory failed, cannot continue');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 10005, 'Shot definition deleted', 'The definition of this shot has been deleted after the image was queued for collection.  Disposing of the data.');
+
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 20001, 'Is marccd running?', 'The requested data directory has not been validated.  Usually this is because marccd is not running');
+
+
 
 CREATE TABLE px.activeErrors (
        eaKey serial primary key,			-- the key
@@ -2729,3 +3049,98 @@ CREATE OR REPLACE FUNCTION px.pushError( theId int, theDetails text) RETURNS VOI
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pushError( int, text) OWNER TO lsadmin;
+
+
+
+CREATE TYPE px.ui_stationType AS ( stnkey bigint, stnname text);
+CREATE OR REPLACE FUNCTION px.ui_stations( esaf int) returns SETOF px.ui_stationType AS $$
+  DECLARE
+    rtn px.ui_stationType;
+  BEGIN
+    FOR rtn IN SELECT DISTINCT dsstn, stnname
+      FROM px.datasets
+      LEFT JOIN px.stations ON stnkey=dsstn
+      WHERE dsesaf=esaf
+      ORDER BY stnname
+      LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ui_stations( int) OWNER TO lsadmin;
+
+CREATE TYPE px.ui_prefixType AS ( fp text, pid text);
+CREATE OR REPLACE FUNCTION px.ui_prefixes( esaf int, station int) returns setof px.ui_prefixType AS $$
+  DECLARE
+    rtn px.ui_prefixType;
+  BEGIN
+    FOR rtn IN SELECT dsfp, dspid
+      FROM px.datasets
+      WHERE dsesaf=esaf and dsstn=station
+      ORDER BY dskey desc
+     LOOP
+     return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ui_prefixes( int, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ui_snapNorms( pid text) returns setof text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    FOR rtn IN SELECT DISTINCT stype
+      FROM px.shots
+      WHERE sdspid=pid and sstate='Done'
+      ORDER BY stype
+    LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ui_snapNorms( text) OWNER TO lsadmin;
+
+CREATE TYPE px.ui_shotType AS ( skey bigint, sfn text);
+CREATE OR REPLACE FUNCTION px.ui_shots( pid text, typ text) returns setof px.ui_shotType AS $$
+  DECLARE
+    rtn px.ui_shotType;
+  BEGIN
+    FOR rtn IN SELECT skey, sfn
+      FROM px.shots
+      WHERE stype=typ and sdspid=pid
+      ORDER BY sindex
+      LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ui_shots( text, text) OWNER TO lsadmin;
+
+CREATE TYPE px.ui_detailType AS ( skey bigint, sfn text, sstart numeric, swidth numeric, sexpt numeric, sexpu text, sphi numeric, somega numeric,
+       skappa numeric, sdist numeric, snrg numeric, scmt text, sstate text, sposition int, sts timestamptz, dsdir text);
+
+
+CREATE OR REPLACE FUNCTION px.ui_details( pid text, snapnorm text, theKey bigint, esaf int) returns setof px.ui_detailType AS $$
+  DECLARE
+    rtn px.ui_detailType;
+  BEGIN
+    FOR rtn IN SELECT 
+          skey, sindex, sfn, coalesce(sstart,0) as sstart, coalesce(swidth,dsowidth,0) as swidth, coalesce(sexpt,dsexp,0) as sexpt,
+          coalesce(sexpu,dsexpunit,'') as sexpu, coalesce(sphi,dsphi,0) as sphi, coalesce(somega,dsomega,0) as somega,
+          coalesce(skappa,dskappa,0) as skappa, coalesce(sdist,dsdist,0) as sdist, coalesce(snrg,dsnrg,0) as snrg, coalesce(scmt,dscomment,'') as scmt,
+          sstate, coalesce(sposition,dspositions[1],0) as sposition, sts, coalesce(dsdir,'') as dsdir
+       FROM px.shots
+       LEFT JOIN px.datasets on dspid=sdspid
+       WHERE sdspid=pid and stype=snapnorm and sstate='Done' and skey=theKey and dsesaf=esaf
+       ORDER BY sindex
+       LOOP
+         return next rtn;
+     END LOOP;
+     return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ui_details( text, text, bigint, int) OWNER TO lsadmin;
