@@ -35,6 +35,11 @@ readMask     = 0x000300
 aquireMask   = 0x000030
 aquiringMask = 0x000020
 busyMask     = 0x000008
+#
+#
+# Errors, warnings, and messages generated here are in the 10000 to 20000 range
+#
+#
 
 class PxMarError( Exception):
     value = None
@@ -79,41 +84,42 @@ class PxMarServer:
             od = hl[0]
             of = hl[1]
             if od == d and of == f:
-                print >> sys.stderr, "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
+                # print >> sys.stderr, "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
                 return
 
-        print >> sys.stderr, "queued link dir=%s and file=%s" %(d, f)
         self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
 
     def hlPop( self):
         cpy = list(self.hlList)
         for hl in cpy:
             d,f,t,shotKey = hl
-
-            print >> sys.stderr,">>>>>>>>>>>>>>>>>>",d,f,t,shotKey
+            
             #
             # Watchout, hardwired timeout
             # delete entry without action if it is over 100 seconds overdue
             #
             if (datetime.datetime.now() - t) > datetime.timedelta(0, 100):
-                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,datetime.timedelta(datetime.datetime.now()-t),(datetime.datetime.now()-t).seconds
+                tmp = datetime.datetime.now() - t
+                qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up." % (tmp.days*24*3600 +tmp.seconds, f);
+                self.db.query( qs);
+                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 try:
                     os.stat( d+"/"+f)
                 except:
                     # the file does not yet exist
-                    print >> sys.stderr, "%s/%s does not yet exist" % (d,f)
+                    # print >> sys.stderr, "%s/%s does not yet exist" % (d,f)
                     return
 
-                print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
+                # print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
                 #
                 # find the backup home directory
                 qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets left join px.shots on dspid=sdspid where skey='%s'" % (shotKey)
                 qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
-                    print >> sys.stderr, "Shot no longer exists, abandoning it"
+                    # print >> sys.stderr, "Shot no longer exists, abandoning it"
                     return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
@@ -129,10 +135,12 @@ class PxMarServer:
                     bfn = bud+'/'+f
 
                     try:
-                        print >> sys.stderr, "making directory %s" % ( bud)
+                        # print >> sys.stderr, "making directory %s" % ( bud)
                         os.makedirs( bud)
                     except OSError, (errno, strerr):
                         if errno != 17:
+                            qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
+                            self.db.query( qs);
                             print >> sys.stderr, "Failed to make backup directory %s" % (bud)
                             self.hlList.pop( self.hlList.index(hl))
                             return
@@ -159,10 +167,12 @@ class PxMarServer:
                             found=False
                         i = i+1
 
-                    print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    # print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     try:
                         os.link( d+'/'+f, bfn)
                     except:
+                        qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
+                        self.db.query( qs);
                         print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     
                     self.hlList.pop( self.hlList.index(hl))
@@ -229,7 +239,6 @@ class PxMarServer:
         return rtn
             
     def waitdist( self):
-        print >> sys.stderr, "Enter waitdist"
         qr = self.query( "select px.isthere( 'distance') as isthere" )
         r = qr.dictresult()[0]
         if r["isthere"] != 't':
@@ -240,10 +249,8 @@ class PxMarServer:
                 r = qr.dictresult()[0]
                 if r["isthere"] == 't':
                     loopFlag=0
-        print >> sys.stderr, "Leave waitdist"
 
     def movedist( self, value):
-        print "movedist to %s" % (value)
         qr = self.query( "select px.isthere( 'distance', %s) as isthere" % (value))
         r = qr.dictresult()[0]
         if r["isthere"] != 't':
@@ -259,7 +266,6 @@ class PxMarServer:
         theDir = r["dsdir"]
         theKey = r["dskey"]
         theDirState = None
-        print "Checking Directory '%s'" % (theDir)
         #
         # Try to create directory
         try:
@@ -275,6 +281,8 @@ class PxMarServer:
             else:
                 #
                 # Probably the directory path includes something we do not have permissions for
+                qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
+                self.db.query( qs);
                 print "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
 
@@ -345,7 +353,6 @@ class PxMarServer:
                 # Get command to send to detector
                 cmd = self.nextCmd()
                 if cmd != None:
-                    print >> sys.stderr, "In serviceOut with cmd=%s" % (cmd)
                     #
                     # Force status read before outputing anynthing else
                     self.waitForStatus = True
@@ -367,13 +374,13 @@ class PxMarServer:
                         qr = self.query( qs)
                         r  = qr.dictresult()[0]
 
-                        print >> sys.stderr, "Header Info:", r
-
                         if r["dsdir"] != None and r["sfn"] != None:
                             try:
                                 os.makedirs( r["dsdir"])
                             except OSError, (errno, strerror):
                                 if errno != 17:
+                                    qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
+                                    self.db.query( qs);
                                     print "Error creating directory: %s" % (strerror)
 
                             #
@@ -394,15 +401,17 @@ class PxMarServer:
                             r["dsdir"] = "/dev"
                             r["sfn"]   = "null"
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                            qs = "select px.pusherror( 10005, '')"
+                            self.db.query( qs);
                             print >> sys.stderr, "Request for a non-existant frame: data sent to /dev/null"
 
 
                         cmd = "start"
                         self.collectingFlag = True
                         self.flushStatus    = True
-                        print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
+                        # print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
 
-                            
+                        
                     #
                     # finally, write the command to marccd
                     os.write( self.fdout, cmd + "\n")
@@ -423,13 +432,13 @@ class PxMarServer:
             #
             # Save command in queue
             self.queue.append( cmd)
-            print >> sys.stderr, "queued %s" % (cmd)
+            # print >> sys.stderr, "queued %s" % (cmd)
 
     def nextCmd( self):
         rtn = None
         if len(self.queue) > 0:
             rtn = self.queue.pop(0)
-            print >> sys.stderr, "dequeued %s" % (rtn)
+            # print >> sys.stderr, "dequeued %s" % (rtn)
         return rtn
 
     def setStatus( self, msg):
@@ -456,20 +465,20 @@ class PxMarServer:
 
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
-                    print >> sys.stderr, "grabbing marlock"
+                    print >> sys.stderr, "Your wish is my command.  Waiting patiently for your instructions."
                     self.db.query( "select px.lock_detector()")
                     self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
-                    print >> sys.stderr, "giving up marlock"
+                    print >> sys.stderr, "Integrating..."
                     self.db.query( "select px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
                     # this is the exposure, command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
-                    print >> sys.stderr, "trying to get md2lock..."
+                    print >> sys.stderr, "Waiting for exposure to end..."
                     self.db.query( "select px.lock_diffractometer()")
 
                     # eventually we'll get the lock, give it up immediately
@@ -484,13 +493,11 @@ class PxMarServer:
                     self.collectingFlag = False
 
     def blockOutput( self):
-        print >> sys.stderr, "blocking output"
         self.p.register( self.fdout, ~select.POLLOUT & self.fdoutFlags)
         self.outputBlocked = True
 
 
     def enableOutput( self):
-        print >> sys.stderr, "enabling output"
         self.p.register( self.fdout, select.POLLOUT | self.fdoutFlags)
         self.outputBlocked = False
 
