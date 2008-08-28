@@ -388,7 +388,7 @@ class PxMarServer:
                             # Currently the detector is moved by the MD2 code.  Change this to movedist(r["sdist"]) if the detector control moves here
                             self.waitdist()
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                                 r["sdist"], r["sexpt"],r["sstart"],r["saxis"],r["swidth"],r["thelambda"]
                                 )
                             print >> sys.stderr, hs
