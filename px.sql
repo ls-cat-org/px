@@ -277,19 +277,22 @@ CREATE OR REPLACE VIEW px.mar ( mkey, mqc, mts, mtu, mtd, mstatus, maquire, mrea
 	   FROM px._mar;
 
 
-CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric);
+CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric, sphi numeric, skappa numeric);
+
 CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $$
   DECLARE
     rtn px.marheadertype;
   BEGIN
-    SELECT INTO rtn coalesce(sdist,'150')::numeric    as sdist,
-                    coalesce(sexpt,'1.0')::numeric    as sexpt,
-                    coalesce(sstart, '0')::numeric  as sstart,
-                    coalesce(saxis, 'omega') as saxis,
-                    coalesce(swidth,'1.0')   as swidth,
-                    coalesce(dsdir, '/data/public') as dsdir,
-                    coalesce(sfn, 'default') as sfn,
-                    px.rt_get_wavelength() as thelambda
+    SELECT INTO rtn coalesce(sdist,  coalesce( dsdist,'150'))::numeric      as sdist,
+                    coalesce(sexpt,  coalesce( dsexp,'1.0'))::numeric       as sexpt,
+                    coalesce(sstart, coalesce( dsstart, '0'))::numeric        as sstart,
+                    coalesce(saxis,  coalesce( dsoscaxis,'omega'))          as saxis,
+                    coalesce(swidth, coalesce( dsowidth, '1.0'))::numeric   as swidth,
+                    coalesce(dsdir, '/data/public')                         as dsdir,
+                    coalesce(sfn, 'default')                                as sfn,
+		    coalesce( sphi, coalesce( dsphi, '0'))::numeric         as sphi,
+		    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa,
+                    px.rt_get_wavelength()                                  as thelambda
                     from px.shots
                     left join px.datasets on sdspid=dspid
                     where skey=k;
@@ -1656,9 +1659,6 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
       PERFORM px.pushrunqueue( token, typ);
       PERFORM px.md2pushqueue( 'collect');
     END IF;
---    IF typ = 'snap' THEN
---      PERFORM px.startrun();
---    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.retakerest( int) OWNER TO lsadmin;
@@ -1684,7 +1684,6 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
     );
     PERFORM px.pushrunqueue( pid, 'snap');
     PERFORM px.md2pushqueue( 'collect');
---    PERFORM px.startrun();
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mksnap( text, numeric) OWNER TO lsadmin;
@@ -2202,7 +2201,8 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) RETURNS boole
   DECLARE
     rtn boolean;
   BEGIN
-    SELECT INTO rtn (minpos=1) and abs(mactpos-value)<=10^(-mprec) FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
+    --    SELECT INTO rtn (minpos=1) and abs(mactpos-value)<=10^(-mprec) FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
+    SELECT epics.isthere( elPV, value) INTO rtn FROM px.epicsLink WHERE elStn=px.getStation() and elName='distance';
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2212,8 +2212,9 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
   BEGIN
-    return true;  -- Kludge to run data collection until epics support is fixed 080121 KB
-    SELECT INTO rtn (minpos=1) and not mweareincontrol FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
+    --    return true;  -- Kludge to run data collection until epics support is fixed 080121 KB
+    --   SELECT INTO rtn (minpos=1) and not mweareincontrol FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
+    SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2232,7 +2233,8 @@ CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
   DECLARE
     rtn text;	-- return value
   BEGIN
-    SELECT INTO rtn to_char( mactpos, '9999.9') FROM epics.motions LEFT JOIN  px.epicsLink ON elPV=mmotorpvname WHERE elStn=px.getstation() and elName='distance';
+    -- SELECT INTO rtn to_char( mactpos, '9999.9') FROM epics.motions LEFT JOIN  px.epicsLink ON elPV=mmotorpvname WHERE elStn=px.getstation() and elName='distance';
+    SELECT INTO rtn to_char( epics.position(elPV)::numeric, '9999.9') FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2251,6 +2253,15 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_set_dist( text) OWNER TO lsadmin;
+
+--CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
+--  DECLARE
+--  BEGIN
+--    PERFORM px.moveit( 'distance', d);
+--    RETURN;
+--  END;
+--$$ LANGUAGE plpgsql SECURITY DEFINER;
+--ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO lsadmin;
 
 
 CREATE TABLE px.distSaves (
@@ -2369,6 +2380,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_wavelength() returns text AS $$
   DECLARE
     rtn text;
   BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=px.getStation() and eluType='epics';
     SELECT INTO rtn to_char(12.3984172/eluValue, '0.99999') FROM px.energyLookUp WHERE eluStn=px.getStation();
     IF NOT FOUND THEN
       rtn := '0.9747';
@@ -2390,6 +2402,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy() returns text AS $$
   DECLARE
     rtn text;
   BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=px.getStation() and eluType='epics';
     SELECT INTO rtn to_char(eluValue, '99.99999') FROM px.energyLookUp WHERE eluStn=px.getStation();
     IF NOT FOUND THEN
       rtn := '12.73';
@@ -2415,9 +2428,15 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
     theIzero   numeric;
     rtn        text;
   BEGIN
-    SELECT INTO theCurrent pvmvaluen FROM epics._pvmonitors WHERE pvmname='S:SRcurrentAI';
-    SELECT INTO theIzero  pvmvaluen FROM epics._pvmonitors LEFT JOIN px.epicsPVMLink ON epvmlPV=pvmname WHERE epvmlStn=px.getstation() and epvmlName='Io';
+    --SELECT INTO theCurrent pvmvaluen FROM epics._pvmonitors WHERE pvmname='S:SRcurrentAI';
+    --SELECT INTO theIzero  pvmvaluen FROM epics._pvmonitors LEFT JOIN px.epicsPVMLink ON epvmlPV=pvmname WHERE epvmlStn=px.getstation() and epvmlName='Io';
 
+    SELECT epics.caget( epvmlname) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=px.getstation() AND epvmlName='Io';
+    IF NOT FOUND THEN
+      theIzero := 1;
+    END IF;
+    
+    theCurrent := epics.caget( 'S:SRcurrentAI');
     IF theCurrent < 10.0 THEN
       rtn := '--';
     ELSE
