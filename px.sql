@@ -2690,6 +2690,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns
 
     IF cursam = 0 and present THEN
       -- manually mounted sample, 
+      PERFORM px.pusherror( 20002, 'A manually mounted sample is already present');
       return 0;
     END IF;
     IF cursam = 0 THEN
@@ -3005,6 +3006,7 @@ INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('fatal',   1000
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 10005, 'Shot definition deleted', 'The definition of this shot has been deleted after the image was queued for collection.  Disposing of the data.');
 
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 20001, 'Is marccd running?', 'The requested data directory has not been validated.  Usually this is because marccd is not running');
+INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 20002, 'Cannot Mount', 'Remove the currently mounted sample by hand and try again');
 
 
 
