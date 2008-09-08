@@ -100,7 +100,7 @@ class PxMarServer:
             #
             if (datetime.datetime.now() - t) > datetime.timedelta(0, 100):
                 tmp = datetime.datetime.now() - t
-                qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up." % (tmp.days*24*3600 +tmp.seconds, f);
+                qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up.')" % (tmp.days*24*3600 +tmp.seconds, f);
                 self.db.query( qs);
                 print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
@@ -388,8 +388,8 @@ class PxMarServer:
                             # Currently the detector is moved by the MD2 code.  Change this to movedist(r["sdist"]) if the detector control moves here
                             self.waitdist()
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,phi_start=%s,phi=%s,file_comments='kappa=%s',rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                                r["sdist"], r["sexpt"],r["sstart"],r["sphi"],r["skappa"],r["saxis"],r["swidth"],r["thelambda"]
+                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                                r["sdist"], r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                                 )
                             print >> sys.stderr, hs
                             self.queue.insert( 0, hs)
