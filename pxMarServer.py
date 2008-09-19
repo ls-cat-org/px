@@ -392,6 +392,7 @@ class PxMarServer:
                                 r["sdist"], r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                                 )
                             print >> sys.stderr, hs
+                            print >> sys.stderr, r["thelambda"]
                             self.queue.insert( 0, hs)
 
                             self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
