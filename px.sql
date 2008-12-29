@@ -290,9 +290,9 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
                     coalesce(swidth, coalesce( dsowidth, '1.0'))::numeric   as swidth,
                     coalesce(dsdir, '/data/public')                         as dsdir,
                     coalesce(sfn, 'default')                                as sfn,
+                    px.rt_get_wavelength()::numeric                         as thelambda,
 		    coalesce( sphi, coalesce( dsphi, '0'))::numeric         as sphi,
-		    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa,
-                    px.rt_get_wavelength()                                  as thelambda
+		    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa
                     from px.shots
                     left join px.datasets on sdspid=dspid
                     where skey=k;
@@ -338,7 +338,8 @@ CREATE TABLE px._config (
 	ckey             serial primary key,		-- table key
 	cdetector        inet   not null,		-- ip address of the detector computer
 	cdiffractometer  inet   not null,		-- ip address of the diffractometer
-	crobot           inet   not null,		-- ip address of the robot process
+	crobot           inet   not null,		-- ip address of the robot control process (our python script)
+	ccats		 inet   not null,		-- ip address of the CATS robot (the Stuabli controller)
 	cstation         text				-- station where detector and diffractometer live
 		references px.stations (stnname),
         cstnkey          bigint
@@ -398,6 +399,10 @@ CREATE OR REPLACE FUNCTION px.getstation( thestn text) RETURNS int AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getstation( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
+  SELECT host(ccats) FROM px._config WHERE cstnkey = px.getStation();
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getcatsaddr()	OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
@@ -1676,14 +1681,32 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
   DECLARE
     nexti int;  -- next value of the index
     fp text;	-- file prefix
+    ds record;  -- our dataset
+    sample int; -- current sample number
+    kidtok text; -- dspid of children
+
   BEGIN
-    SELECT INTO fp dsfp from px.datasets where dspid=pid;
-    SELECT INTO nexti coalesce(max(sindex)+1,1) from px.shots where sdspid=pid and stype='snap';
-    INSERT INTO px.shots (sdspid, stype, sindex, sfn, sstart, sstate) VALUES (
-      pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken'
-    );
-    PERFORM px.pushrunqueue( pid, 'snap');
-    PERFORM px.md2pushqueue( 'collect');
+    SELECT * INTO ds FROM px.datasets WHERE dspid=pid;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'token % not found', pid;
+    END IF;
+
+    IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
+      -- Here we have multiple samples.  Make snaps but not for this one
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid LOOP
+        PERFORM px.mksnap( kidtok, initialpos);
+      END LOOP;
+    ELSE
+      -- Here we just have one sample, use old code
+      -- Need to add sposition <-----
+      SELECT dsfp, coalesce( dspositions[1], 0) INTO fp, sample FROM px.datasets WHERE dspid=pid;
+      SELECT coalesce(max(sindex)+1,1) INTO nexti FROM px.shots WHERE sdspid=pid and stype='snap';
+      INSERT INTO px.shots (sdspid, stype, sindex, sfn, sstart, sstate, sposition) VALUES (
+        pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken', sample
+      );
+      PERFORM px.pushrunqueue( pid, 'snap');
+      PERFORM px.md2pushqueue( 'collect');
+    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mksnap( text, numeric) OWNER TO lsadmin;
@@ -2101,7 +2124,7 @@ ALTER FUNCTION px.runqueue_get() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   DECLARE
     ordr int;	-- the order of the item we are removing
-  BEGIN
+ BEGIN
     SELECT INTO ordr rqOrder FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
     DELETE FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
     UPDATE px.runqueue SET rqOrder=rqOrder-1 WHERE rqOrder > ordr;
@@ -2212,13 +2235,24 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
   BEGIN
-    --    return true;  -- Kludge to run data collection until epics support is fixed 080121 KB
+    -- return true;  -- Kludge to run data collection until epics support is fixed 080121 KB
     --   SELECT INTO rtn (minpos=1) and not mweareincontrol FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
     SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isthere( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    rtn = NULL;
+      SELECT epics.isstopped( elPV) INTO rtn FROM px.epicsLink WHERE elName=motion and elStn=px.getStation();
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS VOID AS $$
   DECLARE
@@ -2448,6 +2482,33 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_ni0() OWNER TO lsadmin;
 
 
+CREATE TYPE px.locationType AS ( x numeric, y numeric, z numeric);
+
+CREATE OR REPLACE FUNCTION px.rt_get_magnetPosition() returns px.locationType AS $$
+  DECLARE
+    rtn px.LocationType;
+    x1 numeric;
+    x2 numeric;
+    y1 numeric;
+    y2 numeric;
+    y3 numeric;
+  BEGIN
+    SELECT epics.caget( epvmlpv) INTO x1 FROM px.epicsPVMLink WHERE epvmlStn=px.getStation() AND epvmlName='TableX1';
+    SELECT epics.caget( epvmlpv) INTO x2 FROM px.epicsPVMLink WHERE epvmlStn=px.getStation() AND epvmlName='TableX2';
+    SELECT epics.caget( epvmlpv) INTO y1 FROM px.epicsPVMLink WHERE epvmlStn=px.getStation() AND epvmlName='TableY1';
+    SELECT epics.caget( epvmlpv) INTO y2 FROM px.epicsPVMLink WHERE epvmlStn=px.getStation() AND epvmlName='TableY2';
+    SELECT epics.caget( epvmlpv) INTO y3 FROM px.epicsPVMLink WHERE epvmlStn=px.getStation() AND epvmlName='TableY3';
+
+    rtn.x = x2;
+    rtn.y = (y2 + y3) / 2.0;
+    rtn.z = (y1 - rtn.y) * 650.0 / 1100.0;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_magnetPosition() OWNER TO lsadmin;
+
+
+
 CREATE OR REPLACE FUNCTION px.rt_get_blstatus() returns text AS $$
 --
 -- Beamline status
@@ -2494,6 +2555,7 @@ CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
     rtn text;	-- our return value
     hn  text;   -- name from holder
   BEGIN
+    rtn := NULL;
     --
     -- Get the name of the holder position
     --
@@ -2678,7 +2740,37 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns int AS $$
+CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, estTime numeric) returns int AS $$
+  DECLARE
+    mp px.locationtype;		-- current table
+    tp record;			-- saved position
+    rtn int;
+    xx numeric;
+    yy numeric;
+    zz numeric;
+  BEGIN
+    --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
+    SELECT * FROM px.rt_get_magnetPosition() INTO mp;		-- magnet position relative to table
+    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=px.getStation() ORDER BY tpKey DESC LIMIT 1;	-- magnet position relative to MD2
+    -- CATS uses a righthanded coordinate system with x into the beam and z up
+    -- MD2 uses a righthanded coordinate system with x downstream and z up
+    -- LS-CAT uses a righthanded coordinate system with y up and z downstream
+    -- Here we compute the CATS coordinate corrections.  Here x, y, z is in the CATS system
+
+    xx := round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
+    yy := round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
+    zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
+
+    --    raise exception 'startTransfer: theId=%, xx=%, yy=%, zz=%', to_hex(theId), xx::int, yy::int, zz::int;
+
+    SELECT  px.startTransfer( theId, present, xx::int, yy::int, zz::int) into rtn;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.startTransfer( int, boolean, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
     cursam int;	-- the current sample
@@ -2694,14 +2786,30 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns
       return 0;
     END IF;
     IF cursam = 0 THEN
-      PERFORM cats.put( theId);
+      PERFORM cats.put( theId, xx, yy, zz);
     ELSE
-      PERFORM cats.getput( theId);
+      IF theId = 0 THEN
+        PERFORM cats.get( xx, yy, zz);
+      ELSE
+        IF theId = cursam THEN
+          PERFORM cats.get(xx, yy, zz);
+          PERFORM cats.put( theId, xx, yy, zz);
+        ELSE
+          PERFORM cats.getput( theId, xx, yy, zz);
+        END IF;
+      END IF;
     END IF;
     return 1;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.startTransfer( int, boolean, int, int, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns int AS $$
+  SELECT px.startTransfer( $1, $2, 0, 0, 0);
+$$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.startTransfer( int, boolean) OWNER TO lsadmin;
+
+
 
 CREATE OR REPLACE FUNCTION px.endTransfer() RETURNS void AS $$
   DECLARE
@@ -2760,11 +2868,22 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
   DECLARE
     rtn boolean;
     md2on boolean;
+    curDist numeric;
+    stopped boolean;
   BEGIN
     rtn = False;
     SELECT not px.checkDiffractometerOn() INTO md2on;
     IF md2on THEN
-      SELECT px.requestAirRights() INTO rtn;
+      SELECT px.rt_get_dist() INTO curDist;
+      SELECT px.isstopped('distance') INTO stopped;
+      IF curDist < 400 THEN
+        rtn := False;
+        IF stopped THEN
+          PERFORM px.rt_set_dist( 500);
+        END IF;
+      ELSE
+        SELECT px.requestAirRights() INTO rtn;
+      END IF;
     END IF;
     RETURN rtn;
   END;
@@ -2775,9 +2894,14 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
   DECLARE
     ntfy text;	-- notify to send
     smpl int;	-- the mounted sample
+    dist numeric; -- next sample distance
   BEGIN
     PERFORM px.dropAirRights();
     SELECT px.getCurrentSampleId() INTO smpl;
+    SELECT dsdist INTO dist FROM px.nextShot();
+    IF FOUND THEN
+      PERFORM px.rt_set_dist( dist);
+    END IF;
 
     IF smpl != 0 THEN
       SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
@@ -2811,6 +2935,26 @@ CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentSampleID() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.currentSampleDPS() returns text AS $$
+  DECLARE
+    rtn text;
+    curs int;
+    d int;
+    p int;
+    s int;
+  BEGIN
+    rtn := '';
+    SELECT px.getCurrentSampleID() INTO curs;
+    IF curs != 0 THEN
+      d := ((curs & x'00ff0000'::int) >> 16) - 2;
+      p := (((curs & x'0000ff00'::int) >> 8) - 1) % 3 + 1;
+      s := (curs & x'000000ff'::int);
+      rtn := 'D' || d || ' P' || p || ' S' || s;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE PLPGSQL SECURITY DEFINER;
+ALTER FUNCTION px.currentSampleDPS() OWNER TO lsadmin;
  
 CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
   DECLARE
@@ -2825,6 +2969,7 @@ CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
                  FROM px.holderpositions
                  LEFT JOIN px.holderhistory ON hhPosition=hpid
                  WHERE hpid>theId and hpid<theid+res and hpidres = res>>8 and hhState != 'Inactive' and hpIndex>0
+                 ORDER BY hpid
                  LOOP
       return next rtn;
     END LOOP;
@@ -2912,7 +3057,107 @@ CREATE TABLE px.holderHistory (
 );
 ALTER TABLE px.holderHistory OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.holderHistoryInsertTF() returns trigger as $$
+  DECLARE
+  BEGIN
+    IF NEW.hhPosition is not null THEN
+      NEW.hhState := 'Present';
+      UPDATE px.holderHistory SET hhState='Inactive' WHERE hhPosition=NEW.hhPosition;
+    END IF;
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.holderHistoryInsertTF() OWNER TO lsadmin;
+CREATE TRIGGER hh_insert_trigger BEFORE INSERT ON px.holderhistory FOR EACH ROW EXECUTE PROCEDURE px.holderHistoryInsertTF();
+
+CREATE OR REPLACE FUNCTION px.holderHistoryUpdateTF() returns trigger as $$
+  DECLARE
+    cld int;  -- child of this holder
+
+  BEGIN
+    IF NEW.hhPosition is not null THEN
+      IF NEW.hhState != 'Present' AND OLD.hhState = 'Present' THEN
+        FOR cld IN SELECT getcontents FROM px.getContents( NEW.hhPosition) LOOP
+          UPDATE px.holderHistory SET hhState=NEW.hhState WHERE hhState='Present' and hhPosition = cld;
+        END LOOP;
+      END IF;
+    END IF;
+    RETURN NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.holderHistoryUpdateTF() OWNER TO lsadmin;
+CREATE TRIGGER hh_update_trigger AFTER UPDATE ON px.holderhistory FOR EACH ROW EXECUTE PROCEDURE px.HolderHistoryUpdateTF();
+
        
+CREATE OR REPLACE FUNCTION px.possibleChildren( expId int, theId int) returns setof text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    IF (theId & x'0000ff00'::int) != 0 THEN
+      -- id is a cylinder, return possible sample names
+      FOR rtn IN SELECT matname FROM esaf.materials WHERE matexpid=expId ORDER BY matName LOOP
+        return next rtn;
+      END LOOP;
+    ELSEIF (theId & x'00ff0000'::int) != 0 THEN
+     -- id is a dewar, return Pucks, Cassettes, Magazines, Baskets, etc
+      FOR rtn IN SELECT hName FROM px.holderHistory LEFT JOIN px.holders ON hhHolder=hKey WHERE hhExpId=expId and hhState != 'Inactive' ORDER BY hName LOOP
+        return next rtn;
+      END LOOP;
+    END IF;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.possibleChildren( int, int) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text, theType text, barcode text, rfid text) returns int as $$
+  DECLARE
+    rtn int;
+    hh  record;
+  BEGIN
+    IF ((theId & x'ffff0000'::int) = theId) THEN
+      raise exception 'insert only supported for samples and cylinders (pucks, magazines, baskets, etc)';
+    END IF;
+    IF (theId & x'000000ff'::int) != 0 THEN
+      -- Sample
+      SELECT * INTO hh FROM px.holderHistory LEFT JOIN px.holders ON hhHolder=hKey WHERE hhExpId=expId and hhMaterial=theName;
+      IF FOUND THEN
+        UPDATE px.holders set hName=theName, hBarCode=coalesce(barcode, hBarCode), hRFID=coalesce( rfid, hRFID), hType=coalesce(theType, hType) WHERE hKey=hh.hhHolder;
+	UPDATE px.holderHistory set hhLast=now(), hhPosition=theId WHERE hhKey=hh.hhKey;
+        GET DIAGNOSTICS rtn = ROW_COUNT;
+      ELSE
+        INSERT INTO px.holders (hName, hBarCode, hRFID, hType) VALUES (theName, barcode, rfid, theType);
+        INSERT INTO px.holderHistory (hhPosition, hhMaterial, hhHolder) VALUES (theId, theName, currval( 'px.holders_hKey_seq'));
+        GET DIAGNOSTICS rtn = ROW_COUNT;
+      END IF; 
+
+    ELSE
+      -- Cylinder
+      SELECT * INTO hh FROM px.holderHistory LEFT JOIN px.holders ON hhHolder=hKey WHERE hhExpId=expId and hName=theName;
+      IF FOUND THEN
+        UPDATE px.holders set hBarCode=coalesce( barcode, hBarCode), hRFID=coalesce( rfid, hRFID), hType=coalesce(theType, hType) WHERE hKey=hh.hhHolder;
+        INSERT INTO px.holderHistory (hhPosition,hhHolder) values (theId, hh.hhHolder);
+        GET DIAGNOSTICS rtn = ROW_COUNT;
+      ELSE
+        INSERT INTO px.holders (hName, hBarCode, hRFID, hType) values (theName, barcode, rfid, theType);
+        INSERT INTO px.holderHistory (hhPosition,hhHolder) values (theId, currval('px.holders_hkey_seq'));
+        GET DIAGNOSTICS rtn = ROW_COUNT;
+      END IF;
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.insertHolder( int, int, text, text, text, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text) returns int as $$
+  SELECT px.insertHolder( $1, $2, $3, NULL, NULL, NULL);
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.insertHolder( int, int, text) OWNER TO lsadmin;
+
+
+
+
 CREATE TABLE px._md2queue (
        md2Key serial primary key,	-- our key
        md2ts timestamp with time zone not null default now(),
@@ -3141,7 +3386,7 @@ CREATE OR REPLACE FUNCTION px.ui_shots( pid text, typ text) returns setof px.ui_
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ui_shots( text, text) OWNER TO lsadmin;
 
-CREATE TYPE px.ui_detailType AS ( skey bigint, sfn text, sstart numeric, swidth numeric, sexpt numeric, sexpu text, sphi numeric, somega numeric,
+CREATE TYPE px.ui_detailType AS ( skey bigint, sindex int, sfn text, sstart numeric, swidth numeric, sexpt numeric, sexpu text, sphi numeric, somega numeric,
        skappa numeric, sdist numeric, snrg numeric, scmt text, sstate text, sposition int, sts timestamptz, dsdir text);
 
 
@@ -3165,3 +3410,60 @@ CREATE OR REPLACE FUNCTION px.ui_details( pid text, snapnorm text, theKey bigint
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ui_details( text, text, bigint, int) OWNER TO lsadmin;
+
+
+CREATE TABLE px.transferPoints (
+       tpKey serial primary key,
+       tpStn bigint references px.Stations (stnkey),
+       tpStamp timestamp with time zone default now(),
+       tpTableX numeric,
+       tpTableY numeric,
+       tpTableZ numeric,
+       tpPhiAxisX numeric,
+       tpPhiAxisY numeric,
+       tpPhiAxisZ numeric,
+       tpCenX numeric,
+       tpCenY numeric,
+       tpOmega numeric,
+       tpKappa numeric
+);
+ALTER TABLE px.transferPoints OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, tableZ numeric, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, omega numeric, kappa numeric) returns void as $$
+  BEGIN
+    INSERT INTO px.transferPoints( tpStn, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
+      ( px.getStation(), tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.SetTransferPoint( phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric) returns void AS $$
+  DECLARE
+   mp px.locationType;
+  BEGIN
+    SELECT * from px.rt_get_magnetPosition() INTO mp;
+    PERFORM px.setTransferPoint( mp.x, mp.y, mp.z, phiX, phiY, phiZ, cenX, cenY, 0.0, 0.0);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.abortTransfer() returns void AS $$
+  BEGIN
+  PERFORM cats._pushqueue( "abort");
+  return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.abortTransfer() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.logmagnetstate( boolean) returns void AS $$
+-- OK, maybe this should be in the cats schema instead of the px schema, but here it is
+  INSERT INTO cats.magnetstates (msStn, msSamplePresent) VALUES ( px.getStation(), $1);
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.logmagnetstate( boolean) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getmagnetstate() returns boolean AS $$
+  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getmagnetstate() OWNER TO lsadmin;
