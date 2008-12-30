@@ -15,9 +15,9 @@ CREATE TABLE px._marinit (
 -- these commands are pushed onto the mar command queue
 -- and run by pxMarServer
 --
-	mikey serial primary key,	-- table key
-	miitem text not null,		-- initialzation command
-	miorder int unique		-- order to run commands
+        mikey serial primary key,       -- table key
+        miitem text not null,           -- initialzation command
+        miorder int unique              -- order to run commands
 );
 ALTER TABLE px._marinit OWNER TO lsadmin;
 
@@ -80,10 +80,10 @@ CREATE TABLE px._marqueue (
 --
 -- command queue for the mar detector
 --
-	mqkey serial primary key,			-- table key
-	mqs timestamp with time zone default now(),	-- create time stamp
-	mqc inet NOT NULL,				-- client address (address of marccd)
-	mqcmd text NOT NULL				-- queued command
+        mqkey serial primary key,                       -- table key
+        mqs timestamp with time zone default now(),     -- create time stamp
+        mqc inet NOT NULL,                              -- client address (address of marccd)
+        mqcmd text NOT NULL                             -- queued command
 );
 ALTER TABLE px._marqueue OWNER TO lsadmin;
 
@@ -92,7 +92,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
 -- Function to push command onto the queue
 --
   DECLARE
-    c text;	-- trimmed cmd
+    c text;     -- trimmed cmd
     ntfy text;
   BEGIN
     SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=px.getstation();
@@ -109,7 +109,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
 --
 -- specify client address (ca) to queue up
   DECLARE
-    c text;	-- trimmed cmd
+    c text;     -- trimmed cmd
     ntfy text;
   BEGIN
     SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=px.getstation();
@@ -128,7 +128,7 @@ CREATE OR REPLACE FUNCTION px.popqueue() RETURNS text AS $$
 -- Function to pop command off the queue
 --
   DECLARE
-    rtn text;	-- return value
+    rtn text;   -- return value
     mqk int;    -- serial number of returned value
   BEGIN
     SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue where mqc=inet_client_addr() ORDER BY mqkey ASC LIMIT 1;
@@ -147,7 +147,7 @@ CREATE OR REPLACE FUNCTION px.popqueue( cmd text) RETURNS text AS $$
 -- Function to pop a specific command off the queue, even if it's not next
 --
   DECLARE
-    rtn text;	-- return value
+    rtn text;   -- return value
     mqk int;    -- serial number of returned value
   BEGIN
     SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue WHERE mqcmd=cmd and mqc=inet_client_addr() ORDER BY mqkey ASC LIMIT 1;
@@ -179,13 +179,13 @@ CREATE TABLE px._mar (
 -- Currently pxMarServer accesses this table directly
 -- Good for debugging, not recommended for production
 --
-	mkey serial primary key,			-- table key
-	mc inet NOT NULL,				-- mar client (marccd server) ipaddress
-	mts timestamp with time zone default now(),	-- creatation time stamp
+        mkey serial primary key,                        -- table key
+        mc inet NOT NULL,                               -- mar client (marccd server) ipaddress
+        mts timestamp with time zone default now(),     -- creatation time stamp
         mtu timestamp with time zone default now(),     -- update time stamp (last time checked with same state)
-	mrawresponse text,				-- string returned from marccd
-	mcnt int default 1,				-- number of times this string has been returned
-	mrawstate int					-- state returned by get_state
+        mrawresponse text,                              -- string returned from marccd
+        mcnt int default 1,                             -- number of times this string has been returned
+        mrawstate int                                   -- state returned by get_state
 );
 ALTER TABLE px._mar OWNER TO lsadmin;
 --
@@ -198,10 +198,10 @@ CREATE OR REPLACE FUNCTION px._mar_insert_tf() RETURNS trigger AS $$
 -- Consolidate _mar by converting inserts to update when possible
 --
   DECLARE
-    mrr text;		-- most recent raw response received
-    mk  int;		-- serial number of most recent response
-    mrs int;		-- old raw state
-    nrs int;		-- new raw state
+    mrr text;           -- most recent raw response received
+    mk  int;            -- serial number of most recent response
+    mrs int;            -- old raw state
+    nrs int;            -- new raw state
   BEGIN
     SELECT INTO mk, mrr, mrs mkey, mrawresponse, mrawstate FROM px._mar where mc=inet_client_addr() ORDER BY mkey DESC LIMIT 1;
     IF not found OR NEW.mrawresponse != mrr THEN
@@ -225,7 +225,7 @@ CREATE OR REPLACE FUNCTION px.marstatus( status int) returns text as $$
 -- returns the task as a string
 --
   DECLARE
-    s int;	-- low 4 bits of status
+    s int;      -- low 4 bits of status
     rtn text;   -- the return value
   BEGIN
     s = (status::bit(32) & x'0000000f'::bit(32))::int;
@@ -250,7 +250,7 @@ CREATE OR REPLACE FUNCTION px.martaskstatus( status int, task int) returns text 
 --
 -- returns the status of the given marccd task
   DECLARE
-    s bit(4);	-- 4 bits of task status
+    s bit(4);   -- 4 bits of task status
     rtn text;   -- the return value
   BEGIN
     s = (((status::bit(32) >> (4*(task+1))) & x'0000000f'::bit(32))::int)::bit(4);
@@ -273,8 +273,8 @@ ALTER FUNCTION px.martaskstatus( int, int) OWNER TO lsadmin;
 -- allows the marccd status timing to be printed out nicely
 --
 CREATE OR REPLACE VIEW px.mar ( mkey, mqc, mts, mtu, mtd, mstatus, maquire, mread, mcorrect, mwrite, mdezinger) AS
-	SELECT mkey, host(mc),mts, mtu, mtu-mts, px.marstatus( mrawstate), px.martaskstatus( mrawstate,0),px.martaskstatus( mrawstate,1),px.martaskstatus( mrawstate,2),px.martaskstatus( mrawstate,3),px.martaskstatus( mrawstate,4)
-	   FROM px._mar;
+        SELECT mkey, host(mc),mts, mtu, mtu-mts, px.marstatus( mrawstate), px.martaskstatus( mrawstate,0),px.martaskstatus( mrawstate,1),px.martaskstatus( mrawstate,2),px.martaskstatus( mrawstate,3),px.martaskstatus( mrawstate,4)
+           FROM px._mar;
 
 
 CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric, sphi numeric, skappa numeric);
@@ -291,8 +291,8 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
                     coalesce(dsdir, '/data/public')                         as dsdir,
                     coalesce(sfn, 'default')                                as sfn,
                     px.rt_get_wavelength()::numeric                         as thelambda,
-		    coalesce( sphi, coalesce( dsphi, '0'))::numeric         as sphi,
-		    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa
+                    coalesce( sphi, coalesce( dsphi, '0'))::numeric         as sphi,
+                    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa
                     from px.shots
                     left join px.datasets on sdspid=dspid
                     where skey=k;
@@ -310,11 +310,11 @@ CREATE TABLE px.stations (
 --
 -- stations allowed
 --
-	stnkey       serial primary key,	-- table key
-	stnname      text not null unique,	-- station name
-	stnshortname text not null unique,	-- short name used to create legal variable names
-	stndataroot  text not null,		-- default root data directory
-	stnid        int references px.holderpositions (hpid)
+        stnkey       serial primary key,        -- table key
+        stnname      text not null unique,      -- station name
+        stnshortname text not null unique,      -- short name used to create legal variable names
+        stndataroot  text not null,             -- default root data directory
+        stnid        int references px.holderpositions (hpid)
 );
 ALTER TABLE px.stations OWNER TO lsadmin;
 GRANT SELECT ON px.stations TO PUBLIC;
@@ -335,25 +335,25 @@ CREATE TABLE px._config (
 -- KLUDGE: notify names are of the form 'STATION_TYPE' with a single underscore and STATION is in (id21d,id21e,id21f,id21g) while TYPE is in (kill,snap,run)
 -- Don't change this format without also changing client code (pxPanel)
 --
-	ckey             serial primary key,		-- table key
-	cdetector        inet   not null,		-- ip address of the detector computer
-	cdiffractometer  inet   not null,		-- ip address of the diffractometer
-	crobot           inet   not null,		-- ip address of the robot control process (our python script)
-	ccats		 inet   not null,		-- ip address of the CATS robot (the Stuabli controller)
-	cstation         text				-- station where detector and diffractometer live
-		references px.stations (stnname),
+        ckey             serial primary key,            -- table key
+        cdetector        inet   not null,               -- ip address of the detector computer
+        cdiffractometer  inet   not null,               -- ip address of the diffractometer
+        crobot           inet   not null,               -- ip address of the robot control process (our python script)
+        ccats            inet   not null,               -- ip address of the CATS robot (the Stuabli controller)
+        cstation         text                           -- station where detector and diffractometer live
+                references px.stations (stnname),
         cstnkey          bigint
                 references px.stations (stnkey),
-	cdifflocktable   text   not null,		-- name of diffractometer locking table
-	cdetectlocktable text   not null,		-- name of detector locking table
-	cnotifykill      text   not null,
-	cnotifysnap      text   not null,
-	cnotifyrun       text   not null,
-	cnotifydetector  text   not null,
-	cnotifydiffractometer text not null,
-	cnotifypause	 text   not null,
-	cnotifymessage   text   not null,
-	cnotifywarning   text   not null,
+        cdifflocktable   text   not null,               -- name of diffractometer locking table
+        cdetectlocktable text   not null,               -- name of detector locking table
+        cnotifykill      text   not null,
+        cnotifysnap      text   not null,
+        cnotifyrun       text   not null,
+        cnotifydetector  text   not null,
+        cnotifydiffractometer text not null,
+        cnotifypause     text   not null,
+        cnotifymessage   text   not null,
+        cnotifywarning   text   not null,
         cnotifyerror     text   not null,
         cnotifyxfer      text   not null,
         cnotifyrobot     text   not null
@@ -402,7 +402,7 @@ ALTER FUNCTION px.getstation( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
   SELECT host(ccats) FROM px._config WHERE cstnkey = px.getStation();
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getcatsaddr()	OWNER TO lsadmin;
+ALTER FUNCTION px.getcatsaddr() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
@@ -452,11 +452,11 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
 -- We are making use in seqRun of the format 'station_notifytype' so the underscore is important
 --
   DECLARE
-    notifyrun   text;	-- notify name for run
-    notifysnap  text;	-- notify name for snap
-    notifykill  text;	-- notify name for kill
-    notifypause text;	-- notify name for pause
-    notifyxfer  text;	-- notify name for xfer
+    notifyrun   text;   -- notify name for run
+    notifysnap  text;   -- notify name for snap
+    notifykill  text;   -- notify name for kill
+    notifypause text;   -- notify name for pause
+    notifyxfer  text;   -- notify name for xfer
     rtn         text;   -- prefix for all the notify names: SEE KLUDGE ABOVE
   BEGIN
     PERFORM px.demandDiffractometerOn();
@@ -607,11 +607,11 @@ CREATE TABLE px.axes (
 -- since PV's on different stations have different names we need to say
 -- which station here cause they'll all have omega and phi.
 --
-	akey   serial primary key,	-- table key
-	aaxis  text not null,		-- menu name of axis
-	aepics text,			-- epics PV to use
-	astn   int			-- station where this axis is used
-		references px.stations (stnkey) ON UPDATE CASCADE
+        akey   serial primary key,      -- table key
+        aaxis  text not null,           -- menu name of axis
+        aepics text,                    -- epics PV to use
+        astn   int                      -- station where this axis is used
+                references px.stations (stnkey) ON UPDATE CASCADE
 );
 ALTER TABLE px.axes OWNER TO lsadmin;
 GRANT SELECT ON px.axes TO PUBLIC;
@@ -624,7 +624,7 @@ INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey f
 CREATE TABLE px.shotstates (
 --
 -- Allowed values for the shot state
-	ssstate text primary key		-- the state of the shot
+        ssstate text primary key                -- the state of the shot
 );
 ALTER TABLE px.shotstates OWNER TO lsadmin;
 GRANT SELECT ON px.shotstates TO PUBLIC;
@@ -636,14 +636,14 @@ INSERT INTO px.shotstates (ssstate) VALUES ( 'FinishingUp');
 INSERT INTO px.shotstates (ssstate) VALUES ( 'Done');
 
 CREATE TABLE px.expunits (
-	eu  text primary key,	-- the long version of the units
-	eus text unique		-- short version for small labels
+        eu  text primary key,   -- the long version of the units
+        eus text unique         -- short version for small labels
 );
 INSERT INTO px.expunits (eu, eus) VALUES ( 'Seconds',   'secs');
 INSERT INTO px.expunits (eu, eus) VALUES ( 'Io Counts', 'cnts');
 
 CREATE TABLE  px.oscsenses (
-	os text primary key
+        os text primary key
 );
 ALTER TABLE px.oscsenses OWNER TO lsadmin;
 GRANT SELECT ON px.oscsenses to PUBLIC;
@@ -654,7 +654,7 @@ INSERT INTO px.oscsenses (os) VALUES ( '+/-');
 INSERT INTO px.oscsenses (os) VALUES ( '-/+');
 
 CREATE TABLE px.dsstates (
-	dss text primary key
+        dss text primary key
 );
 ALTER TABLE px.dsstates OWNER TO lsadmin;
 GRANT SELECT ON px.dsstates TO PUBLIC;
@@ -682,7 +682,7 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.fix_dir( text) OWNER TO lsadmin;
 
 CREATE TABLE px.dirstates (
-	dirs text primary key
+        dirs text primary key
 );
 
 INSERT INTO px.dirstates (dirs) VALUES ('New');
@@ -697,45 +697,45 @@ ALTER FUNCTION px.chkdir( text) OWNER TO lsadmin;
 
 
 CREATE TABLE px.datasets (
-	dskey      serial primary key,				-- table key
-	dspid      text NOT NULL UNIQUE,			-- used to find the "shots"
-	dscreatets timestamp with time zone default now(),	-- creatation time stamp
-	dsstate    text NOT NULL DEFAULT 'active'		-- active or not
-		references px.dsstates (dss),
-	dsesaf	   int default NULL,				-- The ESAF used for this experiment
+        dskey      serial primary key,                          -- table key
+        dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
+        dscreatets timestamp with time zone default now(),      -- creatation time stamp
+        dsstate    text NOT NULL DEFAULT 'active'               -- active or not
+                references px.dsstates (dss),
+        dsesaf     int default NULL,                            -- The ESAF used for this experiment
 -- A real references is not used as we currently delete the esaf routinely (during a modification, for example)
 -- until this is thought trhough and tested completely it is better just to leave the reference hanging
---		references esaf.esafs (eexperimentid),
-	dswho      bigint default NULL,				-- Who set up this dataset
---		references esaf._people (pbadgeno),
-	dsinst     bigint default NULL,				-- The institution that "owns" the data collection time
---		references lsched.schedinsts (sikey),
-	dsdir      text	NOT NULL default 'data',		-- the collection directory
-	dsdirs     text NOT NULL default 'New'			-- the directory state
-		references px.dirstates (dirs),
-	dsfp	   text default 'default',			-- file prfix
-	dsstn	   bigint					-- station to collect in
-		references px.stations (stnkey) ON UPDATE CASCADE,
-	dsoscaxis  text		default 'omega',		-- the Axis to move, presumably NULL means don't move a thing
-	dsstart    numeric      default 0,			-- starting angle of the dataset
-        dsdelta    numeric      default 1,			-- distance to next starting angle (usually owidth)
-	dsowidth   numeric default 1,				-- oscillation width
-	dsnoscs    int default 1,				-- number of oscillations per image
-	dsoscsense text	default '+'				-- sense of oscillation relative to end-start direction
-		references px.oscsenses (os) ON UPDATE CASCADE,
-	dsnwedge   int		default 0,			-- shots before flipping 180, 0 means don't do this
-	dsend      numeric      default 90,			-- ending angle
-	dsexp	   numeric	default 1,			-- Exposure: how long to keep shutter open
-	dsexpunit  text		default 'Seconds'		-- units of exposure: usually secs
-		 references px.expunits (eu) ON UPDATE CASCADE,
-	dsphi      numeric DEFAULT NULL,			-- set phi (NULL means don't touch)
-	dsomega    numeric DEFAULT NULL,			-- set omega (NULL means don't touch)
-	dskappa    numeric DEFAULT NULL,			-- set kappa (NULL means don't touch)
-	dsdist     numeric DEFAULT NULL,			-- set distance (NULL means don't touch)
-	dsnrg      numeric DEFAULT NULL,			-- set energy (NULL means don't touch)
-        dscomment  text DEFAULT NULL,				-- comment
-	dsparent   text DEFAULT NULL references px.datasets (dspid),
-        dspositions int[] default '{0}'				-- references px.holderpositions (hpid)	-- holder positions for new shots (should be a reference)
+--              references esaf.esafs (eexperimentid),
+        dswho      bigint default NULL,                         -- Who set up this dataset
+--              references esaf._people (pbadgeno),
+        dsinst     bigint default NULL,                         -- The institution that "owns" the data collection time
+--              references lsched.schedinsts (sikey),
+        dsdir      text NOT NULL default 'data',                -- the collection directory
+        dsdirs     text NOT NULL default 'New'                  -- the directory state
+                references px.dirstates (dirs),
+        dsfp       text default 'default',                      -- file prfix
+        dsstn      bigint                                       -- station to collect in
+                references px.stations (stnkey) ON UPDATE CASCADE,
+        dsoscaxis  text         default 'omega',                -- the Axis to move, presumably NULL means don't move a thing
+        dsstart    numeric      default 0,                      -- starting angle of the dataset
+        dsdelta    numeric      default 1,                      -- distance to next starting angle (usually owidth)
+        dsowidth   numeric default 1,                           -- oscillation width
+        dsnoscs    int default 1,                               -- number of oscillations per image
+        dsoscsense text default '+'                             -- sense of oscillation relative to end-start direction
+                references px.oscsenses (os) ON UPDATE CASCADE,
+        dsnwedge   int          default 0,                      -- shots before flipping 180, 0 means don't do this
+        dsend      numeric      default 90,                     -- ending angle
+        dsexp      numeric      default 1,                      -- Exposure: how long to keep shutter open
+        dsexpunit  text         default 'Seconds'               -- units of exposure: usually secs
+                 references px.expunits (eu) ON UPDATE CASCADE,
+        dsphi      numeric DEFAULT NULL,                        -- set phi (NULL means don't touch)
+        dsomega    numeric DEFAULT NULL,                        -- set omega (NULL means don't touch)
+        dskappa    numeric DEFAULT NULL,                        -- set kappa (NULL means don't touch)
+        dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
+        dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
+        dscomment  text DEFAULT NULL,                           -- comment
+        dsparent   text DEFAULT NULL references px.datasets (dspid),
+        dspositions int[] default '{0}'                         -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
@@ -780,8 +780,8 @@ CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text
     smp   int;
   BEGIN
     stn := (sample & x'ff000000'::int) >> 24;
-    dwr := ((sample & x'00ff0000'::int) >> 16) - 2;		-- the "lids" are dewars 3,4,5 but the user knows them as 1,2,3
-    cyl := (((sample & x'0000ff00'::int) >>  8)-1) % 3 + 1;	-- This converts the puck number stored in the ID into something the user _might_ understand
+    dwr := ((sample & x'00ff0000'::int) >> 16) - 2;             -- the "lids" are dewars 3,4,5 but the user knows them as 1,2,3
+    cyl := (((sample & x'0000ff00'::int) >>  8)-1) % 3 + 1;     -- This converts the puck number stored in the ID into something the user _might_ understand
     smp := (sample & x'000000ff'::int);
 
     rtn := prefix || '_' || dwr || '_' || cyl || '_' || trim(to_char(smp,'00'));
@@ -798,7 +798,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
 --
 -- create a new data set with an experiment id of expid
   DECLARE
-    rtn text;		-- new token
+    rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, px.getstation(), expid, (select stndataroot from px.stations where stnkey=px.getstation()));
@@ -814,7 +814,7 @@ CREATE OR REPLACE FUNCTION px.newdataset() RETURNS text AS $$
 --
 -- create a new data set without an experiment id
   DECLARE
-    rtn text;		-- new token
+    rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     INSERT INTO px.datasets (dspid, dsstn, dsdir) VALUES (rtn, px.getstation(), (select stndataroot from px.stations where stnkey=px.getstation()));
@@ -830,7 +830,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( token text) RETURNS text AS $$
 --
 -- create a new data set based on the old one
   DECLARE
-    rtn text;		-- new token
+    rtn text;           -- new token
   BEGIN
 
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
@@ -865,7 +865,7 @@ ALTER FUNCTION px.newdataset( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text) RETURNS text AS $$
   DECLARE
-    rtn text;		-- new token
+    rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
@@ -882,8 +882,8 @@ ALTER FUNCTION px.copydataset( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS text AS $$
   DECLARE
-    pfx text;		-- prefix after being cleaned up
-    rtn text;		-- new token
+    pfx text;           -- prefix after being cleaned up
+    rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     pfx := px.fix_fn( newPrefix);
@@ -902,9 +902,9 @@ ALTER FUNCTION px.copydataset( text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
   DECLARE
-    pfx text;		-- prefix after being cleaned up
-    dir text;		-- directory after being cleaned up
-    rtn text;		-- new token
+    pfx text;           -- prefix after being cleaned up
+    dir text;           -- directory after being cleaned up
+    rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
     pfx := px.fix_fn( newPrefix);
@@ -923,37 +923,27 @@ ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text AS $$
   DECLARE
-    tmp text;		-- used to see if the directory needs checking
-    p  record;		-- parent datasets
-    rtn text;		-- new token
+    tmp text;           -- used to see if the directory needs checking
+    p  record;          -- parent datasets
+    rtn text;           -- new token
   BEGIN
-    SELECT dspid INTO rtn FROM px.datasets WHERE dsparent=token and dspositions=array[sample];
-    IF FOUND THEN
-      --
-      -- Change everything to match the parent except dsfn, dspid, and dspositions
-      SELECT * INTO p FROM px.datasets WHERE dspid=token;
-      UPDATE px.datasets SET
-        dsesaf = p.dsesaf, dsdir = p.dsdir, dsdirs = p.dsdirs, dsstn = p.dsstn, dsoscaxis = p.dsoscaxis,
-        dsowidth = p.dsowidth, dsnoscs = p.dsnoscs, dsoscsense = p.dsoscsense, dsnwedge = p.dsnwedge,
-        dsend = p.dsend, dsexp = p.dsexp, dsexpunit = p.dsexpunit, dsphi = p.dsphi, dsomega = p.dsomega,
-        dskappa = p.dskappa, dsdist = p.dsdist, dsnrg = p.dsnrg, dscomment = p.dscomment
-        WHERE dspid = rtn;
-      
-    ELSE
-      SELECT md5( nextval( 'px.datasets_dskey_seq')+random()) INTO rtn;
-      EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-      EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp,'||sample||'), dsstn=px.getstation(), dsparent='''||token||''', dspositions=''{'||sample||'}''';
-      EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-      EXECUTE 'DROP TABLE "' || rtn || '"';
-    END IF;
 
-    SELECT dsdirs INTO tmp FROM px.datasets WHERE dspid = rtn;
-    IF tmp != 'Valid' THEN
-      PERFORM px.chkdir( rtn);
-    END IF;
-    PERFORM px.mkshots( rtn);
+  SELECT dspid INTO rtn FROM px.datasets WHERE dsparent=token and dspositions=array[sample];
+  IF NOT FOUND THEN
+    SELECT md5( nextval( 'px.datasets_dskey_seq')+random()) INTO rtn;
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp,'||sample||'), dsstn=px.getstation(), dsparent='''||token||''', dspositions=''{'||sample||'}''';
+    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
+    EXECUTE 'DROP TABLE "' || rtn || '"';
+  END IF;
 
-    RETURN rtn;
+  SELECT dsdirs INTO tmp FROM px.datasets WHERE dspid = rtn;
+  IF tmp != 'Valid' THEN
+    PERFORM px.chkdir( rtn);
+  END IF;
+  PERFORM px.mkshots( rtn);
+
+  RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.spawndataset( text, int) OWNER TO lsadmin;
@@ -1018,7 +1008,7 @@ ALTER FUNCTION px.ds_set_sample( text, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_set_samples( token text, arg2 int[]) RETURNS void AS $$
   BEGIN
-    UPDATE px.datasets set dspositions=arg2 WHERE dspid=token;
+    UPDATE px.datasets SET dspositions=arg2 WHERE dspid=token;
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1246,7 +1236,7 @@ ALTER FUNCTION px.ds_get_end( text) OWNER TO lsadmin;
 -- nframes and delta to calculate end
 CREATE OR REPLACE FUNCTION px.ds_set_nframes( token text, nframes int) RETURNS void AS $$
   DECLARE
-    ds record;	-- the dataset entry
+    ds record;  -- the dataset entry
     d  numeric;     -- our version of delta
     e  numeric;     -- new end
     
@@ -1271,8 +1261,8 @@ ALTER FUNCTION px.ds_set_nframes( text, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_get_nframes( token text) RETURNS int AS $$
   DECLARE
-    rtn int;	-- the return values
-    ds record;	-- the current dataset record
+    rtn int;    -- the return values
+    ds record;  -- the current dataset record
   BEGIN
     rtn := 0;
     SELECT INTO ds * FROM px.datasets WHERE dspid=token;
@@ -1292,7 +1282,7 @@ ALTER FUNCTION px.ds_get_nframes( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_get_nRemaining( token text, theType text) RETURNS int AS $$
   DECLARE
-    rtn int;	-- the count
+    rtn int;    -- the count
   BEGIN
     SELECT INTO rtn count(*) FROM px.shots WHERE sdspid=token and stype=theType and sstate != 'Done';
     RETURN rtn;
@@ -1444,7 +1434,7 @@ ALTER FUNCTION px.ds_get_state( text) OWNER TO lsadmin;
 -- type of shots
 --
 CREATE TABLE px.stypes (
-	st text primary key
+        st text primary key
 );
 ALTER TABLE px.stypes OWNER TO lsadmin;
 GRANT SELECT ON px.stypes TO PUBLIC;
@@ -1452,30 +1442,30 @@ INSERT INTO px.stypes (st) VALUES ('normal');
 INSERT INTO px.stypes (st) VALUES ('snap');
 
 CREATE TABLE px.shots (
-	skey     serial		primary key,		-- table key
-	sts	timestamp with time zone default now(),	-- time of creation or last status change
-	sdspid	 text					-- PID of dataset
-		references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
-	stype    text           NOT NULL		-- type of dataset this is part of (needed to uniquely identify shot)
-		references px.stypes ON UPDATE CASCADE,
-	sindex	 int		NOT NULL,		-- frame number within this sequence
-	sfn      text		DEFAULT NULL,		-- the file name
-	sstart	 numeric	DEFAULT NULL,		-- Starting angle:not sure what NULL would mean with soscaxis not NULL
-        saxis    text		DEFAULT NULL,		-- as run data collection axis
-        swidth   numeric        DEFAULT NULL,		-- as run width
-        sexpt    numeric        DEFAULT NULL,		-- as run exposure time
-        sexpu    text           DEFAULT NULL		-- as run exposure time
-		references px.expunits (eu) ON UPDATE CASCADE,
-	sphi     numeric        DEFAULT NULL,		-- as run starting phi
-        somega   numeric        DEFAULT NULL,		-- as run starting omega
+        skey     serial         primary key,            -- table key
+        sts     timestamp with time zone default now(), -- time of creation or last status change
+        sdspid   text                                   -- PID of dataset
+                references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
+        stype    text           NOT NULL                -- type of dataset this is part of (needed to uniquely identify shot)
+                references px.stypes ON UPDATE CASCADE,
+        sindex   int            NOT NULL,               -- frame number within this sequence
+        sfn      text           DEFAULT NULL,           -- the file name
+        sstart   numeric        DEFAULT NULL,           -- Starting angle:not sure what NULL would mean with soscaxis not NULL
+        saxis    text           DEFAULT NULL,           -- as run data collection axis
+        swidth   numeric        DEFAULT NULL,           -- as run width
+        sexpt    numeric        DEFAULT NULL,           -- as run exposure time
+        sexpu    text           DEFAULT NULL            -- as run exposure time
+                references px.expunits (eu) ON UPDATE CASCADE,
+        sphi     numeric        DEFAULT NULL,           -- as run starting phi
+        somega   numeric        DEFAULT NULL,           -- as run starting omega
         skappa   numeric        DEFAULT NULL,           -- as run starting kappa
         sdist    numeric        DEFAULT NULL,           -- as run starting distance
         snrg     numeric        DEFAULT NULL,           -- as run starting energy
-        scmt     text           DEFAULT NULL,		-- comment
-	sstate   text					-- current state of the shot
-		 references px.shotstates (ssstate) ON UPDATE CASCADE,
+        scmt     text           DEFAULT NULL,           -- comment
+        sstate   text                                   -- current state of the shot
+                 references px.shotstates (ssstate) ON UPDATE CASCADE,
         sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted)
-	UNIQUE (sdspid, stype, sindex)
+        UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
 CREATE INDEX shotsTsIndex ON px.shots (sts);
@@ -1485,8 +1475,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
 
 CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
   DECLARE
-    ds record;	-- the dataset record
-    token text;	-- the record token
+    ds record;  -- the dataset record
+    token text; -- the record token
   BEGIN
     SELECT INTO token sdspid FROM px.shots WHERE skey=theKey;
     IF FOUND THEN
@@ -1498,12 +1488,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
 
 CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
-	dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int);
+        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int);
 
 CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
   DECLARE
-    rtn px.nextshottype;	-- the return value
-    rq  record;			-- the runqueue record at the top of the queueu
+    rtn px.nextshottype;        -- the return value
+    rq  record;                 -- the runqueue record at the top of the queueu
   BEGIN
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
@@ -1551,8 +1541,34 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getshots( text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
-  SELECT * FROM px.shots WHERE sdspid=$1 ORDER BY stype, sindex ASC;
-$$ LANGUAGE sql SECURITY DEFINER;
+  DECLARE
+    rtn record;
+    childPid text;
+  BEGIN
+    -- is this PID a parent?
+    PERFORM 1 FROM px.datasets WHERE dsparent=pid;
+    IF NOT FOUND THEN
+      FOR rtn IN SELECT * FROM px.shots WHERE sdspid=pid ORDER BY stype DESC, sindex ASC LOOP
+        return next rtn;
+      END LOOP;
+    ELSE
+      -- Find the first one in the run queue
+      SELECT rqToken INTO childPid FROM px.runqueue LEFT JOIN px.datasets ON rqToken=dsparent WHERE rqStn=px.getStation() ORDER BY rqOrder;
+      IF NOT FOUND THEN
+        -- None in queue, find first with shots not taken
+        SELECT dspid INTO childPid FROM px.datasets LEFT JOIN px.shots ON dspid=sdspid WHERE dsparent=pid and sstate='Not Taken' ORDER BY dskey LIMIT 1;
+        IF NOT FOUND THEN
+          -- OK, they are all taken, get get the last one and move on
+          SELECT dspid INTO childPid FROM px.datasets WHERE dsparent=pid ORDER BY dskey DESC LIMIT 1;
+        END IF;
+      END IF;
+      FOR rtn IN SELECT * FROM px.shots WHERE sdspid=childPid ORDER BY stype DESC, sindex ASC LOOP
+        return next rtn;
+      END LOOP;
+    END IF;
+    return;
+  END;
+$$ LANGUAGE PLPGSQL SECURITY DEFINER;
 ALTER FUNCTION px.getshots( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.shot_set_fn( pid text, type text, i int, arg_1 text) RETURNS void AS $$
@@ -1634,8 +1650,8 @@ ALTER FUNCTION px.startsnap( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
   DECLARE
-    token text;		-- the token (for adding to queue)
-    typ   text;		-- need the type to startup snaps (not normal)
+    token text;         -- the token (for adding to queue)
+    typ   text;         -- need the type to startup snaps (not normal)
   BEGIN
     SELECT INTO token,typ sdspid,stype FROM px.shots WHERE skey=theKey;
     UPDATE px.shots SET sstate='NotTaken' WHERE skey=theKey;
@@ -1653,7 +1669,7 @@ ALTER FUNCTION px.retake( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
   DECLARE
-    ndx int;	-- starting index
+    ndx int;    -- starting index
     typ text;   -- type of shot
     token text; -- the pid
   BEGIN
@@ -1680,7 +1696,7 @@ ALTER FUNCTION px.delshots( text, text, int, int) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void AS $$
   DECLARE
     nexti int;  -- next value of the index
-    fp text;	-- file prefix
+    fp text;    -- file prefix
     ds record;  -- our dataset
     sample int; -- current sample number
     kidtok text; -- dspid of children
@@ -1748,54 +1764,83 @@ ALTER FUNCTION px.mkorthoindexsnap( text, numeric, numeric, int) OWNER TO lsadmi
 
 CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
   DECLARE
-    nframes int;		-- number of frames (1/2 # frames if wedges)
-    newend  numeric;		-- caluculated end point
-    sk      int;		-- the station key
-    pid     text;		-- pid for shots/dataset
-    fp      text;		-- the file prefix (already entered)
-    fn      text;		-- the filename
-    angle   numeric;		-- calculated diffraction angle
-    delta   numeric;		-- difference between starting angles of adjacent frames
-    n       int;		-- loop counter for wedge collection
+    nframes int;                -- number of frames (1/2 # frames if wedges)
+    newend  numeric;            -- caluculated end point
+    sk      int;                -- the station key
+    pid     text;               -- pid for shots/dataset
+    fp      text;               -- the file prefix (already entered)
+    fn      text;               -- the filename
+    angle   numeric;            -- calculated diffraction angle
+    delta   numeric;            -- difference between starting angles of adjacent frames
+    n       int;                -- loop counter for wedge collection
     wnn     int;                -- loop counter for wedge name
-    an      int;		-- counter for wedge collection used for angle calculation
-    oldcnt  int;		-- count of old frames in this dataset
-    ds      record;		-- dataset definition
+    an      int;                -- counter for wedge collection used for angle calculation
+    oldcnt  int;                -- count of old frames in this dataset
+    ds      record;             -- dataset definition
     fmt     text;               -- format string for frame numbers
-    sample  int;		-- current sample number
-    kidtok  text;		-- dspid of children: used to find and kill orphans
-    kidsample int;		-- dsposition[1] of children: used to find and kill orphans
+    sample  int;                -- current sample number
+    kidtok  text;               -- dspid of children: used to find and kill orphans
+    kidsample int;              -- dsposition[1] of children: used to find and kill orphans
 
   BEGIN
 
-    SELECT INTO ds * from px.datasets where dspid=token;
+    SELECT * INTO ds from px.datasets where dspid=token;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'token % not found', token;
     END IF;
 
     IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
         -- Here we have more than one sample.   Make shots for each but not for this one
-	-- Remove parent shots if they have not been taken
-	FOR kidtok, kidsample IN SELECT dspid,dspositions[1] FROM px.datasets WHERE dsparent = token LOOP
-	  -- Delete children that are no longer in the parent's list of children
+        FOR kidtok, kidsample IN SELECT dspid,dspositions[1] FROM px.datasets WHERE dsparent = token LOOP
+          -- Delete children that are no longer in the parent's list of children
           IF not (kidsample = any( ds.dspositions)) THEN
-	    -- Only delete shots that are not taken
-	    DELETE FROM px.shots WHERE sdspid=kidtok and sstate != 'Done';
-	    PERFORM 1 FROM px.shots WHERE sdspid=kidtok;
-	    IF NOT FOUND THEN
-              -- If no shots were taken then also delete the dataset
-	      DELETE FROM px.datasets WHERE dspid = kidtok;
+            -- Only delete shots that are not taken
+            DELETE FROM px.shots WHERE sdspid=kidtok and sstate != 'Done';
+            -- See if any shots left
+            PERFORM 1 FROM px.shots WHERE sdspid=kidtok;
+            IF NOT FOUND THEN
+              -- None found, also delete the dataset
+              DELETE FROM px.datasets WHERE dspid = kidtok;
+            ELSE
+              UPDATE px.datasets SET dsparent=NULL WHERE dspid=kidtok;
             END IF;
           END IF;
         END LOOP;
-	DELETE FROM px.shots WHERE sdspid=token and sstate != 'Done';
+        --
+        -- Delete untaken parent shots
+        DELETE FROM px.shots WHERE sdspid=token and sstate != 'Done';
+
+        --
+        -- Change everything to match the parent except dsfn, dspid, and dspositions
+        UPDATE px.datasets SET
+          dsesaf = ds.dsesaf, dsdir = ds.dsdir, dsdirs = ds.dsdirs, dsstn = ds.dsstn, dsoscaxis = ds.dsoscaxis,
+          dsowidth = ds.dsowidth, dsnoscs = ds.dsnoscs, dsoscsense = ds.dsoscsense, dsnwedge = ds.dsnwedge,
+          dsend = ds.dsend, dsexp = ds.dsexp, dsexpunit = ds.dsexpunit, dsphi = ds.dsphi, dsomega = ds.dsomega,
+          dskappa = ds.dskappa, dsdist = ds.dsdist, dsnrg = ds.dsnrg, dscomment = ds.dscomment
+          WHERE dsparent = token;
+
+        --
+        -- Create additional children data sets and make shots (via spawn)
         FOR i IN array_lower( ds.dspositions, 1) .. array_upper( ds.dspositions, 1) LOOP
-    	  sample := ds.dspositions[i];
-	  PERFORM px.spawndataset( token, sample);
-	END LOOP;
+          sample := ds.dspositions[i];
+          PERFORM px.spawndataset( token, sample);
+        END LOOP;
+
+
     ELSE
       -- Here we have only one sample.  Just make the shots.
       sample := ds.dspositions[1];
+
+      -- But first take care of the case where this dataset used to be a parent
+      FOR pid IN SELECT dspid FROM px.datasets WHERE dsparent = token LOOP
+        DELETE FROM px.shots WHERE sdspid=pid AND sstate != 'Done';
+        PERFORM 1 FROM px.shots WHERE sdspid=pid;
+        IF FOUND THEN
+          DELETE FROM px.datasets WHERE dspid=pid;
+        ELSE
+          UPDATE px.datasets SET dsparent=NULL WHERE dspid=pid;
+        END IF;
+      END LOOP;
 
       --
       -- get file prefix
@@ -1845,7 +1890,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
           IF NOT FOUND THEN
             fn := fp || '.' || trim(to_char(i, fmt));
             angle := ds.dsstart + (i-1) * delta;
-    	  INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
+          INSERT INTO px.shots ( sdspid, stype, sfn, sstart, sindex, sstate, sposition) VALUES (
               token,        -- sdspid
               'normal',     -- stype
               fn,           -- sfn
@@ -1876,7 +1921,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
                 sample          -- the sample
               );
             END IF;
-    	END LOOP;
+        END LOOP;
           FOR i IN 1..ds.dsnwedge LOOP
             PERFORM skey FROM px.shots WHERE sdspid=token and sindex=n+ds.dsnwedge+i and stype='normal';
             IF NOT FOUND THEN
@@ -1892,7 +1937,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
                 sample             -- the sample
               );
             END IF;
-    	END LOOP;
+        END LOOP;
           n   := n   + 2*ds.dsnwedge;
           an  := an  + ds.dsnwedge;
           wnn := wnn + ds.dsnwedge;
@@ -1908,15 +1953,15 @@ CREATE TABLE px.pauseStates (
        pss text primary key
 );
 ALTER TABLE px.pauseStates OWNER TO lsadmin;
-INSERT INTO px.pauseStates (pss) values ('Please Pause');	-- request that the data collection pause
-INSERT INTO px.pauseStates (pss) values ('I Paused');		-- Notification that the data collection has paused
-INSERT INTO px.pauseStates (pss) values ('Not Paused');		-- We are not paused right now
+INSERT INTO px.pauseStates (pss) values ('Please Pause');       -- request that the data collection pause
+INSERT INTO px.pauseStates (pss) values ('I Paused');           -- Notification that the data collection has paused
+INSERT INTO px.pauseStates (pss) values ('Not Paused');         -- We are not paused right now
 
 CREATE TABLE px.pause (
-       pKey serial primary key,				-- our primary key
-       ptc timestamp with time zone default now(),	-- when the state was requested
-       pStn int references px.stations (stnkey),	-- the station we are pausing for
-       pps  text references px.pauseStates (pss)	-- the actual request
+       pKey serial primary key,                         -- our primary key
+       ptc timestamp with time zone default now(),      -- when the state was requested
+       pStn int references px.stations (stnkey),        -- the station we are pausing for
+       pps  text references px.pauseStates (pss)        -- the actual request
 );
 ALTER TABLE px.pause OWNER TO lsadmin;
 
@@ -2000,14 +2045,14 @@ ALTER FUNCTION px.unpause( bigint) OWNER TO lsadmin;
 
 
 CREATE TABLE px.runqueue (
-    rqKey serial primary key,				-- table key
-    rqStn int references px.stations (stnkey),		-- station queue
-    rqCTS timestamp with time zone default now(),	-- creatation time stamp
-    rqOrder int not null,			-- order to be taken
-    rqToken text not null				-- dataset
-	references px.datasets (dspid) on update cascade,
-    rqType  text not null				-- type of frame to run
-	references px.stypes (st) on update cascade,
+    rqKey serial primary key,                           -- table key
+    rqStn int references px.stations (stnkey),          -- station queue
+    rqCTS timestamp with time zone default now(),       -- creatation time stamp
+    rqOrder int not null,                       -- order to be taken
+    rqToken text not null                               -- dataset
+        references px.datasets (dspid) on update cascade,
+    rqType  text not null                               -- type of frame to run
+        references px.stypes (st) on update cascade,
     UNIQUE (rqStn, rqOrder)
 );
 ALTER TABLE px.runqueue OWNER TO lsadmin;
@@ -2029,8 +2074,8 @@ CREATE TRIGGER runqueue_delete_trigger AFTER DELETE ON px.runqueue FOR EACH STAT
 
 CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void AS $$
   DECLARE
-    samples int[];	-- Array of samples in the dataset
-    pid text;		-- dspid from a child
+    samples int[];      -- Array of samples in the dataset
+    pid text;           -- dspid from a child
   BEGIN
     SELECT dspositions INTO samples FROM px.datasets WHERE dspid=token;
     IF NOT FOUND THEN
@@ -2065,7 +2110,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_up( theKey bigint) RETURNS void AS $$
 -- Move item up the runqueue (lower its order) by swapping with the next lower one
 --
   DECLARE
-    a   record;	-- entry of the one we'd like to move
+    a   record; -- entry of the one we'd like to move
   BEGIN
     SELECT INTO a * FROM px.runqueue WHERE rqKey=theKey and rqStn = px.getStation();
     IF FOUND and a.rqOrder>1 THEN
@@ -2083,7 +2128,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_down( theKey bigint) RETURNS void AS $$
 --
   DECLARE
     mx  int;    -- maximum value of the run queue order
-    a   record;	-- the record we'd like to move
+    a   record; -- the record we'd like to move
   BEGIN
     SELECT INTO mx max(rqOrder) FROM px.runqueue WHERE rqStn=px.getStation();
     SELECT INTO a * FROM px.runqueue WHERE rqKey=theKey;
@@ -2100,10 +2145,10 @@ CREATE TYPE px.runqueuetype AS ( dspid text, type text, k bigint, etc text);
 
 CREATE OR REPLACE FUNCTION px.runqueue_get() returns SETOF px.runqueuetype AS $$
   DECLARE
-    rtn px.runqueuetype;		-- the return value
-    rq record;				-- the runqueue entry
-    startTime timestamp with time zone;	-- start time of next dataset
-    deltaTime interval;			-- estimated time for this dataset
+    rtn px.runqueuetype;                -- the return value
+    rq record;                          -- the runqueue entry
+    startTime timestamp with time zone; -- start time of next dataset
+    deltaTime interval;                 -- estimated time for this dataset
   BEGIN
     startTime := now();
     FOR rq IN SELECT * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder LOOP
@@ -2123,7 +2168,7 @@ ALTER FUNCTION px.runqueue_get() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   DECLARE
-    ordr int;	-- the order of the item we are removing
+    ordr int;   -- the order of the item we are removing
  BEGIN
     SELECT INTO ordr rqOrder FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
     DELETE FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
@@ -2143,16 +2188,41 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getrunqueuetype() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
+  --
+  -- Remove the top item in the run queue and reorder it
+  -- Also, add requestTransfer(0) to dismount the last sample in a multi sample data collection
+  --
   DECLARE
-    rq record;	-- records to update
+    curParent text;  -- the parent of the current dataset
+    curKey    bigint; -- the key of the current dataset
+    rq record;  -- records to update
     i  int;     -- welecome to the new order
   BEGIN
-    DELETE FROM px.runqueue WHERE rqKey IN (select rqKey from px.runqueue where rqStn=px.getstation() ORDER BY rqOrder ASC limit 1);
+    --  get the current parent and the current key
+    SELECT rqtoken, dsparent INTO curKey, curParent FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() ORDER BY rqOrder ASC limit 1;
+    IF NOT FOUND THEN
+      return;
+    END IF;
+
+    DELETE FROM px.runqueue WHERE rqKey = curKey;
     i := 1;
     FOR rq IN SELECT * FROM px.runqueue WHERE rqStn=px.getstation() ORDER BY rqOrder ASC LOOP
       UPDATE px.runqueue set rqOrder=i WHERE rqKey=rq.rqKey;
       i := i+1;
     END LOOP;
+    
+    -- If this was a robot mounted sample part of a multiple select
+    -- and no more multiple selects exist in the runqueue then add a
+    -- "transfer 0" command to the md2 queue to dismount the sample at
+    -- the end
+
+    IF curParent is not NULL THEN
+      -- see if any other children remain
+      PERFORM 1 FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() and dsparent is not null;
+      IF NOT FOUND THEN
+        PERFORM px.requestTransfer( 0);
+      END IF;
+    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.poprunqueue() OWNER TO lsadmin;
@@ -2164,7 +2234,7 @@ ALTER FUNCTION px.clearrunqueue() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.startrun() returns void AS $$
   DECLARE
-    nt text;	-- notify condition
+    nt text;    -- notify condition
   BEGIN
     SELECT INTO nt cnotifyrun FROM px._config left join px.stations on stnname=cstation WHERE stnkey=px.getstation();
     IF FOUND THEN
@@ -2181,12 +2251,12 @@ CREATE TABLE px.epicsLink (
 --
 -- Table to link motors and stuff
 --
-	elKey  serial primary key,		-- table key
-	elStn  bigint default NULL		-- station
-		references px.stations (stnkey),	
-	elName text NOT NULL,			-- our name for this variable
-	elPV   text NOT NULL
-		references epics._motions (mMotorPvName) ON UPDATE CASCADE
+        elKey  serial primary key,              -- table key
+        elStn  bigint default NULL              -- station
+                references px.stations (stnkey),        
+        elName text NOT NULL,                   -- our name for this variable
+        elPV   text NOT NULL
+                references epics._motions (mMotorPvName) ON UPDATE CASCADE
 );
 ALTER TABLE px.epicsLink OWNER TO lsadmin;
 
@@ -2197,12 +2267,12 @@ CREATE TABLE px.epicsPVMLink (
 --
 -- Table to link motors and stuff
 --
-	epvmlKey  serial primary key,		-- table key
-	epvmlStn  bigint default NULL		-- station
-		references px.stations (stnkey),	
-	epvmlName text NOT NULL,			-- our name for this variable
-	epvmlPV   text NOT NULL
-		references epics._pvmonitors (pvmName) ON UPDATE CASCADE
+        epvmlKey  serial primary key,           -- table key
+        epvmlStn  bigint default NULL           -- station
+                references px.stations (stnkey),        
+        epvmlName text NOT NULL,                        -- our name for this variable
+        epvmlPV   text NOT NULL
+                references epics._pvmonitors (pvmName) ON UPDATE CASCADE
 );
 ALTER TABLE px.epicsPVMLink OWNER TO lsadmin;
 
@@ -2265,7 +2335,7 @@ ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
   DECLARE
-    rtn text;	-- return value
+    rtn text;   -- return value
   BEGIN
     -- SELECT INTO rtn to_char( mactpos, '9999.9') FROM epics.motions LEFT JOIN  px.epicsLink ON elPV=mmotorpvname WHERE elStn=px.getstation() and elName='distance';
     SELECT INTO rtn to_char( epics.position(elPV)::numeric, '9999.9') FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
@@ -2305,12 +2375,12 @@ CREATE TABLE px.distSaves (
 -- to automatically move the detector out of the way
 -- when the user enters the hutch
 --
-	dsKey serial primary key,	-- table key
-	dsStn bigint			-- pointer to station
-		references px.stations (stnkey),
-	dsTs  timestamp with time zone, -- time last In position was saved
-	dsIn  numeric default 500,	-- saved data collection position
-	dsOut numeric default 500	-- Position for detector out of the way
+        dsKey serial primary key,       -- table key
+        dsStn bigint                    -- pointer to station
+                references px.stations (stnkey),
+        dsTs  timestamp with time zone, -- time last In position was saved
+        dsIn  numeric default 500,      -- saved data collection position
+        dsOut numeric default 500       -- Position for detector out of the way
 );
 ALTER TABLE px.distSaves OWNER TO lsadmin;
 
@@ -2319,9 +2389,9 @@ CREATE OR REPLACE FUNCTION px._moveDetectorOut( pvmk bigint, value numeric) RETU
 -- "Action" function called when an epics variable (pvmk is the pvmonitors key) changes.  See actions in epics.sql
 --
   DECLARE
-    moving boolean;	-- check to see if the motor is moving.  Do nothing if it is.
-    stn    bigint;	-- pointer to station
-    dist   numeric;	-- saved detector position
+    moving boolean;     -- check to see if the motor is moving.  Do nothing if it is.
+    stn    bigint;      -- pointer to station
+    dist   numeric;     -- saved detector position
   BEGIN
     SELECT INTO stn epvmlStn FROM px.epicsPVMLink LEFT JOIN epics._pvmonitors ON epvmlPV=pvmname WHERE pvmKey=pvmk limit 1;
     IF FOUND THEN
@@ -2343,8 +2413,8 @@ CREATE OR REPLACE FUNCTION px._moveDetectorIn( pvmk bigint, value numeric) RETUR
 -- "Action" function called when an epics variable (pvmk is the pvmonitors key) changes.  See actions in epics.sql
 --
   DECLARE
-    moving boolean;	-- check to see if the motor is moving.  Do nothing if it is.
-    stn    bigint;	-- pointer to station
+    moving boolean;     -- check to see if the motor is moving.  Do nothing if it is.
+    stn    bigint;      -- pointer to station
   BEGIN
     SELECT INTO stn epvmlStn FROM px.epicsPVMLink LEFT JOIN epics._pvmonitors ON epvmlPV=pvmname WHERE pvmKey=pvmk limit 1;
     IF FOUND THEN
@@ -2359,14 +2429,14 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px._moveDetectorIn( bigint, numeric) OWNER TO lsadmin;
 
 CREATE TABLE px._beamcenterHistory (
-	bcKey	serial primary key,		-- table key
-	bcStn	bigint				-- the station
-		references px.stations (stnkey),
-	bxX1
+        bcKey   serial primary key,             -- table key
+        bcStn   bigint                          -- the station
+                references px.stations (stnkey),
+        bxX1
 
 
 CREATE TABLE px._energyLookUpMethods (
-	elum text primary key
+        elum text primary key
 );
 ALTER TABLE px._energyLookUpMethods OWNER TO lsadmin;
 INSERT INTO px._energyLookUpMethods (elum) VALUES ('table');
@@ -2377,35 +2447,35 @@ CREATE TABLE px._energyHistory (
 -- Stores the current and past values of the energy for each station
 -- Not used for stations that get the energy directly from epics
 --
-	ehKey serial primary key,			-- table key
-	ehTs  timestamp with time zone default now(),	-- time entry was created
-	ehStn bigint not null					-- the station
-		references px.stations (stnkey),
-	ehValue numeric default NULL			-- the actual value  (NULL signifies unknown value)
+        ehKey serial primary key,                       -- table key
+        ehTs  timestamp with time zone default now(),   -- time entry was created
+        ehStn bigint not null                                   -- the station
+                references px.stations (stnkey),
+        ehValue numeric default NULL                    -- the actual value  (NULL signifies unknown value)
 );
 ALTER TABLE px._energyHistory OWNER TO lsadmin;
 
 CREATE TABLE px._energyLookUp (
-	eluKey serial primary key,	-- table key
-	eluStn bigint unique		-- our station
-		references px.stations (stnkey),
-	eluType text			-- table or epics method of retrieving wavelength
-		references px._energyLookUpMethods (elum) ON UPDATE CASCADE,
-	eluEpics text			-- epics PV name of epics energy pv
-		references epics._pvmonitors (pvmname) ON UPDATE CASCADE
+        eluKey serial primary key,      -- table key
+        eluStn bigint unique            -- our station
+                references px.stations (stnkey),
+        eluType text                    -- table or epics method of retrieving wavelength
+                references px._energyLookUpMethods (elum) ON UPDATE CASCADE,
+        eluEpics text                   -- epics PV name of epics energy pv
+                references epics._pvmonitors (pvmname) ON UPDATE CASCADE
 );
 ALTER TABLE px._energyLookUp OWNER TO lsadmin;
-	
+        
 CREATE VIEW px.energyLookUp (eluKey, eluStn, eluValue) AS
-	SELECT eluKey, eluStn,
-		CASE eluType
-		WHEN 'table' THEN ehValue
-		WHEN 'epics' THEN pvmValueN
-		END
-	FROM px._energyLookUp
-	LEFT JOIN px._energyHistory ON eluStn=ehStn
-	LEFT JOIN epics._pvmonitors ON eluEpics=pvmname
-	WHERE ehKey in (select max(ehkey) FROM px._energyHistory GROUP BY ehStn) OR pvmkey is not NULL;
+        SELECT eluKey, eluStn,
+                CASE eluType
+                WHEN 'table' THEN ehValue
+                WHEN 'epics' THEN pvmValueN
+                END
+        FROM px._energyLookUp
+        LEFT JOIN px._energyHistory ON eluStn=ehStn
+        LEFT JOIN epics._pvmonitors ON eluEpics=pvmname
+        WHERE ehKey in (select max(ehkey) FROM px._energyHistory GROUP BY ehStn) OR pvmkey is not NULL;
 
 ALTER TABLE px.energyLookUp OWNER TO lsadmin;
 
@@ -2552,7 +2622,7 @@ ALTER FUNCTION px.rt_close_ss() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
   DECLARE
-    rtn text;	-- our return value
+    rtn text;   -- our return value
     hn  text;   -- name from holder
   BEGIN
     rtn := NULL;
@@ -2575,14 +2645,14 @@ CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getName( int)	OWNER TO lsadmin;
+ALTER FUNCTION px.getName( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
   DECLARE
-    itm record;		-- the record of the item pointed to by theId
-    chitms record;	-- the record(s) of the child items under theId
-    rtn text;		-- xml return text
-    inf text;		-- Information on this ID
+    itm record;         -- the record of the item pointed to by theId
+    chitms record;      -- the record(s) of the child items under theId
+    rtn text;           -- xml return text
+    inf text;           -- Information on this ID
   BEGIN
     rtn := '';
     SELECT *  INTO itm FROM px.holderPositions WHERE hpId = theId;
@@ -2600,6 +2670,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
         rtn = rtn || 'overlayImage="' || itm.hpImageMaskURL || '" ';
       END IF;
       rtn = rtn || E'>\n';
+      rtn = rtn || E'  <Color name="current" r="255" g="0" b = "0" a="100" />\n';
       rtn = rtn || E'  <Selected r="120" g="120" b = "0" a="127" />\n';
       rtn = rtn || E'  <Disabled r="10"  g="10"  b = "10" a="127" />\n';
       FOR chitms IN SELECT *
@@ -2616,8 +2687,8 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
         -- Stick in total exposure here once px.hots supports the sample
         INTO inf
         FROM px.holders LEFT JOIN px.holderhistory ON hhHolder=hkey
-	WHERE hhPosition=theId and (hhstate='Present' or hhstate='TempStorage')
-	ORDER BY hhLast DESC
+        WHERE hhPosition=theId and (hhstate='Present' or hhstate='TempStorage')
+        ORDER BY hhLast DESC
         LIMIT 1;
       IF FOUND THEN
         rtn := rtn || inf;
@@ -2742,16 +2813,16 @@ ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, estTime numeric) returns int AS $$
   DECLARE
-    mp px.locationtype;		-- current table
-    tp record;			-- saved position
+    mp px.locationtype;         -- current table
+    tp record;                  -- saved position
     rtn int;
     xx numeric;
     yy numeric;
     zz numeric;
   BEGIN
     --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
-    SELECT * FROM px.rt_get_magnetPosition() INTO mp;		-- magnet position relative to table
-    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=px.getStation() ORDER BY tpKey DESC LIMIT 1;	-- magnet position relative to MD2
+    SELECT * FROM px.rt_get_magnetPosition() INTO mp;           -- magnet position relative to table
+    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=px.getStation() ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
     -- CATS uses a righthanded coordinate system with x into the beam and z up
     -- MD2 uses a righthanded coordinate system with x downstream and z up
     -- LS-CAT uses a righthanded coordinate system with y up and z downstream
@@ -2770,15 +2841,31 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.startTransfer( int, boolean, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
 
 
+CREATE TABLE px.transferArgs (
+       taKey serial primary key,
+       taTS timestamp with time zone not null default now(),
+       taStn bigint references px.stations (stnKey),
+       taCurcam int,
+       taId int,
+       taPresent boolean,
+       taXX int,
+       taYY int,
+       taZZ int
+);
+ALTER TABLE px.transferArgs OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
-    cursam int;	-- the current sample
+    cursam int; -- the current sample
   BEGIN
     SELECT px.getCurrentSampleID() INTO cursam;
     IF NOT FOUND THEN
       return 0;
     END IF;
+
+    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz);
 
     IF cursam = 0 and present THEN
       -- manually mounted sample, 
@@ -2892,8 +2979,8 @@ ALTER FUNCTION px.requestRobotAirRights() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
   DECLARE
-    ntfy text;	-- notify to send
-    smpl int;	-- the mounted sample
+    ntfy text;  -- notify to send
+    smpl int;   -- the mounted sample
     dist numeric; -- next sample distance
   BEGIN
     PERFORM px.dropAirRights();
@@ -2925,7 +3012,7 @@ CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
       SELECT hpid
         INTO rtn
         FROM px.holderPositions
-	WHERE hpId > stnid and hpId < stnid+x'01000000'::int and hpTempLoc=diffid;
+        WHERE hpId > stnid and hpId < stnid+x'01000000'::int and hpTempLoc=diffid;
       IF NOT FOUND THEN
         return 0;
       END IF;
@@ -2988,7 +3075,7 @@ INSERT INTO px.holderstates (ss) VALUES ('Unknown');
 INSERT INTO px.holderstates (ss) VALUES ('Present');
 INSERT INTO px.holderstates (ss) VALUES ('Absent');
 INSERT INTO px.holderstates (ss) VALUES ('TempStorage');
-INSERT INTO px.holderstates (ss) VALUES ('Inactive');		-- set if this position is not currently installed
+INSERT INTO px.holderstates (ss) VALUES ('Inactive');           -- set if this position is not currently installed
 
 
 CREATE TABLE px.holderPositions (
@@ -3008,14 +3095,14 @@ CREATE TABLE px.holderPositions (
        -- Dewar   = 0 means entry defines a station position
        -- Station = 0 means location is unknown
 
-       hpKey serial primary key,		-- our key
-       hpId int unique,				-- unique idenifier for this location
-       hpIdRes int NOT NULL,			-- children have ids > hpId and < hpId+hpIdRes
-       hpIndex int,				-- Parent's selection index
-       hpName text,				-- name of this item
-       hpImageURL text default NULL,		-- Image, if any, to use for this holder position
-       hpImageMaskURL text default NULL,	-- Image, if any, to use for the selection mask for position contained herein
-       hpTempLoc int default 0			-- current location id of sample normally stored here (0 means item not in temp storage)
+       hpKey serial primary key,                -- our key
+       hpId int unique,                         -- unique idenifier for this location
+       hpIdRes int NOT NULL,                    -- children have ids > hpId and < hpId+hpIdRes
+       hpIndex int,                             -- Parent's selection index
+       hpName text,                             -- name of this item
+       hpImageURL text default NULL,            -- Image, if any, to use for this holder position
+       hpImageMaskURL text default NULL,        -- Image, if any, to use for the selection mask for position contained herein
+       hpTempLoc int default 0                  -- current location id of sample normally stored here (0 means item not in temp storage)
        );
 ALTER TABLE px.holderPositions OWNER TO lsadmin;
 
@@ -3036,22 +3123,22 @@ INSERT INTO px.holdertypes (ht) VALUES ('CrystalCap Magnetic (ALS) HR4');
 
 
 CREATE TABLE px.holders (
-       hKey serial primary key,		-- Our key
+       hKey serial primary key,         -- Our key
        hType text references px.holdertypes (ht) on update cascade,
-       hName text,			-- Whatever name we want for this holder
-       hBarCode text unique,		-- unique id for this sample: NULL means we don't know or don't care
-       hRFID text unique		-- unique id for this sample: NULL means we don't know or don't care
+       hName text,                      -- Whatever name we want for this holder
+       hBarCode text unique,            -- unique id for this sample: NULL means we don't know or don't care
+       hRFID text unique                -- unique id for this sample: NULL means we don't know or don't care
 );
 ALTER TABLE px.holders OWNER TO lsadmin;
 
 
 CREATE TABLE px.holderHistory (
-       hhKey serial primary key,		-- our key
+       hhKey serial primary key,                -- our key
        hhPosition int references px.holderPositions (hpId),
        hhHolder   bigint references px.holders (hKey),
        hhState text default 'Unknown' not null references px.holderstates (ss) on update cascade,
-       hhExpId int default null,		-- The experiment id that includes this sample: should be a reference
-       hhMaterial text default null,	-- name of the sample from ESAF: should be a reference to esaf.materials (matname) but this requires a different mechanism for esaf updates than is currently employed
+       hhExpId int default null,                -- The experiment id that includes this sample: should be a reference
+       hhMaterial text default null,    -- name of the sample from ESAF: should be a reference to esaf.materials (matname) but this requires a different mechanism for esaf updates than is currently employed
        hhStart timestamp with time zone default now(),
        hhLast  timestamp with time Zone default now()
 );
@@ -3124,7 +3211,7 @@ CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text, 
       SELECT * INTO hh FROM px.holderHistory LEFT JOIN px.holders ON hhHolder=hKey WHERE hhExpId=expId and hhMaterial=theName;
       IF FOUND THEN
         UPDATE px.holders set hName=theName, hBarCode=coalesce(barcode, hBarCode), hRFID=coalesce( rfid, hRFID), hType=coalesce(theType, hType) WHERE hKey=hh.hhHolder;
-	UPDATE px.holderHistory set hhLast=now(), hhPosition=theId WHERE hhKey=hh.hhKey;
+        UPDATE px.holderHistory set hhLast=now(), hhPosition=theId WHERE hhKey=hh.hhKey;
         GET DIAGNOSTICS rtn = ROW_COUNT;
       ELSE
         INSERT INTO px.holders (hName, hBarCode, hRFID, hType) VALUES (theName, barcode, rfid, theType);
@@ -3159,17 +3246,17 @@ ALTER FUNCTION px.insertHolder( int, int, text) OWNER TO lsadmin;
 
 
 CREATE TABLE px._md2queue (
-       md2Key serial primary key,	-- our key
+       md2Key serial primary key,       -- our key
        md2ts timestamp with time zone not null default now(),
-       md2Addr inet not null,		-- IP Address of the MD2
-       md2Cmd text not null		-- the Command
+       md2Addr inet not null,           -- IP Address of the MD2
+       md2Cmd text not null             -- the Command
 );
 ALTER TABLE px._md2queue OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
   DECLARE
-    c text;	-- trimmed command
-    ntfy text;	-- used to generate notify command
+    c text;     -- trimmed command
+    ntfy text;  -- used to generate notify command
   BEGIN
     SELECT cnotifydiffractometer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
     IF NOT FOUND THEN
@@ -3194,7 +3281,7 @@ ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
   DECLARE
-    rtn px._md2queue;		-- return value
+    rtn px._md2queue;           -- return value
   BEGIN
 --    rtn := NULL;
     SELECT md2key, md2cmd INTO rtn.md2key, rtn.md2cmd FROM px._md2queue WHERE md2Addr=inet_client_addr() ORDER BY md2Key ASC LIMIT 1;
@@ -3220,8 +3307,8 @@ ALTER FUNCTION px.getHolderPositionState( int) OWNER TO lsadmin;
 
 
 CREATE TABLE px.errorSeverity (
-       es text primary key,		-- text version of message
-       ess int not null unique		-- sort order of severity (0=message, 2=fatal)
+       es text primary key,             -- text version of message
+       ess int not null unique          -- sort order of severity (0=message, 2=fatal)
 );
 ALTER TABLE px.errorSeverity OWNER TO lsadmin;
 INSERT INTO px.errorSeverity (ess, es) VALUES ( 0, 'message');
@@ -3229,11 +3316,11 @@ INSERT INTO px.errorSeverity (ess, es) VALUES ( 1, 'warning');
 INSERT INTO px.errorSeverity (ess, es) VALUES ( 2, 'fatal');
 
 CREATE TABLE px.errors (
-       eKey serial primary key,					-- the Key
-       eSeverity text not null references px.errorSeverity (es),	-- severity of error
-       eid int not null unique,					-- identifier for this error (for client processing)
-       eTerse text not null,					-- terse error
-       eVerbose text not null					-- long winded version of the error
+       eKey serial primary key,                                 -- the Key
+       eSeverity text not null references px.errorSeverity (es),        -- severity of error
+       eid int not null unique,                                 -- identifier for this error (for client processing)
+       eTerse text not null,                                    -- terse error
+       eVerbose text not null                                   -- long winded version of the error
 );
 ALTER TABLE px.errors OWNER TO lsadmin;
 
@@ -3256,8 +3343,8 @@ INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 2000
 
 
 CREATE TABLE px.activeErrors (
-       eaKey serial primary key,			-- the key
-       eaId int not null references px.errors (eid),	-- the error
+       eaKey serial primary key,                        -- the key
+       eaId int not null references px.errors (eid),    -- the error
        eaTs timestamp with time zone not null default now(),
        eaStn int not null references px.stations (stnKey),
        eaDetails text,
