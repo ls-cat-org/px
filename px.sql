@@ -457,12 +457,15 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
     notifykill  text;   -- notify name for kill
     notifypause text;   -- notify name for pause
     notifyxfer  text;   -- notify name for xfer
+    notifymess  text;   -- notify name for messages
+    notifywarn  text;   -- notify name for warnings
+    notifyerr   text;   -- notify name for errors
     rtn         text;   -- prefix for all the notify names: SEE KLUDGE ABOVE
   BEGIN
     PERFORM px.demandDiffractometerOn();
     rtn := NULL;
-    SELECT  split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer
-       INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer
+    SELECT  split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer, cnotifymessage, cnotifywarning, cnotifyerror
+       INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer,  notifymess,      notifywarn,    notifyerr
        FROM px._config WHERE px.getstation( cstation)=px.getstation();
 
     IF FOUND THEN
@@ -471,6 +474,9 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
       EXECUTE 'LISTEN ' || notifyrun;
       EXECUTE 'LISTEN ' || notifypause;
       EXECUTE 'LISTEN ' || notifyxfer;
+      EXECUTE 'LISTEN ' || notifymess;
+      EXECUTE 'LISTEN ' || notifywarn;
+      EXECUTE 'LISTEN ' || notifyerr;
     END IF;
     return rtn;
   END;
@@ -1658,7 +1664,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
-      PERFORM px.md2pushqueue( 'collect');
+      PERFORM px.unpause();
     END IF;
 --    IF typ = 'snap' THEN
 --      PERFORM px.startrun();
@@ -1678,7 +1684,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
     PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
     IF NOT FOUND THEN
       PERFORM px.pushrunqueue( token, typ);
-      PERFORM px.md2pushqueue( 'collect');
+      PERFORM px.unpause();
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1721,7 +1727,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
         pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken', sample
       );
       PERFORM px.pushrunqueue( pid, 'snap');
-      PERFORM px.md2pushqueue( 'collect');
+      PERFORM px.unpause();
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1971,6 +1977,11 @@ CREATE OR REPLACE FUNCTION px.ispaused() RETURNS boolean AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ispaused() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.ispausedi() RETURNS int AS $$
+  SELECT case when pps != 'Not Paused' then 1 else 0 end FROM px.pause WHERE pStn = px.getstation();
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.ispausedi() OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.pauseRequest() RETURNS VOID AS $$
   DECLARE
@@ -2141,6 +2152,59 @@ CREATE OR REPLACE FUNCTION px.runqueue_down( theKey bigint) RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.runqueue_down( bigint) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.runqueue_top( theKey bigint) RETURNS void AS $$
+--
+-- Move item to the top of the runqueue
+--
+  DECLARE
+    k bigint;  -- key in reorder loop
+    i int;     -- value for the order in loop
+    cv int;    -- current value of theKey's order
+  BEGIN
+    SELECT rqOrder INTO cv FROM px.runqueue WHERE rqKey=theKey;
+    IF FOUND THEN
+      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;	-- temporarly make 0 so we do not violate uniqueness in loop
+      i := cv;
+      -- Only loop over items above the one we are moving
+      FOR k IN SELECT rqKey FROM px.runqueue WHERE rqStn=px.getStation() and rqOrder<cv and rqKey!= theKey ORDER BY rqOrder desc LOOP
+        UPDATE px.runqueue SET rqOrder = i WHERE rqKey=k;
+        i := i-1;
+      END LOOP;
+      UPDATE px.runqueue SET rqOrder=1 WHERE rqKey=theKey;	-- Now we can put it at the top of the list
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_top( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.runqueue_bottom( theKey bigint) RETURNS void AS $$
+--
+-- Move item to the bottom of the runqueue
+--
+  DECLARE
+    k bigint;  -- key in reorder loop
+    i int;     -- value for the order in loop
+    cv int;    -- current value of theKey's order
+    mx int;    -- maximum value in the list (our new order)
+  BEGIN
+    SELECT rqOrder INTO cv FROM px.runqueue WHERE rqKey=theKey;
+    IF FOUND THEN
+      SELECT max(rqOrder) INTO mx FROM px.runqueue WHERE rqStn=px.getStation();
+
+      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;	-- temporarly make 0 so we do not violate uniqueness in loop
+      i := cv;
+      -- Only loop over items above the one we are moving
+      FOR k IN SELECT rqKey FROM px.runqueue WHERE rqStn=px.getStation() and rqOrder>cv ORDER BY rqOrder asc LOOP
+        UPDATE px.runqueue SET rqOrder = i WHERE rqKey=k;
+        i := i+1;
+      END LOOP;
+      UPDATE px.runqueue SET rqOrder=mx WHERE rqKey=theKey;	-- Now we can put it at the top of the list
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_bottom( bigint) OWNER TO lsadmin;
+
+
+
 CREATE TYPE px.runqueuetype AS ( dspid text, type text, k bigint, etc text);
 
 CREATE OR REPLACE FUNCTION px.runqueue_get() returns SETOF px.runqueuetype AS $$
@@ -2169,10 +2233,13 @@ ALTER FUNCTION px.runqueue_get() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   DECLARE
     ordr int;   -- the order of the item we are removing
+    kk bigint;   -- key of item to reorder
  BEGIN
     SELECT INTO ordr rqOrder FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
     DELETE FROM px.runqueue WHERE rqKey=k and rqStn=px.getStation();
-    UPDATE px.runqueue SET rqOrder=rqOrder-1 WHERE rqOrder > ordr;
+    FOR kk IN SELECT rqKey FROM px.runqueue WHERE rqStn=px.getStation() and rqOrder > ordr ORDER BY rqOrder asc LOOP
+      UPDATE px.runqueue SET rqOrder=rqOrder-1 WHERE rqKey=kk;
+    END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.runqueue_remove( bigint) OWNER TO lsadmin;
@@ -2199,7 +2266,7 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
     i  int;     -- welecome to the new order
   BEGIN
     --  get the current parent and the current key
-    SELECT rqtoken, dsparent INTO curKey, curParent FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() ORDER BY rqOrder ASC limit 1;
+    SELECT rqKey, dsparent INTO curKey, curParent FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() ORDER BY rqOrder ASC limit 1;
     IF NOT FOUND THEN
       return;
     END IF;
@@ -2845,7 +2912,7 @@ CREATE TABLE px.transferArgs (
        taKey serial primary key,
        taTS timestamp with time zone not null default now(),
        taStn bigint references px.stations (stnKey),
-       taCurcam int,
+       taCursam int,
        taId int,
        taPresent boolean,
        taXX int,
@@ -2906,6 +2973,7 @@ CREATE OR REPLACE FUNCTION px.endTransfer() RETURNS void AS $$
     IF FOUND THEN
       EXECUTE 'NOTIFY ' || ntfy;
     END IF;        
+    PERFORM px.pushError( 30000, 'Mounted Sample Changed');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.endTransfer() OWNER TO lsadmin;
