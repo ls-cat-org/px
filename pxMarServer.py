@@ -238,24 +238,45 @@ class PxMarServer:
 
         return rtn
             
-    def waitdist( self):
-        qr = self.query( "select px.isthere( 'distance') as isthere" )
-        r = qr.dictresult()[0]
-        if r["isthere"] != 't':
-            loopFlag = 1
-            while loopFlag==1:
-                time.sleep( 0.21)
-                qr = self.query( "select px.isthere( 'distance') as isthere")
-                r = qr.dictresult()[0]
-                if r["isthere"] == 't':
-                    loopFlag=0
+    def waitdist( self, theDist):
+        # Move the motor and wait for it to stop at the correct place
+        #
+        # Here the distance is not specified or is boggus
+        if theDist == None or len( theDist) < 3 or d < 90 or d > 1000:
+            qr = self.query( "select px.isthere( 'distance') as isthere" )
+            r = qr.dictresult()[0]
+            if r["isthere"] != 't':
+                loopFlag = 1
+                while loopFlag==1:
+                    time.sleep( 0.21)
+                    qr = self.query( "select px.isthere( 'distance') as isthere")
+                    r = qr.dictresult()[0]
+                    if r["isthere"] == 't':
+                        loopFlag=0
+        else:
+            #
+            # Here we have a defined and perhaps resonable distance
+            # TODO: Error signaling if limit is hit or limits are badly defined
+            #
+            qs = "select px.isthere( 'distance', %s) as isthere" % (theDist)
+            qr = self.query( qs)
+            r = qr.dictresult()[0]
+            if r[isthere] != 't':
+                loopFlag = 1
+                while loopFlag==1:
+                    time.sleep( 0.21)
+                    qr = self.query( qs)
+                    if r["isthere"] == 't':
+                        loopFlag=0
+
+            
 
     def movedist( self, value):
         qr = self.query( "select px.isthere( 'distance', %s) as isthere" % (value))
         r = qr.dictresult()[0]
         if r["isthere"] != 't':
             self.query( "select px.rt_set_dist(%s)" % (value))
-            self.waitdist()
+            self.waitdist(value)
 
     def checkdir( self, token):
         qr = self.query( "select dskey, dsdir from px.datasets where dspid='"+token+"'")
@@ -385,8 +406,9 @@ class PxMarServer:
 
                             #
                             # Wait for the detector movement
-                            # Currently the detector is moved by the MD2 code.  Change this to movedist(r["sdist"]) if the detector control moves here
-                            self.waitdist()
+                            # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
+                            #
+                            self.waitdist(r["sdist"])
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                                 r["sdist"], r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]

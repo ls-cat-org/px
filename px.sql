@@ -2359,10 +2359,16 @@ INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnK
 
 CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) RETURNS boolean AS $$
   DECLARE
+    stopped boolean;
     rtn boolean;
   BEGIN
-    --    SELECT INTO rtn (minpos=1) and abs(mactpos-value)<=10^(-mprec) FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
     SELECT epics.isthere( elPV, value) INTO rtn FROM px.epicsLink WHERE elStn=px.getStation() and elName='distance';
+    IF NOT rtn THEN
+      SELECT px.isstopped( motion) INTO stopped;
+      IF stopped THEN
+        PERFORM px.moveit( motion, value);
+      END IF;
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2372,8 +2378,6 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
   BEGIN
-    -- return true;  -- Kludge to run data collection until epics support is fixed 080121 KB
-    --   SELECT INTO rtn (minpos=1) and not mweareincontrol FROM epics.motions LEFT JOIN px.epicsLink on mmotorpvname=elPV WHERE elName=motion and elStn=px.getstation();
     SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
     return rtn;
   END;
@@ -2886,18 +2890,39 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     xx numeric;
     yy numeric;
     zz numeric;
+    theStn int;			-- our station
   BEGIN
     --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
+    SELECT px.getStation() INTO theStn;
+    IF NOT FOUND or theStn < 1 or theStn > 4 THEN
+      return 0;
+    END IF;
+
     SELECT * FROM px.rt_get_magnetPosition() INTO mp;           -- magnet position relative to table
-    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=px.getStation() ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
+    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=theStn ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
     -- CATS uses a righthanded coordinate system with x into the beam and z up
     -- MD2 uses a righthanded coordinate system with x downstream and z up
     -- LS-CAT uses a righthanded coordinate system with y up and z downstream
     -- Here we compute the CATS coordinate corrections.  Here x, y, z is in the CATS system
 
-    xx := round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
-    yy := round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
-    zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
+    --
+    -- F and G are the same
+    --
+    IF theStn = 3 or theStn = 4 THEN
+      xx := round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
+      yy := round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
+      zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
+    END IF;
+
+    --
+    -- but D is rotated 180 degrees about Z
+    --
+    IF theStn = 1 THEN
+      xx := -round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
+      yy := -round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
+      zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
+    END IF;
+
 
     --    raise exception 'startTransfer: theId=%, xx=%, yy=%, zz=%', to_hex(theId), xx::int, yy::int, zz::int;
 
@@ -3034,7 +3059,7 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
       IF curDist < 400 THEN
         rtn := False;
         IF stopped THEN
-          PERFORM px.rt_set_dist( 500);
+          PERFORM px.rt_set_dist( 700);
         END IF;
       ELSE
         SELECT px.requestAirRights() INTO rtn;
