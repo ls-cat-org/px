@@ -122,7 +122,7 @@ class PxMarServer:
                 # Got it
                 # print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
                 #
-                qs = "UPDATE px.shots spath='%s' WHERE skey=%d" % (d+"/"+f, shotKey)
+                qs = "UPDATE px.shots SET spath='%s' WHERE skey=%d" % (d+"/"+f, int(shotKey))
                 self.db.query( qs)
 
                 # find the backup home directory
@@ -186,7 +186,7 @@ class PxMarServer:
                         self.db.query( qs);
                         print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
-                        qs = "update px.shots set sbupath='%s' where skey=%d" % ( bfn, shotKey)
+                        qs = "UPDATE px.shots SET sbupath='%s' WHERE skey=%d" % ( bfn, int(shotKey))
                         self.db.query( qs);
                     
                     self.hlList.pop( self.hlList.index(hl))
@@ -256,7 +256,8 @@ class PxMarServer:
         # Move the motor and wait for it to stop at the correct place
         #
         # Here the distance is not specified or is boggus
-        if theDist == None or len( theDist) < 3 or d < 90 or d > 1000:
+        print theDist
+        if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
@@ -275,11 +276,12 @@ class PxMarServer:
             qs = "select px.isthere( 'distance', %s) as isthere" % (theDist)
             qr = self.query( qs)
             r = qr.dictresult()[0]
-            if r[isthere] != 't':
+            if r["isthere"] != 't':
                 loopFlag = 1
                 while loopFlag==1:
                     time.sleep( 0.21)
                     qr = self.query( qs)
+                    r = qr.dictresult()[0]
                     if r["isthere"] == 't':
                         loopFlag=0
 
