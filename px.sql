@@ -1470,7 +1470,9 @@ CREATE TABLE px.shots (
         scmt     text           DEFAULT NULL,           -- comment
         sstate   text                                   -- current state of the shot
                  references px.shotstates (ssstate) ON UPDATE CASCADE,
-        sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted)
+        sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
+	spath    text           DEFAULT NULL,		-- the full file path used
+        sbupath  text           DEFAULT NULL            -- the full path of the backup file
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
