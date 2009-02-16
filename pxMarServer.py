@@ -99,12 +99,18 @@ class PxMarServer:
             # delete entry without action if it is over 100 seconds overdue
             #
             if (datetime.datetime.now() - t) > datetime.timedelta(0, 100):
+                #
+                # If the file hasn't been written by now it probably never will be: don't sit around like some kind of sap.
+                #
                 tmp = datetime.datetime.now() - t
                 qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up.')" % (tmp.days*24*3600 +tmp.seconds, f);
                 self.db.query( qs);
                 print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
             else:
+                #
+                # Look for the file
+                #
                 try:
                     os.stat( d+"/"+f)
                 except:
@@ -112,8 +118,13 @@ class PxMarServer:
                     # print >> sys.stderr, "%s/%s does not yet exist" % (d,f)
                     return
 
+                #
+                # Got it
                 # print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
                 #
+                qs = "UPDATE px.shots spath='%s' WHERE skey=%d" % (d+"/"+f, shotKey)
+                self.db.query( qs)
+
                 # find the backup home directory
                 qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets left join px.shots on dspid=sdspid where skey='%s'" % (shotKey)
                 qr = self.query( qs)
@@ -174,6 +185,9 @@ class PxMarServer:
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.db.query( qs);
                         print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    else:
+                        qs = "update px.shots set sbupath='%s' where skey=%d" % ( bfn, shotKey)
+                        self.db.query( qs);
                     
                     self.hlList.pop( self.hlList.index(hl))
 
