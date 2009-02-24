@@ -84,7 +84,7 @@ class PxMarServer:
             od = hl[0]
             of = hl[1]
             if od == d and of == f:
-                # print >> sys.stderr, "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
+                print >> sys.stderr, time.asctime(), "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
                 return
 
         self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
@@ -105,7 +105,7 @@ class PxMarServer:
                 tmp = datetime.datetime.now() - t
                 qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up.')" % (tmp.days*24*3600 +tmp.seconds, f);
                 self.db.query( qs);
-                print >> sys.stderr,"------POPING-------------",datetime.datetime.now(),t,tmp
+                print >> sys.stderr, time.asctime(), "------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 #
@@ -115,12 +115,12 @@ class PxMarServer:
                     os.stat( d+"/"+f)
                 except:
                     # the file does not yet exist
-                    # print >> sys.stderr, "%s/%s does not yet exist" % (d,f)
+                    # print >> sys.stderr, time.asctime(), "%s/%s does not yet exist" % (d,f)
                     return
 
                 #
                 # Got it
-                # print >> sys.stderr, "====== Found it:  %s/%s" % (d,f)
+                print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
                 #
                 qs = "UPDATE px.shots SET spath='%s' WHERE skey=%d" % (d+"/"+f, int(shotKey))
                 self.db.query( qs)
@@ -130,7 +130,7 @@ class PxMarServer:
                 qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
-                    # print >> sys.stderr, "Shot no longer exists, abandoning it"
+                    print >> sys.stderr, time.asctime(), "Shot no longer exists, abandoning it"
                     return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
@@ -146,13 +146,13 @@ class PxMarServer:
                     bfn = bud+'/'+f
 
                     try:
-                        # print >> sys.stderr, "making directory %s" % ( bud)
+                        print >> sys.stderr, time.asctime(), "making directory %s" % ( bud)
                         os.makedirs( bud)
                     except OSError, (errno, strerr):
                         if errno != 17:
                             qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
                             self.db.query( qs);
-                            print >> sys.stderr, "Failed to make backup directory %s" % (bud)
+                            print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
                             self.hlList.pop( self.hlList.index(hl))
                             return
 
@@ -178,13 +178,13 @@ class PxMarServer:
                             found=False
                         i = i+1
 
-                    # print >> sys.stderr, "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    print >> sys.stderr, time.asctime(), "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     try:
                         os.link( d+'/'+f, bfn)
                     except:
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.db.query( qs);
-                        print >> sys.stderr, "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                        print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
                         qs = "UPDATE px.shots SET sbupath='%s' WHERE skey=%d" % ( bfn, int(shotKey))
                         self.db.query( qs);
@@ -242,7 +242,7 @@ class PxMarServer:
         try:
             rtn = self.db.query( qs)
         except:
-            print >> sys.stderr, sys.exc_info()[0]
+            print >> sys.stderr, time.asctime(), sys.exc_info()[0]
             print >> sys.stderr, '-'*60
             traceback.print_exc(file=sys.stderr)
             print >> sys.stderr, '-'*60
@@ -256,7 +256,7 @@ class PxMarServer:
         # Move the motor and wait for it to stop at the correct place
         #
         # Here the distance is not specified or is boggus
-        print theDist
+        print >> sys.stderr, time.asctime(), theDist
         if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
@@ -320,7 +320,7 @@ class PxMarServer:
                 # Probably the directory path includes something we do not have permissions for
                 qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
                 self.db.query( qs);
-                print "Error creating directory: %s" % (strerror)
+                print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
 
         self.query( "update px.datasets set dsdirs='%s' where dskey=%d" % (theDirState, theKey))
@@ -418,7 +418,7 @@ class PxMarServer:
                                 if errno != 17:
                                     qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
                                     self.db.query( qs);
-                                    print "Error creating directory: %s" % (strerror)
+                                    print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
                             #
                             # Wait for the detector movement
@@ -426,10 +426,10 @@ class PxMarServer:
                             #
                             self.waitdist(r["sdist"])
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s\",rotation_range=%s,source_wavelength=%s\n" % (
                                 r["sdist"], r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                                 )
-                            print >> sys.stderr, hs
+                            print >> sys.stderr, time.asctime(), hs
                             self.queue.insert( 0, hs)
 
                             self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
@@ -441,13 +441,13 @@ class PxMarServer:
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             qs = "select px.pusherror( 10005, '')"
                             self.db.query( qs);
-                            print >> sys.stderr, "Request for a non-existant frame: data sent to /dev/null"
+                            print >> sys.stderr, time.asctime(), "Request for a non-existant frame: data sent to /dev/null"
 
 
                         cmd = "start"
                         self.collectingFlag = True
                         self.flushStatus    = True
-                        # print >> sys.stderr, "found collect, changing to start, adding %s" % (self.queue[0])
+                        print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
 
                         
                     #
@@ -470,13 +470,13 @@ class PxMarServer:
             #
             # Save command in queue
             self.queue.append( cmd)
-            # print >> sys.stderr, "queued %s" % (cmd)
+            print >> sys.stderr, time.asctime(), "queued %s" % (cmd)
 
     def nextCmd( self):
         rtn = None
         if len(self.queue) > 0:
             rtn = self.queue.pop(0)
-            # print >> sys.stderr, "dequeued %s" % (rtn)
+            print >> sys.stderr, time.asctime(), "dequeued %s" % (rtn)
         return rtn
 
     def setStatus( self, msg):
@@ -503,24 +503,26 @@ class PxMarServer:
 
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
-                    print >> sys.stderr, "Your wish is my command.  Waiting patiently for your instructions."
+                    print >> sys.stderr, time.asctime(), "Your wish is my command.  Waiting patiently for your instructions."
                     self.db.query( "select px.lock_detector()")
                     self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
-                    print >> sys.stderr, "Integrating..."
+                    print >> sys.stderr, time.asctime(), "Integrating..."
                     self.db.query( "select px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
                     # this is the exposure, command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
-                    print >> sys.stderr, "Waiting for exposure to end..."
+                    print >> sys.stderr, time.asctime(), "Waiting for exposure to end..."
                     self.db.query( "select px.lock_diffractometer()")
+                    print >> sys.stderr, time.asctime(), "Exposure ended"
 
                     # eventually we'll get the lock, give it up immediately
                     self.db.query( "select px.unlock_diffractometer()")
+                    print >> sys.stderr, time.asctime(), "Diffractometer unlocked"
 
                     #
                     # allow sending the next command in the queue (should be the readout)
