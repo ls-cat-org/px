@@ -1472,7 +1472,8 @@ CREATE TABLE px.shots (
                  references px.shotstates (ssstate) ON UPDATE CASCADE,
         sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
 	spath    text           DEFAULT NULL,		-- the full file path used
-        sbupath  text           DEFAULT NULL            -- the full path of the backup file
+        sbupath  text           DEFAULT NULL,           -- the full path of the backup file
+	stimes   int            DEFAULT 0               -- number of times this has been run
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1530,7 +1531,7 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
   BEGIN
-    IF NEW.sstate = 'Done' THEN
+    IF OLD.sstate != NEW.sstate and NEW.sstate = 'Done' THEN
       PERFORM 1 FROM px.shots WHERE sdspid=NEW.sdspid and stype=NEW.stype and sstate!='Done' and sKey != NEW.sKey;
       IF NOT FOUND THEN
         PERFORM px.poprunqueue();
@@ -1542,6 +1543,19 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 CREATE TRIGGER shotsUpdateTrigger AFTER UPDATE ON px.shots FOR EACH ROW EXECUTE PROCEDURE px.shotsUpdateTF();
+
+CREATE OR REPLACE FUNCTION px.shotsUpdate0TF() returns trigger AS $$
+  DECLARE
+  BEGIN
+    IF OLD.sstate != 'Done' and NEW.sstate = 'Done' THEN
+      NEW.stimes = OLD.stimes + 1;
+    END IF;
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.shotsUpdate0TF() OWNER TO lsadmin;
+
+CREATE TRIGGER shotsUpdate0Trigger BEFORE UPDATE ON px.shots FOR EACH ROW EXECUTE PROCEDURE px.shotsUpdate0TF();
 
 CREATE OR REPLACE FUNCTION px.getshots( pid text, type text) RETURNS SETOF px.shots AS $$
   SELECT * FROM px.shots WHERE sdspid=$1 and stype=$2 ORDER BY sindex ASC;
@@ -2556,11 +2570,14 @@ ALTER TABLE px.energyLookUp OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.rt_get_wavelength() returns text AS $$
   DECLARE
     rtn text;
+    val numeric;
   BEGIN
     PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=px.getStation() and eluType='epics';
-    SELECT INTO rtn to_char(12.3984172/eluValue, '0.99999') FROM px.energyLookUp WHERE eluStn=px.getStation();
-    IF NOT FOUND THEN
-      rtn := '0.9747';
+    SELECT eluValue INTO val FROM px.energyLookUp WHERE eluStn=px.getStation();
+    IF NOT FOUND OR abs(val) < 2.0 THEN
+      rtn := '--';
+    ELSE
+      SELECT to_char( 12.3984172/val, '0.99999') INTO rtn;
     END IF;
     RETURN rtn;
   END;
@@ -2611,6 +2628,10 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
     SELECT epics.caget( epvmlname) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=px.getstation() AND epvmlName='Io';
     IF NOT FOUND THEN
       theIzero := 1;
+    END IF;
+
+    IF theIzero < 1 THEN
+      theIzero = 0;
     END IF;
     
     theCurrent := epics.caget( 'S:SRcurrentAI');
