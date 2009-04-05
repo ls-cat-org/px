@@ -2949,7 +2949,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
 
     --    raise exception 'startTransfer: theId=%, xx=%, yy=%, zz=%', to_hex(theId), xx::int, yy::int, zz::int;
 
-    SELECT  px.startTransfer( theId, present, xx::int, yy::int, zz::int) into rtn;
+    SELECT  px.startTransfer( theId, present, xx::int, yy::int, zz::int, esttime) into rtn;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2965,12 +2965,13 @@ CREATE TABLE px.transferArgs (
        taPresent boolean,
        taXX int,
        taYY int,
-       taZZ int
+       taZZ int,
+       taEstTime numeric
 );
 ALTER TABLE px.transferArgs OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int) returns int AS $$
+CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int, esttime numeric) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
     cursam int; -- the current sample
@@ -2980,7 +2981,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       return 0;
     END IF;
 
-    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz);
+    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, esttime);
 
     IF cursam = 0 and present THEN
       -- manually mounted sample, 
@@ -3004,7 +3005,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
     return 1;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startTransfer( int, boolean, int, int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.startTransfer( int, boolean, int, int, int, numeric) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns int AS $$
   SELECT px.startTransfer( $1, $2, 0, 0, 0);
@@ -3461,12 +3462,29 @@ INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('warning', 2000
 CREATE TABLE px.activeErrors (
        eaKey serial primary key,                        -- the key
        eaId int not null references px.errors (eid),    -- the error
-       eaTs timestamp with time zone not null default now(),
+       eaTs timestamp with time zone not null default now(), -- first occurance of this error
        eaStn int not null references px.stations (stnKey),
        eaDetails text,
-       eaAcknowledged boolean not null default False
+       eaAcknowledged boolean not null default False,
+       eaTsLast timestamp with time zone not null default now(), -- last occurance of this error
+       eaCount int not null default 1                            -- number of errors yet to be ackknowledged
 );
 ALTER TABLE px.activeErrors OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.activeErrorInsertTF() returns trigger as $$
+  DECLARE
+    prev record;
+  BEGIN
+    SELECT * INTO prev FROM px.activeErrors WHERE eaStn=px.getStation() and not eaAcknowledged and eaId=NEW.eaid;
+    IF FOUND THEN
+      UPDATE px.activeErrors SET eaCount = eaCount+1, eaTsLast=now() WHERE eaKey=prev.eaKey;
+      return NULL;
+    END IF;
+    return NEW;
+  END;
+$$ LANGUAGE PLPGSQL SECURITY DEFINER;
+ALTER FUNCTION px.activeerrorinserttf() OWNER TO lsadmin;
+CREATE TRIGGER activeErrorsInsertTrigger BEFORE INSERT ON px.activeerrors FOR EACH ROW EXECUTE PROCEDURE px.activeerrorinserttf();
 
 
 CREATE TYPE px.errorType AS ( etKey bigint, etSeverity text, etId int, etTerse text, etVerbose text, etDetails text, etts timestamptz);
@@ -3475,13 +3493,14 @@ CREATE OR REPLACE FUNCTION px.nextErrors() returns setof px.errorType AS $$
   DECLARE
     rtn px.errorType;
   BEGIN
-    FOR rtn IN SELECT eaKey, es, eiD, eTerse, eVerbose, eaDetails, eaTs
+    FOR rtn IN SELECT eaKey, eSeverity, eiD, eTerse, eVerbose, eaDetails, eaTs
                  FROM px.activeErrors
                  LEFT JOIN px.errors ON eaId=eId
                  WHERE eaStn=px.getstation() and eaAcknowledged = False
-                 ORDER BY ess desc,eaTs desc LOOP
+                 ORDER BY eaTs desc LOOP
       return next rtn;
     END LOOP;
+    DELETE FROM px.activeerrors WHERE eaAcknowledged;
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -3500,7 +3519,7 @@ CREATE OR REPLACE FUNCTION px.pushError( theId int, theDetails text) RETURNS VOI
    sever int;
    ntfy text;
   BEGIN
-    INSERT INTO px.activeErrors (eaId, eaStn, eaDetails) VALUES (theId, px.getstation(), theDetails);
+    INSERT INTO px.activeErrors (eaId, eaStn, eaDetails) VALUES (theId, px.getstation()::int, theDetails);
     SELECT ess INTO sever FROM px.errors LEFT JOIN px.errorSeverity on eSeverity=es WHERE eid = theId;
     IF FOUND THEN
       SELECT CASE WHEN sever=0 THEN cnotifymessage
