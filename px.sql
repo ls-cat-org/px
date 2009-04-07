@@ -2989,19 +2989,24 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       return 0;
     END IF;
     IF cursam = 0 THEN
-      PERFORM cats.put( theId, xx, yy, zz);
+      PERFORM cats.put( theId, xx, yy, zz, esttime);
     ELSE
       IF theId = 0 THEN
-        PERFORM cats.get( xx, yy, zz);
+        PERFORM cats.get( xx, yy, zz, esttime);
       ELSE
         IF theId = cursam THEN
-          PERFORM cats.get(xx, yy, zz);
-          PERFORM cats.put( theId, xx, yy, zz);
+          PERFORM cats.get(xx, yy, zz, esttime);
+          PERFORM cats.put( theId, xx, yy, zz, esttime);
         ELSE
-          PERFORM cats.getput( theId, xx, yy, zz);
+          PERFORM cats.getput( theId, xx, yy, zz, esttime);
         END IF;
       END IF;
     END IF;
+    --
+    -- This anticipates a requrest for robot air rights
+    -- starting the detector now will save some time later, perhaps
+    --
+    PERFORM px.rt_set_dist( 700);
     return 1;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
