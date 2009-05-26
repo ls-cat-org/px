@@ -421,6 +421,18 @@ class PxMarServer:
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
                             #
+                            # Delete the file first so that the hard link to the old file remains
+                            # otherwise marccd will simply replace the contents of the old file and the hardlink
+                            # will be to the new file, not the old one
+                            #
+                            try:
+                                os.unlink( "%s/%s" % (r["dsdir"],r["sfn"]))
+                            except OSError, (errno, strerror):
+                                # Don't complain if the file does not exist
+                                if errno != 2:
+                                    print >> sys.stderr, time.asctime(), "Error deleting old file: %s" % (strerror)
+
+                            #
                             # Wait for the detector movement
                             # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                             #
