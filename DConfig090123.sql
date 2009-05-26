@@ -7,7 +7,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES ( x'01030000
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES ( x'01040000'::int, (SELECT hkey FROM px.holders WHERE hBarCode='Station F SPINE Cassette 2' limit 1), 'Present');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES ( x'01050000'::int, (SELECT hkey FROM px.holders WHERE hBarCode='Station F Rigaku Cassette 3' limit 1), 'Present');
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030100'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD398A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030100'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 1' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01030101'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -41,7 +41,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030200'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD399A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030200'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 2' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01030201'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -75,7 +75,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030300'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD372A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01030300'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 3' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01030301'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -109,7 +109,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 ------
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040100'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD094A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040100'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 1' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01040101'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -143,7 +143,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 --
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040200'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD476A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040200'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 2' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01040201'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -178,7 +178,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 --
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040300'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD515A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01040300'::int, (SELECT hkey FROM px.holders WHERE hBarCode='SPINE Basket 3' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01040301'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -213,7 +213,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 ------
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050400'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CE289A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050400'::int, (SELECT hkey FROM px.holders WHERE hBarCode='Rigaku Magazine 1' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01050401'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -253,7 +253,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 --
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050500'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD519A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050500'::int, (SELECT hkey FROM px.holders WHERE hBarCode='Rigaku Magazine 2' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01050501'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');
@@ -293,7 +293,7 @@ INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial
 
 --
 
-INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050600'::int, (SELECT hkey FROM px.holders WHERE hBarCode='CD516A' LIMIT 1), 'Present');
+INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState) VALUES (x'01050600'::int, (SELECT hkey FROM px.holders WHERE hBarCode='Rigaku Magazine 3' LIMIT 1), 'Present');
 
 INSERT INTO px.holders (hType, hName) VALUES ('CrystalCap HT   HR8', 'Sample 01');
 INSERT INTO px.holderhistory (hhPosition, hhHolder, hhState, hhExpId, hhMaterial) VALUES ( x'01050601'::int, currval( 'px.holders_hkey_seq'), 'Present', 57378, 'Empty Loop 1');

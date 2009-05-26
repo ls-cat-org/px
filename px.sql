@@ -806,7 +806,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
   DECLARE
     rtn text;           -- new token
   BEGIN
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, px.getstation(), expid, (select stndataroot from px.stations where stnkey=px.getstation()));
     PERFORM px.chkdir( rtn);
     PERFORM px.mkshots( rtn);
@@ -822,7 +822,7 @@ CREATE OR REPLACE FUNCTION px.newdataset() RETURNS text AS $$
   DECLARE
     rtn text;           -- new token
   BEGIN
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     INSERT INTO px.datasets (dspid, dsstn, dsdir) VALUES (rtn, px.getstation(), (select stndataroot from px.stations where stnkey=px.getstation()));
     PERFORM px.chkdir( rtn);
     PERFORM px.mkshots( rtn);
@@ -839,7 +839,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( token text) RETURNS text AS $$
     rtn text;           -- new token
   BEGIN
 
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
 
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
     EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsstn=px.getstation()';
@@ -873,7 +873,7 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text) RETURNS text AS $$
   DECLARE
     rtn text;           -- new token
   BEGIN
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
     EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp), dsstn=px.getstation()';
     EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
@@ -891,7 +891,7 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS t
     pfx text;           -- prefix after being cleaned up
     rtn text;           -- new token
   BEGIN
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     pfx := px.fix_fn( newPrefix);
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
     EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsstn=px.getstation()';
@@ -912,7 +912,7 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix te
     dir text;           -- directory after being cleaned up
     rtn text;           -- new token
   BEGIN
-    SELECT INTO rtn md5( nextval( 'px.datasets_dskey_seq')+random());
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     pfx := px.fix_fn( newPrefix);
     dir := px.fix_dir( newDir);
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
@@ -936,7 +936,7 @@ CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text
 
   SELECT dspid INTO rtn FROM px.datasets WHERE dsparent=token and dspositions=array[sample];
   IF NOT FOUND THEN
-    SELECT md5( nextval( 'px.datasets_dskey_seq')+random()) INTO rtn;
+    SELECT md5( (nextval( 'px.datasets_dskey_seq')+random())::text) INTO rtn;
     EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
     EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp,'||sample||'), dsstn=px.getstation(), dsparent='''||token||''', dspositions=''{'||sample||'}''';
     EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
@@ -2436,6 +2436,11 @@ CREATE OR REPLACE FUNCTION px.rt_can_home_omega() returns boolean AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.rt_can_home_omega() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
+  SELECT px.rt_set_dist( $1::text);
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
   DECLARE
   BEGIN
@@ -3108,7 +3113,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
     PERFORM px.dropAirRights();
     SELECT px.getCurrentSampleId() INTO smpl;
     SELECT dsdist INTO dist FROM px.nextShot();
-    IF FOUND THEN
+    IF FOUND and dist is not null THEN
       PERFORM px.rt_set_dist( dist);
     END IF;
 
