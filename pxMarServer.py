@@ -75,6 +75,13 @@ class PxMarServer:
     outputBlocked=True  # indicates we have blocked the output to the marccd program
     flushStatus = True  # flush status buff so we do not get old status
     hlList      = []    # dictionary of hardlinks to make
+    xsize = None        # size of image
+    ysize = None
+    xbin  = None        # current binning
+    ybin  = None
+
+    xpixsize = 0.073242 # size size of a pixel in mm
+    ypixsize = 0.073242 # size size of a pixel in mm
 
     def hlPush( self, d, f, expt, shotKey):
         #
@@ -369,6 +376,9 @@ class PxMarServer:
                 # use only the last message to set the status
                 if len( ml[-1]):
                     self.setStatus( ml[-1])
+                #
+                # Maybe other messages besides status: try to parse them
+                self.parseMar(ml)
             else:
                 if self.lo == "":
                     self.flushStatus = False
@@ -403,9 +413,25 @@ class PxMarServer:
                         #
                         # save the file name and queue up the readout command
                         self.key = cmd.split(",")[1]
+                        
+
+                        if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
+                            #
+                            # get the beam center information
+                            #
+                            qs = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy"
+                            qr = self.query( qs)
+                            r = qr.dictresult()[0]
+                            beam_x = self.xsize/2.0 + float( r["bcx"])/(self.xpixsize*self.xbin)
+                            beam_y = self.ysize/2.0 + float( r["bcy"])/(self.ypixsize*self.ybin)
+                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y
+                        else:
+                            beam_x = 2048
+                            beam_y = 2048
+                        
 
                         #
-                        # get all the information we'll need to write the header and so forth
+                        # get all the other information we'll need to write the header and so forth
                         #
                         qs = "select * from px.marheader( %s)" % self.key
                         qr = self.query( qs)
@@ -438,8 +464,8 @@ class PxMarServer:
                             #
                             self.waitdist(r["sdist"])
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=2048,beam_y=2048,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                                r["sdist"], r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                            hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                                r["sdist"], beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                                 )
                             print >> sys.stderr, time.asctime(), hs
                             self.queue.insert( 0, hs)
@@ -490,6 +516,23 @@ class PxMarServer:
             rtn = self.queue.pop(0)
             print >> sys.stderr, time.asctime(), "dequeued %s" % (rtn)
         return rtn
+
+    def parseMar( self, ml):
+        #
+        # really dumb parser, probably nothing better will ever be needed
+        # Note that "is_state" is already parsed and we may ignore it
+        for msg in ml:
+            if msg.find("is_size")==0:
+                rsp = msg.split(",")
+                self.xsize=int(rsp[1])
+                self.ysize=int(rsp[2])
+                print >>sys.stderr, time.asctime(), "SIZE: ", self.xsize,self.ysize
+
+            if msg.find("is_bin")==0:
+                rsp = msg.split(",")
+                self.xbin=int(rsp[1])
+                self.ybin=int(rsp[2])
+                print >>sys.stderr, time.asctime(), "BIN: ",self.xbin,self.ybin
 
     def setStatus( self, msg):
         rsp = msg.split( ",")

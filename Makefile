@@ -1,4 +1,4 @@
-VERSION= 1.2
+VERSION= 1.3
 help:
 	echo "Usage: sudo make install"
 
