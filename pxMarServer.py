@@ -422,8 +422,8 @@ class PxMarServer:
                             qs = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy"
                             qr = self.query( qs)
                             r = qr.dictresult()[0]
-                            beam_x = self.xsize/2.0 + float( r["bcx"])/(self.xpixsize*self.xbin)
-                            beam_y = self.ysize/2.0 + float( r["bcy"])/(self.ypixsize*self.ybin)
+                            beam_x = self.xsize/2.0 - float( r["bcx"])/(self.xpixsize*self.xbin)
+                            beam_y = self.ysize/2.0 - float( r["bcy"])/(self.ypixsize*self.ybin)
                             print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y
                         else:
                             beam_x = 2048
