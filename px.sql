@@ -283,7 +283,7 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
   DECLARE
     rtn px.marheadertype;
   BEGIN
-    SELECT INTO rtn coalesce(sdist,  coalesce( dsdist,'150'))::numeric      as sdist,
+    SELECT INTO rtn coalesce(sdist,  dsdist)::numeric      as sdist,
                     coalesce(sexpt,  coalesce( dsexp,'1.0'))::numeric       as sexpt,
                     coalesce(sstart, coalesce( dsstart, '0'))::numeric        as sstart,
                     coalesce(saxis,  coalesce( dsoscaxis,'omega'))          as saxis,
@@ -2378,7 +2378,7 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) RETURNS boole
     stopped boolean;
     rtn boolean;
   BEGIN
-    SELECT epics.isthere( elPV, value) INTO rtn FROM px.epicsLink WHERE elStn=px.getStation() and elName='distance';
+    SELECT epics.isthere( elPV, value) INTO rtn FROM px.epicsLink WHERE elStn=px.getStation() and elName=motion;
     IF NOT rtn THEN
       SELECT px.isstopped( motion) INTO stopped;
       IF stopped THEN
@@ -2394,7 +2394,7 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
   BEGIN
-    SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=px.getstation() and elName='distance';
+    SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=px.getstation() and elName=motion;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2405,7 +2405,7 @@ CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
     rtn boolean;
   BEGIN
     rtn = NULL;
-      SELECT epics.isstopped( elPV) INTO rtn FROM px.epicsLink WHERE elName=motion and elStn=px.getStation();
+    SELECT epics.isstopped( elPV) INTO rtn FROM px.epicsLink WHERE elName=motion and elStn=px.getStation()::bigint;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2414,10 +2414,33 @@ ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS VOID AS $$
   DECLARE
   BEGIN
+  -- PERFORM px.isthere( motion, value);
    PERFORM epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=px.getStation();
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT epics.caget( epvmlpv) INTO rtn FROM px.epicspvmlink WHERE epvmlname='bcx' and epvmlstn=px.getStation();
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_bcx() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_bcy() returns text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT epics.caget( epvmlpv) INTO rtn FROM px.epicspvmlink WHERE epvmlname='bcy' and epvmlstn=px.getStation();
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_bcy() OWNER TO lsadmin;
+
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
@@ -2437,8 +2460,12 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.rt_can_home_omega() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
-  SELECT px.rt_set_dist( $1::text);
-$$ LANGUAGE SQL SECURITY DEFINER;
+  DECLARE
+  BEGIN
+    PERFORM px.moveit( 'distance', d);
+    RETURN;
+  END;
+$$ LANGUAGE PLPGSQL SECURITY DEFINER;
 ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
@@ -2519,13 +2546,6 @@ CREATE OR REPLACE FUNCTION px._moveDetectorIn( pvmk bigint, value numeric) RETUR
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px._moveDetectorIn( bigint, numeric) OWNER TO lsadmin;
-
-CREATE TABLE px._beamcenterHistory (
-        bcKey   serial primary key,             -- table key
-        bcStn   bigint                          -- the station
-                references px.stations (stnkey),
-        bxX1
-
 
 CREATE TABLE px._energyLookUpMethods (
         elum text primary key
@@ -3682,7 +3702,7 @@ ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric)
 
 CREATE OR REPLACE FUNCTION px.abortTransfer() returns void AS $$
   BEGIN
-  PERFORM cats._pushqueue( "abort");
+  PERFORM cats._pushqueue( 'panic');
   return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
