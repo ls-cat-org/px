@@ -465,21 +465,26 @@ class PxMarServer:
                             #
                             # get the beam center information
                             #
-                            qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy"
+                            qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
                             qr2 = self.query( qs2)
                             r2 = qr2.dictresult()[0]
-                            beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize*self.xbin)
-                            beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize*self.ybin)
-                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y
+                            beam_x = self.xsize/2.0 - float( r2["bcx"])/self.xpixsize
+                            beam_y = self.ysize/2.0 - float( r2["bcy"])/self.ypixsize
+                            dist = r2["dist"]
+                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
                         else:
                             beam_x = 2048
                             beam_y = 2048
+                            qs2 = "px.rt_get_dist() as dist"
+                            qr2 = self.query( qs2)
+                            r2 = qr2.dictresult()[0]
+                            dist = r2["dist"]
                         
 
 
                         self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                         hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                            r["sdist"], beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                            dist, beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                             )
                         print >> sys.stderr, time.asctime(), hs
                         self.queue.insert( 0, hs)
