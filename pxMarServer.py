@@ -423,7 +423,7 @@ class PxMarServer:
                         r  = qr.dictresult()[0]
 
 
-                        if r["dsdir"] != None and r["sfn"] != None:
+                        if r["dsdir"] != None and r["sfn"] != None and len(r["sfn"])>0:
                             try:
                                 os.makedirs( r["dsdir"])
                             except OSError, (errno, strerror):
@@ -432,6 +432,15 @@ class PxMarServer:
                                     self.db.query( qs);
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
+
+                        else:
+                            # the shot was not found: send the data to the bit bucket but go through the motions of collecting
+                            r["dsdir"] = "/dev"
+                            r["sfn"]   = "null"
+                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                            qs = "select px.pusherror( 10005, '')"
+                            self.db.query( qs);
+                            print >> sys.stderr, time.asctime(), "Could not determine either the filename or the directory: data sent to /dev/null instead"
 
 
                         #
@@ -476,15 +485,6 @@ class PxMarServer:
                             self.queue.insert( 0, hs)
 
                             self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
-
-                        else:
-                            # the shot was not found: send the data to the bit bucket but go through the motions of collecting
-                            r["dsdir"] = "/dev"
-                            r["sfn"]   = "null"
-                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            qs = "select px.pusherror( 10005, '')"
-                            self.db.query( qs);
-                            print >> sys.stderr, time.asctime(), "Request for a non-existant frame: data sent to /dev/null"
 
 
                         cmd = "start"
