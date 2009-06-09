@@ -465,11 +465,11 @@ class PxMarServer:
                             #
                             # get the beam center information
                             #
-                            qs = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy"
-                            qr = self.query( qs)
-                            r = qr.dictresult()[0]
-                            beam_x = self.xsize/2.0 - float( r["bcx"])/(self.xpixsize*self.xbin)
-                            beam_y = self.ysize/2.0 - float( r["bcy"])/(self.ypixsize*self.ybin)
+                            qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy"
+                            qr2 = self.query( qs2)
+                            r2 = qr2.dictresult()[0]
+                            beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize*self.xbin)
+                            beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize*self.ybin)
                             print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y
                         else:
                             beam_x = 2048
