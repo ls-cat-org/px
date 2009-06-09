@@ -415,6 +415,32 @@ class PxMarServer:
                         self.key = cmd.split(",")[1]
                         
 
+                        #
+                        # get most of the information we'll need to write the header and so forth
+                        #
+                        qs = "select * from px.marheader( %s)" % self.key
+                        qr = self.query( qs)
+                        r  = qr.dictresult()[0]
+
+
+                        if r["dsdir"] != None and r["sfn"] != None:
+                            try:
+                                os.makedirs( r["dsdir"])
+                            except OSError, (errno, strerror):
+                                if errno != 17:
+                                    qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
+                                    self.db.query( qs);
+                                    print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
+
+
+
+                        #
+                        # Wait for the detector movement
+                        # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
+                        #
+                        self.waitdist(r["sdist"])
+
+
                         if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
                             #
                             # get the beam center information
@@ -430,22 +456,6 @@ class PxMarServer:
                             beam_y = 2048
                         
 
-                        #
-                        # get all the other information we'll need to write the header and so forth
-                        #
-                        qs = "select * from px.marheader( %s)" % self.key
-                        qr = self.query( qs)
-                        r  = qr.dictresult()[0]
-
-                        if r["dsdir"] != None and r["sfn"] != None:
-                            try:
-                                os.makedirs( r["dsdir"])
-                            except OSError, (errno, strerror):
-                                if errno != 17:
-                                    qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
-                                    self.db.query( qs);
-                                    print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
-
                             #
                             # Delete the file first so that the hard link to the old file remains
                             # otherwise marccd will simply replace the contents of the old file and the hardlink
@@ -458,11 +468,6 @@ class PxMarServer:
                                 if errno != 2:
                                     print >> sys.stderr, time.asctime(), "Error deleting old file: %s" % (strerror)
 
-                            #
-                            # Wait for the detector movement
-                            # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
-                            #
-                            self.waitdist(r["sdist"])
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                                 r["sdist"], beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
