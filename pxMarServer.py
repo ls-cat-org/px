@@ -432,6 +432,17 @@ class PxMarServer:
                                     self.db.query( qs);
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
+                            #
+                            # Delete the file first so that the hard link to the old file remains
+                            # otherwise marccd will simply replace the contents of the old file and the hardlink
+                            # will be to the new file, not the old one
+                            #
+                            try:
+                                os.unlink( "%s/%s" % (r["dsdir"],r["sfn"]))
+                            except OSError, (errno, strerror):
+                                # Don't complain if the file does not exist
+                                if errno != 2:
+                                    print >> sys.stderr, time.asctime(), "Error deleting old file: %s" % (strerror)
 
                         else:
                             # the shot was not found: send the data to the bit bucket but go through the motions of collecting
@@ -465,26 +476,15 @@ class PxMarServer:
                             beam_y = 2048
                         
 
-                            #
-                            # Delete the file first so that the hard link to the old file remains
-                            # otherwise marccd will simply replace the contents of the old file and the hardlink
-                            # will be to the new file, not the old one
-                            #
-                            try:
-                                os.unlink( "%s/%s" % (r["dsdir"],r["sfn"]))
-                            except OSError, (errno, strerror):
-                                # Don't complain if the file does not exist
-                                if errno != 2:
-                                    print >> sys.stderr, time.asctime(), "Error deleting old file: %s" % (strerror)
 
-                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                                r["sdist"], beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
-                                )
-                            print >> sys.stderr, time.asctime(), hs
-                            self.queue.insert( 0, hs)
+                        self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                            r["sdist"], beam_x, beam_y,r["sexpt"],r["sstart"],r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                            )
+                        print >> sys.stderr, time.asctime(), hs
+                        self.queue.insert( 0, hs)
 
-                            self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
+                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
 
 
                         cmd = "start"
