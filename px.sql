@@ -36,6 +36,7 @@ CREATE OR REPLACE FUNCTION px.marinit() RETURNS void AS $$
     r record;
     ntfy text;
   BEGIN
+    PERFORM pg_advisory_lock( px.getstation(), 5);
     SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=px.getstation();
     EXECUTE 'LISTEN ' || ntfy;
     FOR r IN SELECT * FROM px._marinit order by miorder LOOP
@@ -683,7 +684,7 @@ ALTER FUNCTION px.fix_fn( text) OWNER TO lsadmin;
 -- removes illegal characters from directory
 --
 CREATE OR REPLACE FUNCTION px.fix_dir( dir text) RETURNS text as $$
-  SELECT regexp_replace( $1, '[^-._a-zA-Z0-9/]*', '','g');
+  SELECT regexp_replace(regexp_replace( $1, '[^-._a-zA-Z0-9/]*', '','g'),'/+$','');
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.fix_dir( text) OWNER TO lsadmin;
 
@@ -706,6 +707,7 @@ CREATE TABLE px.datasets (
         dskey      serial primary key,                          -- table key
         dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
         dscreatets timestamp with time zone default now(),      -- creatation time stamp
+        dsdonets   timestamp with time zone default NULL,	-- time of last done frame
         dsstate    text NOT NULL DEFAULT 'active'               -- active or not
                 references px.dsstates (dss),
         dsesaf     int default NULL,                            -- The ESAF used for this experiment
@@ -740,6 +742,7 @@ CREATE TABLE px.datasets (
         dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
         dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
         dscomment  text DEFAULT NULL,                           -- comment
+	dsobfuscated boolean default false,			-- fp and dir have been obfuscated
         dsparent   text DEFAULT NULL references px.datasets (dspid),
         dspositions int[] default '{0}'                         -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
 );
@@ -1215,6 +1218,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ds_set_nwedge( text, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_get_nwedge( token text) RETURNS int as $$
+  UPDATE px.stnstatus  SET ssdsedit=$1 WHERE ssstn=px.getstation();
   SELECT dsnwedge FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_nwedge( text) OWNER TO lsadmin;
@@ -1473,6 +1477,7 @@ CREATE TABLE px.shots (
         sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
 	spath    text           DEFAULT NULL,		-- the full file path used
         sbupath  text           DEFAULT NULL,           -- the full path of the backup file
+	sobfuscated boolean     DEFAULT false,		-- fn, path, and bupath have been obfuscated
 	stimes   int            DEFAULT 0               -- number of times this has been run
         UNIQUE (sdspid, stype, sindex)
 );
@@ -1531,6 +1536,10 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
   BEGIN
+    IF coalesce(OLD.sbupath,'') != coalesce(NEW.sbupath,'') and NEW.sstate = 'Done' THEN
+      UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
+      INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
+    END IF;
     IF OLD.sstate != NEW.sstate and NEW.sstate = 'Done' THEN
       PERFORM 1 FROM px.shots WHERE sdspid=NEW.sdspid and stype=NEW.stype and sstate!='Done' and sKey != NEW.sKey;
       IF NOT FOUND THEN
@@ -1549,6 +1558,8 @@ CREATE OR REPLACE FUNCTION px.shotsUpdate0TF() returns trigger AS $$
   BEGIN
     IF OLD.sstate != 'Done' and NEW.sstate = 'Done' THEN
       NEW.stimes = OLD.stimes + 1;
+      NEW.sts = now();
+      update px.datasets set dsdonets = now() WHERE dspid=NEW.sdspid;
     END IF;
     return NEW;
   END;
@@ -1731,7 +1742,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
 
     IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
       -- Here we have multiple samples.  Make snaps but not for this one
-      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid LOOP
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY ds.dspositions[1] LOOP
         PERFORM px.mksnap( kidtok, initialpos);
       END LOOP;
     ELSE
@@ -2245,6 +2256,28 @@ CREATE OR REPLACE FUNCTION px.runqueue_get() returns SETOF px.runqueuetype AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.runqueue_get() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.runqueue_get( theStn bigint) returns SETOF px.runqueuetype AS $$
+  DECLARE
+    rtn px.runqueuetype;                -- the return value
+    rq record;                          -- the runqueue entry
+    startTime timestamp with time zone; -- start time of next dataset
+    deltaTime interval;                 -- estimated time for this dataset
+  BEGIN
+    startTime := now();
+    FOR rq IN SELECT * FROM px.runqueue WHERE rqStn=theStn ORDER BY rqOrder LOOP
+      deltaTime := px.ds_get_et( rq.rqToken, rq.rqType);
+      startTime := startTime + deltaTime;
+      rtn.etc   := to_char( startTime, 'HH24:MI');
+      rtn.dspid := rq.rqToken;
+      rtn.type  := rq.rqType;
+      rtn.k     := rq.rqKey;
+      RETURN NEXT rtn;
+    END LOOP;
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_get( bigint) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   DECLARE
@@ -2303,7 +2336,7 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
       -- see if any other children remain
       PERFORM 1 FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() and dsparent is not null;
       IF NOT FOUND THEN
-        PERFORM px.requestTransfer( 0);
+      --        PERFORM px.requestTransfer( 0);
       END IF;
     END IF;
   END;
@@ -2453,6 +2486,17 @@ CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_dist() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_dist( stn bigint) returns text AS $$
+  DECLARE
+    rtn text;   -- return value
+  BEGIN
+    -- SELECT INTO rtn to_char( mactpos, '9999.9') FROM epics.motions LEFT JOIN  px.epicsLink ON elPV=mmotorpvname WHERE elStn=px.getstation() and elName='distance';
+    SELECT INTO rtn to_char( epics.position(elPV)::numeric, '9999.9') FROM px.epicsLink WHERE elStn=stn and elName='distance';
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_dist( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_can_home_omega() returns boolean AS $$
   SELECT px.rt_get_dist() >= 100.0;
@@ -2609,6 +2653,23 @@ CREATE OR REPLACE FUNCTION px.rt_get_wavelength() returns text AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_wavelength() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_get_wavelength( stn bigint) returns text AS $$
+  DECLARE
+    rtn text;
+    val numeric;
+  BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=stn and eluType='epics';
+    SELECT eluValue INTO val FROM px.energyLookUp WHERE eluStn=stn;
+    IF NOT FOUND OR abs(val) < 2.0 THEN
+      rtn := '--';
+    ELSE
+      SELECT to_char( 12.3984172/val, '0.99999') INTO rtn;
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_wavelength( bigint) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.rt_set_wavelength( lambda text) returns void AS $$
   DECLARE
   BEGIN
@@ -2623,6 +2684,20 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy() returns text AS $$
   BEGIN
     PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=px.getStation() and eluType='epics';
     SELECT INTO rtn to_char(eluValue, '99.99999') FROM px.energyLookUp WHERE eluStn=px.getStation();
+    IF NOT FOUND THEN
+      rtn := '12.73';
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_energy() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_energy( stn bigint) returns text AS $$
+  DECLARE
+    rtn text;
+  BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=stn and eluType='epics';
+    SELECT INTO rtn to_char(eluValue, '99.99999') FROM px.energyLookUp WHERE eluStn=stn;
     IF NOT FOUND THEN
       rtn := '12.73';
     END IF;
@@ -2651,6 +2726,37 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
     --SELECT INTO theIzero  pvmvaluen FROM epics._pvmonitors LEFT JOIN px.epicsPVMLink ON epvmlPV=pvmname WHERE epvmlStn=px.getstation() and epvmlName='Io';
 
     SELECT epics.caget( epvmlname) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=px.getstation() AND epvmlName='Io';
+    IF NOT FOUND THEN
+      theIzero := 1;
+    END IF;
+
+    IF theIzero < 1 THEN
+      theIzero = 0;
+    END IF;
+    
+    theCurrent := epics.caget( 'S:SRcurrentAI');
+    IF theCurrent < 10.0 THEN
+      rtn := '--';
+    ELSE
+      SELECT INTO rtn to_char( theIzero/theCurrent, '999999');
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_ni0() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_ni0( stn bigint) returns text AS $$
+--
+-- Normalized Io
+  DECLARE
+    theCurrent numeric;
+    theIzero   numeric;
+    rtn        text;
+  BEGIN
+    --SELECT INTO theCurrent pvmvaluen FROM epics._pvmonitors WHERE pvmname='S:SRcurrentAI';
+    --SELECT INTO theIzero  pvmvaluen FROM epics._pvmonitors LEFT JOIN px.epicsPVMLink ON epvmlPV=pvmname WHERE epvmlStn=px.getstation() and epvmlName='Io';
+
+    SELECT epics.caget( epvmlname) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=stn AND epvmlName='Io';
     IF NOT FOUND THEN
       theIzero := 1;
     END IF;
@@ -3014,6 +3120,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       return 0;
     END IF;
     IF cursam = 0 THEN
+      --      PERFORM cats.put_bcrd( theId, xx, yy, zz, esttime);
       PERFORM cats.put( theId, xx, yy, zz, esttime);
     ELSE
       IF theId = 0 THEN
@@ -3021,8 +3128,10 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       ELSE
         IF theId = cursam THEN
           PERFORM cats.get(xx, yy, zz, esttime);
+          -- PERFORM cats.put_bcrd( theId, xx, yy, zz, esttime);
           PERFORM cats.put( theId, xx, yy, zz, esttime);
         ELSE
+          -- PERFORM cats.getput_bcrd( theId, xx, yy, zz, esttime);
           PERFORM cats.getput( theId, xx, yy, zz, esttime);
         END IF;
       END IF;
@@ -3106,6 +3215,7 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
     stopped boolean;
   BEGIN
     rtn = False;
+
     SELECT not px.checkDiffractometerOn() INTO md2on;
     IF md2on THEN
       SELECT px.rt_get_dist() INTO curDist;
@@ -3117,6 +3227,9 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
         END IF;
       ELSE
         SELECT px.requestAirRights() INTO rtn;
+        IF rtn THEN
+          PERFORM cats.cmdTimingGotAir();
+        END IF;
       END IF;
     END IF;
     RETURN rtn;
@@ -3702,7 +3815,7 @@ ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric)
 
 CREATE OR REPLACE FUNCTION px.abortTransfer() returns void AS $$
   BEGIN
-  PERFORM cats._pushqueue( 'panic');
+  PERFORM cats.panic();
   return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -3719,3 +3832,288 @@ CREATE OR REPLACE FUNCTION px.getmagnetstate() returns boolean AS $$
   SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getmagnetstate() OWNER TO lsadmin;
+
+
+
+CREATE TABLE px.lockstates  (
+       lskey serial primary key,
+       lsstate int not null unique,
+       lstext text
+);
+ALTER TABLE px.lockstates OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
+  DECLARE
+    lcks record;
+    theStn record;
+    rtn xml;
+    tmp xml;
+    tmp2 xml;
+    shts record;
+    st int;
+    stt text;
+  BEGIN
+    FOR theStn IN SELECT * FROM px.stations ORDER BY stnkey LOOP
+      SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
+      SELECT * INTO shts
+          FROM px.stnstatus
+          LEFT JOIN px.shots ON ssskey=skey
+          LEFT JOIN px.datasets ON sdspid=dspid
+          WHERE ssStn=theStn.stnkey and ssesaf=dsesaf;
+      IF FOUND THEN
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.dsesaf as esaf));
+      ELSE
+        tmp2 := NULL;
+      END IF;
+      tmp := xmlconcat( tmp, xmlelement( name lockstatus, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname, st as lockState, stt as label),tmp2));
+    END LOOP;
+    rtn := xmlelement( name "stationStatus", tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.stnstatusxml() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
+  DECLARE
+    lcks record;
+    theStn record;
+    rtn xml;
+    tmp xml;
+    tmp2 xml;
+    tmp3 xml;
+    tmp4 xml;
+    shts record;
+    st int;
+    stt text;
+    eds record;  -- editing dataset
+    rqs record;  -- runqueue
+    thePrefix text;
+    theStatus text;
+  BEGIN
+    FOR theStn IN SELECT * FROM px.stations WHERE rmt.checkstnaccess( stnkey, thePid) ORDER BY stnkey LOOP
+      SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
+      SELECT * INTO shts
+          FROM px.stnstatus
+          LEFT JOIN px.shots ON ssskey=skey
+          LEFT JOIN px.datasets ON sdspid=dspid
+          WHERE ssStn=theStn.stnkey and ssesaf=dsesaf;
+      tmp2 := NULL;
+      IF FOUND THEN
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.ssesaf as esaf));
+      END IF;
+      tmp3 := NULL;
+      SELECT * INTO eds FROM px.datasets WHERE dspid=shts.ssdsedit;
+      IF FOUND THEN
+        tmp3 := xmlelement( name edit, xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
+                            eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes));
+      END IF;
+      tmp4 := NULL;
+      FOR rqs IN SELECT * FROM px.runqueue_get( theStn.stnkey) LOOP
+        SELECT dsfp, (count(*)-count(ifnull(sstate,'Done')))::text || '/' || count(*)::text INTO thePrefix, theStatus
+              FROM px.datasets
+              LEFT JOIN px.shots ON dspid=sdspid
+              WHERE sdspid=rqs.dspid and stype=rqs.type
+              GROUP BY dsfp
+              LIMIT 1;
+        tmp4 := xmlconcat( tmp4, xmlelement( name entry, xmlattributes( rqs.dspid as dspid, rqs.type as "type", rqs.k as k, rqs.etc as etc, thePrefix as fp, theStatus as status)));
+      END LOOP;
+      tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname, st as lockState, stt as label, px.rt_get_dist( theStn.stnkey) as dist,
+                            px.rt_get_wavelength( theStn.stnkey) as wavelength, px.rt_get_ni0( theStn.stnkey) as ni0), tmp2, tmp3, xmlelement( name runqueue, tmp4)
+                        ));
+    END LOOP;
+    rtn := xmlelement( name "stationStatus", xmlattributes( epics.caget( 'S:SRcurrentAI')::numeric(5,1) as current), tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.stnstatusxml( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.stnstatusxml( theExpNo int) returns xml AS $$
+  DECLARE
+    rtn xml;
+    tmp  xml;
+    tmp2 xml;
+    shts record;
+    theStn record;
+    stt text;
+    st int;
+  BEGIN
+    FOR theStn IN SELECT * FROM px.stations ORDER BY stnkey LOOP
+      PERFORM 1 FROM px.stnstatus WHERE ssesaf=theExpNo and ssstn=theStn.stnkey;
+      stt := NULL;
+      st  := NULL;
+      IF FOUND THEN
+        SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+        SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
+      END IF;
+      SELECT skey, coalesce(sfn,'') as sfn, coalesce(spath,'') as spath, coalesce(sbupath,'') as sbupath INTO shts
+          FROM px.esafstatus
+          LEFT JOIN px.shots ON esskey=skey
+          LEFT JOIN px.datasets ON sdspid=dspid
+          WHERE esStn=theStn.stnkey and esesaf = theExpNo;
+      IF FOUND THEN
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath));
+      ELSE
+        tmp2 := NULL;
+      END IF;
+      tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnname as stnname, st as lockState, stt as lockText), tmp2));
+    END LOOP;
+    rtn := xmlelement( name "stationStatus", tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.stnstatusxml( int) OWNER TO lsadmin;
+
+
+
+CREATE TABLE px.stnstatus (
+	sskey serial primary key,
+        ssts timestamp with time zone default now(),
+	ssstn bigint references px.stations (stnkey) unique,
+	ssesaf int,
+	ssskey bigint references px.shots (skey) on delete set null unique,
+	sssfn  text default null,	-- copy of shots table entry
+	ssspath text default null,      -- copy of shots table entry
+        sssbupath text default null,     -- copy of shots table entry
+        ssdsedit text default null references px.datasets (dspid)
+);
+ALTER TABLE px.stnstatus OWNER TO lsadmin;
+
+CREATE TABLE px.esafstatus (
+	eskey serial primary key,
+        ests timestamp with time zone default now(),
+	esstn bigint references px.stations (stnkey),
+	esesaf int,
+	esskey bigint references px.shots (skey) on delete set null unique,
+        essfn text default null,
+        esspath text default null,
+        essbupath text default null,
+        esdsedit text default null references px.datasets (dspid)
+        unique (esesaf,esstn)
+);
+ALTER TABLE px.esafstatus OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.esafstatusInsertTF() returns trigger AS $$
+  DECLARE
+    expid int;
+  BEGIN
+    SELECT ssesaf INTO expid FROM px.stnstatus WHERE ssstn=px.getStation();
+    IF NOT FOUND OR expid is NULL or expid=0 THEN
+      RETURN NULL;
+    END IF;
+
+    PERFORM 1 FROM px.esafstatus WHERE esstn=px.getstation() and esesaf=expid;
+    IF FOUND THEN
+      UPDATE px.esafstatus SET ests=now(), esskey=NEW.esskey WHERE esstn=px.getStation() and esesaf=expid;
+      return NULL;
+    END IF;
+
+    NEW.esesaf := expid;
+    NEW.esstn  := px.getStation();
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.esafstatusInsertTF() OWNER TO lsadmin;
+CREATE TRIGGER esafstatusInsertTrigger BEFORE INSERT ON px.esafstatus FOR EACH ROW EXECUTE PROCEDURE px.esafstatusInsertTF();
+
+
+
+CREATE OR REPLACE FUNCTION px.stnstatusUpdateTF() returns trigger AS $$
+  DECLARE
+  BEGIN
+    NEW.ssts = now();
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.stnstatusUpdateTF() OWNER TO lsadmin;
+CREATE TRIGGER stnstatusUpdateTrigger BEFORE UPDATE ON px.stnstatus FOR EACH ROW EXECUTE PROCEDURE px.stnstatusUpdateTF();
+
+
+CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT esaf.checkPassword( expid, thepwd) INTO rtn;
+    IF rtn = True THEN
+      UPDATE px.stnstatus SET ssesaf=expid WHERE ssstn=px.getstation();
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.login( int, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.logout() returns void as $$
+  DECLARE
+  BEGIN
+    UPDATE px.stnstatus SET ssesaf=NULL WHERE ssstn=px.getstation();
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.logout() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.rt_get_twitter() returns text AS $$
+--
+-- Normalized Io
+  DECLARE
+    theCurrent numeric;
+    theIzero   numeric;
+    stn        record;
+    rtn        text;
+    tmp        text;
+  BEGIN
+    theCurrent := epics.caget( 'S:SRcurrentAI');
+    rtn := 'APS: ' || to_char(theCurrent, '99999.9');
+    FOR stn IN SELECT * from px.stations LOOP
+      select epics.caget( epvmlpv) into tmp FROM px.epicsPVMLink WHERE epvmlStn=stn.stnkey AND epvmlName='Io';
+      raise notice 'theIzero (maybe): %', tmp;
+      IF tmp LIKE '0.0%' THEN
+        theIzero := 0;
+      ELSE
+        SELECT coalesce(epics.caget( epvmlpv),'0') INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=stn.stnkey AND epvmlName='Io';
+        IF NOT FOUND THEN
+          theIzero := 1;
+        END IF;
+        IF theIzero < 1 THEN
+          theIzero = 0;
+        END IF;
+      END IF;
+      rtn := rtn || '  ' || stn.stnshortname || ': ' || (theIzero::int)::text;
+    END LOOP;
+
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_twitter() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as $$
+  --
+  -- just like the original get shots execpt return is xml.
+  -- pid is the session pid from the rmt schema
+  -- token is the dataset pid: dspid
+  --
+  DECLARE
+    rtn xml;
+    tmp xml;
+    shts record;
+    aok boolean;
+  BEGIN
+    SELECT rmt.checkTokenAccess( pid, token) INTO aok;
+    IF NOT FOUND or NOT aok THEN
+      return '<shots/>'::xml;
+    END IF;
+
+    tmp := NULL;
+    FOR shts IN SELECT * FROM px.getShots( token) LOOP
+      tmp := xmlconcat( tmp, xmlelement( name shot, xmlattributes( shts.sfn as sfn, shts.sstart as sstart, shts.sstate as sstate, shts.sindex as sindex, shts.skey as skey)));
+    END LOOP;
+
+    rtn := xmlelement( name "shots", xmlattributes( token as sdspid), tmp);
+
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getShotsXml( text, text) OWNER TO lsadmin;
