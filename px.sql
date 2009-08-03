@@ -3912,7 +3912,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       END IF;
       tmp4 := NULL;
       FOR rqs IN SELECT * FROM px.runqueue_get( theStn.stnkey) LOOP
-        SELECT dsfp, (count(*)-count(ifnull(sstate,'Done')))::text || '/' || count(*)::text INTO thePrefix, theStatus
+        SELECT dsfp, (count(*)-count(nullif(sstate,'Done')))::text || '/' || count(*)::text INTO thePrefix, theStatus
               FROM px.datasets
               LEFT JOIN px.shots ON dspid=sdspid
               WHERE sdspid=rqs.dspid and stype=rqs.type
