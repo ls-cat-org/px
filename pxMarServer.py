@@ -118,8 +118,9 @@ class PxMarServer:
                 #
                 # Look for the file
                 #
+                statinfo = None
                 try:
-                    os.stat( d+"/"+f)
+                    statinfo = os.stat( d+"/"+f)
                 except:
                     # the file does not yet exist
                     # print >> sys.stderr, time.asctime(), "%s/%s does not yet exist" % (d,f)
@@ -129,7 +130,7 @@ class PxMarServer:
                 # Got it
                 print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
                 #
-                qs = "UPDATE px.shots SET spath='%s' WHERE skey=%d" % (d+"/"+f, int(shotKey))
+                qs = "UPDATE px.shots SET spath='%s', sfsize=%d WHERE skey=%d" % (d+"/"+f, int(shotKey), statinfo.st_size)
                 self.db.query( qs)
 
                 # find the backup home directory
