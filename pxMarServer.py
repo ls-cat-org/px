@@ -273,7 +273,7 @@ class PxMarServer:
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
-                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 20):
+                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
                         self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
                         dewarWarningGiven = True
                         
@@ -295,7 +295,7 @@ class PxMarServer:
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
-                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 20):
+                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
                         self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
                         dewarWarningGiven = True
                         
