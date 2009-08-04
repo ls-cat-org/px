@@ -130,7 +130,7 @@ class PxMarServer:
                 # Got it
                 print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
                 #
-                qs = "UPDATE px.shots SET spath='%s', sfsize=%d WHERE skey=%d" % (d+"/"+f, int(shotKey), statinfo.st_size)
+                qs = "UPDATE px.shots SET spath='%s' WHERE skey=%d" % (d+"/"+f, int(shotKey))
                 self.db.query( qs)
 
                 # find the backup home directory
@@ -270,7 +270,13 @@ class PxMarServer:
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
                 loopFlag = 1
+                dewarWarningGiven = False
+                startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
+                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 20):
+                        self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
+                        dewarWarningGiven = True
+                        
                     time.sleep( 0.21)
                     qr = self.query( "select px.isthere( 'distance') as isthere")
                     r = qr.dictresult()[0]
@@ -286,7 +292,13 @@ class PxMarServer:
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
                 loopFlag = 1
+                dewarWarningGiven = False
+                startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
+                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 20):
+                        self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
+                        dewarWarningGiven = True
+                        
                     time.sleep( 0.21)
                     qr = self.query( qs)
                     r = qr.dictresult()[0]
