@@ -684,8 +684,18 @@ ALTER FUNCTION px.fix_fn( text) OWNER TO lsadmin;
 -- removes illegal characters from directory
 --
 CREATE OR REPLACE FUNCTION px.fix_dir( dir text) RETURNS text as $$
-  SELECT regexp_replace(regexp_replace( $1, '[^-._a-zA-Z0-9/]*', '','g'),'/+$','');
-$$ LANGUAGE sql SECURITY DEFINER;
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT regexp_replace( dir, '[^-._a-zA-Z0-9/]*', '', 'g') INTO rtn;	-- remove illegal characters
+    SELECT regexp_replace( rtn, E'^\\.+', '') INTO rtn;			-- don't allow begining dots
+    SELECT regexp_replace( rtn, E'\\.\\.+', '', 'g') INTO rtn;		-- remove double (or worse) dots
+    SELECT regexp_replace( rtn, '^/+', '') INTO rtn;			-- remove begining slashs
+    SELECT regexp_replace( rtn, '/+', '/', 'g') INTO rtn;		-- make multiple slashs just one
+    SELECT regexp_replace( rtn, '/+$', '')  INTO rtn;			-- kill the trailing slash
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.fix_dir( text) OWNER TO lsadmin;
 
 CREATE TABLE px.dirstates (
@@ -1478,14 +1488,19 @@ CREATE TABLE px.shots (
 	spath    text           DEFAULT NULL,		-- the full file path used
         sbupath  text           DEFAULT NULL,           -- the full path of the backup file
 	sobfuscated boolean     DEFAULT false,		-- fn, path, and bupath have been obfuscated
-	stimes   int            DEFAULT 0               -- number of times this has been run
+	stimes   int            DEFAULT 0,              -- number of times this has been run
+	sfsize   int            DEFAULT NULL,           -- size of the file in bytes
+	stape    boolean        DEFALUT False		-- true if file is known to be on a backup tape
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
 CREATE INDEX shotsTsIndex ON px.shots (sts);
-CREATE INDEX shotsTsIndex ON px.shots (sfn);
+CREATE INDEX shotsFnIndex ON px.shots (sfn);
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
+
+
+
 
 CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
   DECLARE
@@ -3153,6 +3168,32 @@ ALTER FUNCTION px.startTransfer( int, boolean) OWNER TO lsadmin;
 
 
 
+CREATE OR REPLACE FUNCTION px.lockCryo() RETURNS void AS $$
+  DECLARE
+  BEGIN
+    PERFORM pg_advisory_lock( px.getstation(), 6);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lockCryo() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.unlockCryo() RETURNS void AS $$
+  DECLARE
+  BEGIN
+    PERFORM pg_advisory_unlock( px.getstation(), 6);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.unlockCryo() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.waitCryo() RETURNS void AS $$
+  DECLARE
+  BEGIN
+    PERFORM pg_advisory_lock( px.getstation(), 6);
+    PERFORM pg_advisory_unlock( px.getstation(), 6);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.waitCryo() OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.endTransfer() RETURNS void AS $$
   DECLARE
     ntfy text;
@@ -3883,11 +3924,14 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     tmp2 xml;
     tmp3 xml;
     tmp4 xml;
+    tmp5 xml;
     shts record;
     st int;
     stt text;
     eds record;  -- editing dataset
     rqs record;  -- runqueue
+    kvpname text;
+    kvpvalue text;
     thePrefix text;
     theStatus text;
   BEGIN
@@ -3901,7 +3945,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
           WHERE ssStn=theStn.stnkey and ssesaf=dsesaf;
       tmp2 := NULL;
       IF FOUND THEN
-        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.ssesaf as esaf));
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath));
       END IF;
       tmp3 := NULL;
       SELECT * INTO eds FROM px.datasets WHERE dspid=shts.ssdsedit;
@@ -3920,11 +3964,23 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
               LIMIT 1;
         tmp4 := xmlconcat( tmp4, xmlelement( name entry, xmlattributes( rqs.dspid as dspid, rqs.type as "type", rqs.k as k, rqs.etc as etc, thePrefix as fp, theStatus as status)));
       END LOOP;
-      tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname, st as lockState, stt as label, px.rt_get_dist( theStn.stnkey) as dist,
-                            px.rt_get_wavelength( theStn.stnkey) as wavelength, px.rt_get_ni0( theStn.stnkey) as ni0), tmp2, tmp3, xmlelement( name runqueue, tmp4)
+
+      tmp5 = NULL;
+      FOR kvpname, kvpvalue IN SELECT kvname, kvvalue FROM px.kvs WHERE kvstn=theStn.stnkey LOOP
+        tmp5 = xmlconcat( tmp5, xmlelement( name kvpair, xmlattributes( kvpname as name, kvpvalue as value)));
+      END LOOP;
+
+      tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
+                             xmlelement( name kvpair, xmlattributes( shts.ssesaf as value, 'esaf' as name)),
+                             xmlelement( name kvpair, xmlattributes( st as value, 'lockState' as name)),
+                             xmlelement( name kvpair, xmlattributes( stt as value, 'label' as name)),
+                             xmlelement( name kvpair, xmlattributes( px.rt_get_dist( theStn.stnkey) as value, 'dist' as name)),
+                             xmlelement( name kvpair, xmlattributes( px.rt_get_wavelength( theStn.stnkey) as value, 'wavelength' as name)),
+                             xmlelement( name kvpair, xmlattributes( px.rt_get_ni0( theStn.stnkey) as value, 'ni0' as name)),
+                             tmp2, tmp3, xmlelement( name runqueue, tmp4), tmp5
                         ));
     END LOOP;
-    rtn := xmlelement( name "stationStatus", xmlattributes( epics.caget( 'S:SRcurrentAI')::numeric(5,1) as current), tmp);
+    rtn := xmlelement( name "stationStatus", xmlelement( name aps, xmlelement( name kvpair, xmlattributes(  'current' as name, epics.caget( 'S:SRcurrentAI')::numeric(5,1) as value))), tmp);
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4117,3 +4173,42 @@ CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getShotsXml( text, text) OWNER TO lsadmin;
+
+
+CREATE TABLE px.kvs (
+       kvkey serial primary key,
+       kvts  timestamptz not null default now(),
+       kvstn bigint references px.stations (stnkey),
+       kvname text not null,
+       kvvalue text,
+       UNIQUE( kvstn, kvname)
+);
+ALTER TABLE px.kvs OWNER TO lsadmin;
+CREATE INDEX kvsNameIndex ON px.kvs (kvstn,kvname);
+
+CREATE OR REPLACE FUNCTION px.kvsInsertTF() returns trigger as $$
+  DECLARE
+
+  BEGIN
+    NEW.kvstn = px.getStation();
+    PERFORM 1 FROM px.kvs WHERE kvname=NEW.kvname and kvstn=NEW.kvstn;
+    IF FOUND THEN
+      UPDATE px.kvs SET kvts=now(), kvvalue=NEW.kvvalue WHERE kvname=NEW.kvname and kvstn=NEW.kvstn;
+      return NULL;
+    END IF;
+    RETURN NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvsInsertTF() OWNER TO lsadmin;
+CREATE TRIGGER kvsInsertTrigger BEFORE INSERT ON px.kvs FOR EACH ROW EXECUTE PROCEDURE px.kvsInsertTF();
+
+CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
+  DECLARE
+  BEGIN
+    FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
+      INSERT INTO px.kvs (kvname,kvvalue) VALUES (kvps[i],kvps[i+1]);
+    END LOOP;
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
