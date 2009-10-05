@@ -488,7 +488,7 @@ class PxMarServer:
                         else:
                             beam_x = 2048
                             beam_y = 2048
-                            qs2 = "px.rt_get_dist() as dist"
+                            qs2 = "select px.rt_get_dist() as dist"
                             qr2 = self.query( qs2)
                             r2 = qr2.dictresult()[0]
                             dist = r2["dist"]
