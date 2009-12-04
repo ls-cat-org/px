@@ -405,6 +405,11 @@ CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getcatsaddr() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.getcatsaddr( thestn text) RETURNS text AS $$
+  SELECT host(ccats) FROM px._config WHERE $1=cstation;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getcatsaddr( text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
 --
@@ -2893,11 +2898,21 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
     chitms record;      -- the record(s) of the child items under theId
     rtn text;           -- xml return text
     inf text;           -- Information on this ID
+    stn int;		-- the station
+    lid int;		-- the dewar
+    puc int;		-- the puck
+    pindex int;         -- index of the puck location (1= lid 1 puck 1, ... 10=lid 3 puck 3)  0=N/A
+    pOk boolean;        -- the puck is ok
   BEGIN
+
+    --
+    -- See if the puck is actualling making contact with the switch
+    --  
+
     rtn := '';
     SELECT *  INTO itm FROM px.holderPositions WHERE hpId = theId;
     IF FOUND THEN
-      rtn := '<?xml version="1.0" encoding="UTF-8"?>';
+      rtn := '<?xml version="1.0" encoding="UTF-8"?>' || E'\n';
       --
       -- Config files are different for samples
       -- if LSB is non-zero then we have a sample
@@ -2912,13 +2927,26 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
       rtn = rtn || E'>\n';
       rtn = rtn || E'  <Color name="current" r="255" g="0" b = "0" a="100" />\n';
       rtn = rtn || E'  <Selected r="120" g="120" b = "0" a="127" />\n';
-      rtn = rtn || E'  <Disabled r="10"  g="10"  b = "10" a="127" />\n';
+      rtn = rtn || E'  <Disabled r="255"  g="255"  b = "255" a="127" />\n';
       FOR chitms IN SELECT *
           FROM px.holderPositions
           LEFT JOIN px.holderHistory on hpid=hhPosition
           WHERE hpId > theId and hpidres=itm.hpidres>>8 and hpId < (theId + itm.hpIdRes) and hpIndex>0 and hhstate!='Inactive'
           LOOP
-        rtn = rtn || '<Child id="' || chitms.hpId || '" index="' || chitms.hpIndex || E'" />\n';
+        stn = ((chitms.hpId & x'ff000000'::int) >> 24) & x'000000ff'::int;
+        lid = ((chitms.hpId & x'00ff0000'::int) >> 16) & x'000000ff'::int;
+        puc = ((chitms.hpId & x'0000ff00'::int) >>  8) & x'000000ff'::int;
+        pindex = 0;
+        pOk = true;
+        IF lid > 0 and puc > 0 THEN
+          pindex = (lid-3)*3 + ((puc-1)%3);
+          SELECT INTO pOk ((B'1'::bit(99) >> (pindex+12)) & dii) != B'0'::bit(99) FROM cats.di WHERE distn=stn;
+         END IF;
+        IF pOk THEN
+          rtn = rtn || '<Child id="' || chitms.hpId || '" found="True" index="' || chitms.hpIndex || E'" />\n';
+        ELSE
+          rtn = rtn || '<Child id="' || chitms.hpId || '" found="False" index="' || chitms.hpIndex || E'" />\n';
+        END IF;
       END LOOP;
 
       SELECT hname || E'\n' ||
@@ -2959,6 +2987,24 @@ CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getCurrentStationId( theStn bigint) returns int as $$
+  DECLARE
+    rtn int;
+  BEGIN
+    SELECT hhPosition
+      INTO rtn
+      FROM px.holders
+      LEFT JOIN px.stations ON hname=stnname
+      LEFT JOIN px.holderhistory ON hkey=hhholder
+      WHERE htype='Station' AND stnkey=theStn AND hhstate='Present';
+    IF NOT FOUND THEN
+      return 0;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentStationId( bigint) OWNER TO lsadmin;
 
 CREATE TYPE px.nextActionType AS ( key bigint, action text);
 
@@ -3050,16 +3096,29 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns void AS $$
+  DECLARE
+  BEGIN
+    INSERT INTO px.nextSamples (nsStn, nsId) VALUES (stn, theId);
+    PERFORM px.md2pushqueue( stn, 'transfer');
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.requestTransfer( bigint, int) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, estTime numeric) returns int AS $$
   DECLARE
     mp px.locationtype;         -- current table
     tp record;                  -- saved position
     rtn int;
-    xx numeric;
+    xx numeric;			-- corrected coordinates to send to robot
     yy numeric;
     zz numeric;
+    xx1 numeric;		-- corrected coordinates to send to robot prior to final rotation
+    yy1 numeric;
+    zz1 numeric;
     theStn int;			-- our station
+    angr float;			-- rotation angle (in rads)
   BEGIN
     --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
     SELECT px.getStation() INTO theStn;
@@ -3069,7 +3128,6 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
 
     SELECT * FROM px.rt_get_magnetPosition() INTO mp;           -- magnet position relative to table
     SELECT * INTO tp FROM px.transferPoints WHERE tpStn=theStn ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
-    -- CATS uses a righthanded coordinate system with x into the beam and z up
     -- MD2 uses a righthanded coordinate system with x downstream and z up
     -- LS-CAT uses a righthanded coordinate system with y up and z downstream
     -- Here we compute the CATS coordinate corrections.  Here x, y, z is in the CATS system
@@ -3078,6 +3136,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     -- F and G are the same
     --
     IF theStn = 3 or theStn = 4 THEN
+      -- CATS uses a righthanded coordinate system with x into the beam and z up
       xx := round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
       yy := round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
       zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
@@ -3087,10 +3146,32 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     -- but D is rotated 180 degrees about Z
     --
     IF theStn = 1 THEN
+      -- CATS uses a righthanded coordinate system with x downstream and z up
       xx := -round(1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX)));
       yy := -round(1000 * (-(mp.x - tp.tpTableX)  - (phiY - tp.tpPhiAxisY)));
       zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
     END IF;
+
+    
+    --
+    -- E is upside down and tilted back 20°
+    --
+    IF theStn = 2 THEN
+      -- CATS uses a righthanded coordinate system with x inboard and z down (and a little downstream)  (that makes y upstream and a little down)
+      -- first compute where z is down and y is upstream;
+      xx1 := 1000 * (-(mp.x - tp.tpTableX) - (phiY - tp.tpPhiAxisY));
+      yy1 := 1000 * (-(mp.z - tp.tpTableZ) - (phiX - tp.tpPhiAxisX) - (cenX - tp.tpCenX));
+      zz1 := 1000 * (-(mp.y - tp.tpTableY) - (phiZ - tp.tpPhiAxisZ) - (cenY - tp.tpCenY));
+
+      -- Now rotate 20° about x
+      angr = 20.0 * PI()/180.0;
+      xx = round( xx1);
+      yy = round( yy1 * cos(angr)  + zz1*sin(angr));
+      zz = round(-yy1 * sin(angr)  + zz1*cos(angr)); 
+      
+      raise notice 'xx1: %   yy1: %  zz1: %  xx: %   yy: %   zz: %', xx1, yy1, zz1, xx, yy, zz;
+    END IF;
+
 
 
     --    raise exception 'startTransfer: theId=%, xx=%, yy=%, zz=%', to_hex(theId), xx::int, yy::int, zz::int;
@@ -3258,13 +3339,18 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
     rtn = False;
 
     SELECT not px.checkDiffractometerOn() INTO md2on;
+    IF not md2on THEN
+      -- Never grant rights or allow the robot to proceed if
+      -- the diffractometer is not on
+      PERFORM cats.panic();
+    END IF;
     IF md2on THEN
       SELECT px.rt_get_dist() INTO curDist;
       SELECT px.isstopped('distance') INTO stopped;
       IF curDist < 400 THEN
         rtn := False;
         IF stopped THEN
-          PERFORM px.rt_set_dist( 700);
+          PERFORM px.rt_set_dist( 650);
         END IF;
       ELSE
         SELECT px.requestAirRights() INTO rtn;
@@ -3322,6 +3408,29 @@ CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getCurrentSampleID() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getCurrentSampleID( theStn bigint) returns int as $$
+  DECLARE
+    rtn int;
+    stnid int;
+    diffid int;
+  BEGIN
+    rtn := 0;
+    SELECT px.getCurrentStationId( theStn) INTO stnid;
+    IF stnid > 0 THEN
+      diffid := stnid + x'00020000'::int;
+      SELECT hpid
+        INTO rtn
+        FROM px.holderPositions
+        WHERE hpId > stnid and hpId < stnid+x'01000000'::int and hpTempLoc=diffid;
+      IF NOT FOUND THEN
+        return 0;
+      END IF;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentSampleID( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.currentSampleDPS() returns text AS $$
   DECLARE
@@ -3579,6 +3688,31 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.md2pushqueue( stn bigint, cmd text) RETURNS VOID AS $$
+  DECLARE
+    c text;     -- trimmed command
+    ntfy text;  -- used to generate notify command
+  BEGIN
+    SELECT cnotifydiffractometer INTO ntfy FROM px._config WHERE cstnkey=stn;
+    IF NOT FOUND THEN
+      RETURN;
+    END IF;
+    c := trim( cmd);
+    IF length( c) > 0 THEN
+      INSERT INTO px._md2queue (md2Cmd, md2Addr)
+        SELECT c, cdiffractometer::inet
+          FROM px._config
+          WHERE cstnkey=stn
+          LIMIT 1;
+      IF FOUND THEN
+        EXECUTE 'NOTIFY ' || ntfy;
+      END IF;
+    END IF;
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.md2pushqueue( bigint, text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
   DECLARE
@@ -3684,11 +3818,28 @@ CREATE OR REPLACE FUNCTION px.nextErrors() returns setof px.errorType AS $$
                  ORDER BY eaTs desc LOOP
       return next rtn;
     END LOOP;
-    DELETE FROM px.activeerrors WHERE eaAcknowledged;
+    DELETE FROM px.activeerrors WHERE eaAcknowledged and eats < now() - '10 minutes'::interval and eaStn=px.getstation();
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextErrors() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.nextErrors( theStn bigint) returns setof px.errorType AS $$
+  DECLARE
+    rtn px.errorType;
+  BEGIN
+    FOR rtn IN SELECT eaKey, eSeverity, eiD, eTerse, eVerbose, eaDetails, eaTs
+                 FROM px.activeErrors
+                 LEFT JOIN px.errors ON eaId=eId
+                 WHERE eaStn=theStn and eaAcknowledged = False
+                 ORDER BY eaTs desc LOOP
+      return next rtn;
+    END LOOP;
+--    DELETE FROM px.activeerrors WHERE eaAcknowledged;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextErrors( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.acknowledgeError( theId int) RETURNS VOID AS $$
   DECLARE
@@ -3873,6 +4024,11 @@ CREATE OR REPLACE FUNCTION px.getmagnetstate() returns boolean AS $$
   SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getmagnetstate() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getmagnetstate( bigint) returns boolean AS $$
+  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=$1 ORDER BY msKey DESC LIMIT 1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getmagnetstate( bigint) OWNER TO lsadmin;
 
 
 
@@ -4212,3 +4368,322 @@ CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvget( theStn bigint, k text) returns text as $$
+  SELECT  kvvalue FROM px.kvs WHERE kvstn=$1 and kvname=$2 LIMIT 1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.kvget( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
+  SELECT  kvvalue FROM px.kvs WHERE kvstn=px.getStation() and kvname=$1 LIMIT 1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
+
+
+CREATE TABLE px.tunamemory (
+       --
+       -- Simple key/value memory for tuna programs
+       -- Each station gets it's own memory space
+       -- Currently Memory is both global and persistant
+       --
+       mKey serial primary key,				-- our table key
+       mCreateTS timestamptz default now(),		-- creation time stamp
+       mSetTS    timestamptz default now(),		-- time varaible was last set
+       mGetTS    timestamptz default null,		-- time varable was last read
+       mStn bigint references px.stations( stnkey),	-- station number
+       mK   text not null,				-- variable name
+       mV   text default null,				-- value
+       UNIQUE( mStn, mK)				-- only single values are permitted
+);
+ALTER TABLE px.tunamemory OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.tunamemoryget( theStn bigint, k text) returns text as $$
+  DECLARE
+    theKey bigint;
+    rtn text;
+  BEGIN
+    SELECT mKey, mV INTO theKey, rtn FROM px.tunamemory WHERE mStn=theStn and mK=k;
+    IF FOUND THEN
+        UPDATE px.tunamemory SET mGetTS=now() WHERE mKey=theKey;
+        return  rtn;
+    END IF;
+    return null;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunamemoryget( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.tunamemoryset( theStn bigint, k text, v text) returns void as $$
+  DECLARE
+  BEGIN
+    PERFORM 0 FROM px.tunamemory WHERE mStn = theStn and mK = k;
+    IF FOUND THEN
+      UPDATE px.tunamemory SET mV=v, mSetTS=now() WHERE mStn=theStn and mK=k;
+    ELSE
+      INSERT INTO px.tunamemory (mStn,mK,mV) VALUES (theStn,k,v);
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunamemoryset( bigint, text, text) OWNER TO lsadmin;
+
+
+CREATE TABLE px.tunacode (
+--
+-- something's fishy about this
+--
+       tcKey serial primary key,				-- our table key
+       tcstn bigint references px.stations (stnkey),    -- Keep the stations separate
+       tccreatets timestamptz not null default now(),	-- time our entry was created
+       tccstartts timestamptz default null,		-- time first iteration was started
+       tcstartts  timestamptz default null,		-- time most recent iteration was started
+       tccendts   timestamptz default null,		-- time most recent iteration ended
+       tcn        int default 0,			-- Number of times this line has been run;
+       tclevel    int default 0,			-- Stack level to support loops
+       tcinstruction text default ''			-- default instruction       
+);
+ALTER TABLE px.tunacode OWNER TO lsadmin;
+
+CREATE TABLE px.tunapc (
+       -- tuna program counter
+       -- A running program has one or more program counters
+       --
+       pcKey serial primary key,		-- our table key
+       pcStn bigint references px.stations (stnkey),
+       pcStack int default 0,			-- level: subroutine calls insert a new pc
+       pcpc bigint references px.tunacode,	-- pointer to our program
+       UNIQUE( pcStn, pcStack)			-- only allow one pointer per stack level
+);
+ALTER TABLE px.tunapc OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
+  DECLARE
+    stack int;		-- how deep are we?
+    instruct text;	-- the current instruction: control statements are dealt with here
+    icount int;		-- the iteration counter of the current statement
+    pc  bigint;		-- current program counter
+    rtn bigint;		-- return value: the next program counter for the next non-statement instruction
+    test text;		-- SQL that evaluates to a boolean
+    testResult boolean;	-- the result of executing "test"
+  BEGIN
+
+    -- Get the stack level and the current program counter
+    SELECT pcStack, pcpc INTO stack, pc FROM px.tunapc WHERE pcstn=theStn ORDER BY pcStack desc;  -- unique contraint on px.tunapc forces this to return 0 or 1 rows
+    IF NOT FOUND THEN
+       -- No legal program, just exit now
+       return 0;
+    END IF;
+
+    -- Get the next line of the program
+    SELECT tcKey INTO rtn FROM px.tunacode WHERE tcstn=theStn and tcKey > pc ORDER BY tcKey asc LIMIT 1;
+    IF NOT FOUND THEN
+      -- Th-Th-Th-That's all folks!
+      -- No more code to run
+      rtn := 0;
+      stack := -1;
+     END IF;
+
+    -- Check for control statements
+    WHILE stack >= 0 LOOP    
+      SELECT tcinstruction, tcn INTO instruct,icount FROM px.tunacode WHERE tcKey=rtn;
+      IF NOT FOUND THEN
+       -- This is probably an error condition, like a line got deleted while running.
+        rtn := 0;
+        EXIT;
+      END IF;
+
+      -- Dumb parser, should be OK for now
+
+
+      IF instruct = 'RETURN' and stack=0 THEN
+        -- Return from main does the expected thing.
+        rtn := 0;
+        EXIT;
+
+      ELSEIF instruct = 'RETURN' THEN
+        -- subroutine return: main return is handled above so we know that here stack>0
+        DELETE FROM px.tunapc WHERE pcStn=theStn and pcStack >= stack;
+        -- recurse to find the next line
+        rtn := px.tunaNextPC( theStn);
+        EXIT;
+
+      ELSEIF instruct like 'WHILE %' or instruct like 'LOOP %' THEN
+        -- Loops
+        --
+        -- The "WHILE" argument evaluates to a boolean
+        -- The "LOOP" argument evaluates in an integer which is then compared to the statement iteration counter
+        --
+        --
+        -- Update time stamp(s)
+        --
+        UPDATE px.tunacode SET tccstartts=coalesce( tccstartts,clock_timestamp()), tcstartts=clock_timestamp() WHERE tcKey=rtn;
+        --
+        -- Reset inner loop counters, if any
+        --
+        UPDATE px.tunacode SET tcn=0 WHERE tcStn=theStn and tcKey>rtn and tclevel > stack and tcKey< (select tcKey FROM px.tunacode WHERE tcKey>rtn and tcinstruction='RETURN' ORDER BY tcKey asc LIMIT 1);
+
+        --
+        -- Set up the test string
+        --
+        IF instruct like 'WHILE %' THEN
+          -- Simple evaluation
+          SELECT substring( instruct, 7) INTO test;
+        ELSE
+          -- Compare with iteration counter
+          SELECT icount || ' < (' || substring( instruct, 6) || ')' INTO test;
+        END IF;
+
+        -- make the test
+        EXECUTE 'SELECT ' || test INTO testResult;
+        --
+        -- Update counters and time stamp
+        --
+
+        UPDATE px.tunacode SET tcn=tcn+1, tccendts=clock_timestamp() WHERE tcKey=rtn;
+
+        -- See what to do next;
+        IF testResult THEN
+          -- increment the program counter stack
+          INSERT INTO px.tunapc (pcstn, pcpc, pcStack) VALUES (theStn, rtn, stack+1);
+          
+          -- recurse to get the next line of executable code
+          SELECT px.tunaNextPC( theStn) INTO rtn;
+
+          EXIT;
+        ELSE
+          -- Find the next line at the current stack level
+          SELECT tcKey INTO rtn FROM px.tunacode WHERE tcStn=theStn and tcKey > rtn and tclevel=stack;
+          IF NOT FOUND THEN
+            -- Program ended in a subroutine.  OK.
+            rtn := 0;
+            EXIT;
+          END IF;
+        END IF;
+      ELSEIF instruct = 'START' THEN
+        -- 
+        -- START should never appear anywhere except as the first line of code
+        -- and hence can never be the next statement
+        --
+        RAISE EXCEPTION 'START found as the next statement contrary to expectations.';
+      ELSE
+        --
+        -- This is not a control statement, return it
+        --
+        -- make the program counter point here
+        UPDATE px.tunapc SET pcpc=rtn WHERE pcstn=theStn and pcStack=stack;
+        EXIT;
+      END IF;
+
+    END LOOP;
+
+    IF rtn = 0 THEN
+      -- Officially end the program by deleting the counters
+      DELETE FROM px.tunapc WHERE pcstn=theStn;
+    END IF;
+
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunaNextPC( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.tunaLoadInit( theStn bigint) returns void as $$
+  DECLARE
+  BEGIN
+    -- clear out the previous program, if any
+    DELETE FROM px.tunapc   WHERE pcStn=theStn;
+    DELETE FROM px.tunacode WHERE tcStn=theStn;
+    
+    -- Add the start statement
+    INSERT INTO px.tunacode (tcstn, tcinstruction, tclevel) VALUES (theStn, 'START', 0);
+    INSERT INTO px.tunapc   (pcstn, pcpc, pcstack) VALUES (theStn, currval('px.tunacode_tckey_seq'), 0);
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunaLoadInit( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.tunaLoad( theStn bigint, istep text) returns void as $$
+  DECLARE
+    theLevel int;	-- current level of code
+    lastIStep text;	-- the previous instruction step
+  BEGIN
+
+    IF istep = 'START' THEN
+      RAISE EXCEPTION 'START is a reserved keyword';
+    END IF;
+
+    -- Figure out the current level
+    SELECT tclevel,tcinstruction INTO theLevel, lastIStep FROM px.tunacode WHERE tcstn=theStn ORDER BY tckey desc LIMIT 1;
+    IF NOT FOUND THEN
+      -- Easy, this is the first line
+      theLevel := 0;
+    ELSE
+      IF lastIStep='RETURN' THEN
+        theLevel := theLevel - 1;
+      END IF;
+    END IF;
+
+    IF theLevel < 0 THEN
+      RAISE EXCEPTION 'Too many RETURN statements';
+    END IF;
+
+    IF istep like 'WHILE %' or istep like 'LOOP %' THEN
+      theLevel := theLevel + 1;
+    END IF;
+  
+    --  Add the step
+   INSERT INTO px.tunacode (tcstn, tcinstruction, tclevel) VALUES (theStn, istep, theLevel);
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunaLoad( bigint, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
+  --
+  -- Execute one line of tuna code
+  -- and advance program counter
+  --
+  -- key words: RETURN, WHILE, LOOP
+  --
+  DECLARE
+    rtn int;	-- number of lines run: 0 or 1, 0 signaling the end of the program
+    pc bigint;	-- program counter
+    stack int;  -- stack level
+    npc bigint;	-- new program counter
+    theI text;	-- the instruction
+  BEGIN
+    rtn := 0;
+    
+    --
+    -- Get the next program counter
+    -- This function returns the address of an executable line, not a control structure
+    --
+    SELECT px.tunaNextPC( theStn) INTO pc;
+    IF pc = 0 THEN
+      DELEtE FROM px.tunapc WHERE pcStn=theStn;
+      return 0;
+    END IF;
+
+    --
+    -- Get our instruction
+    --
+    SELECT tcinstruction INTO theI FROM px.tunacode WHERE tckey = pc;
+
+    --
+    -- Update time stamp(s)
+    --
+    UPDATE px.tunacode SET tccstartts=coalesce( tccstartts,clock_timestamp()), tcstartts=clock_timestamp() WHERE tcKey=pc;
+    
+    IF length( theI) > 0 THEN
+      rtn := 1;
+      --
+      -- Do the user's bidding.  Scary.  At least only select calls are allowed.
+      EXECUTE 'SELECT ' || theI;
+    END IF;
+    --
+    -- Update counters and time stamp
+    --
+    UPDATE px.tunacode SET tcn=tcn+1, tccendts=clock_timestamp() WHERE tcKey=pc;
+
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.tunaStep( bigint) OWNER TO lsadmin;
