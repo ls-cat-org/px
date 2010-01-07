@@ -1,6 +1,10 @@
 begin;
 select px.tunaLoadInit( 2);
 
+
+-- Loop a Little
+select px.tunaLoad( 2, 'LOOP 5');
+
 -- Mount a sample
 select px.tunaLoad( 2, 'px.requesttransfer( 2, x''02040101''::int)');
 
@@ -8,17 +12,20 @@ select px.tunaLoad( 2, 'px.requesttransfer( 2, x''02040101''::int)');
 select px.tunaLoad( 2, 'WHILE px.getcurrentsampleid(2) != x''02040101''::int');
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2, 'RETURN');
+--select px.tunaLoad( 2,   '1');
 
 -- Wait until we are idle
-select px.tunaLoad( 2, 'WHILE ("State" & 235) = 99  from cats.machinestate() where "Station"=2');
+select px.tunaLoad( 2, 'WHILE ("State" & 235) != 99  from cats.machinestate() where "Station"=2');
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2, 'RETURN');
+--select px.tunaLoad( 2,   '1');
 
 -- Wait for 30 seconds
 select px.tunaLoad( 2, 'px.tunamemoryset( 2, ''WaitUntilTime'', (now() + ''30 seconds''::interval)::text)');
 select px.tunaLoad( 2, 'WHILE px.tunamemoryget( 2, ''WaitUntilTime'')::timestamptz > now()');
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2,  'RETURN');
+--select px.tunaLoad( 2,   '1');
 
 -- Mount a different sample
 select px.tunaLoad( 2, 'px.requesttransfer( 2, x''02040102''::int)');
@@ -27,11 +34,13 @@ select px.tunaLoad( 2, 'px.requesttransfer( 2, x''02040102''::int)');
 select px.tunaLoad( 2, 'WHILE px.getcurrentsampleid(2) != x''02040102''::int');
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2, 'RETURN');
+--select px.tunaLoad( 2,   '1');
 
 -- Wait until we are idle
-select px.tunaLoad( 2, 'WHILE ("State" & 235) = 99  from cats.machinestate() where "Station"=2');
+select px.tunaLoad( 2, 'WHILE ("State" & 235) != 99  from cats.machinestate() where "Station"=2');
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2, 'RETURN');
+--select px.tunaLoad( 2,   '1');
 
 -- Wait for 30 seconds
 select px.tunaLoad( 2, 'px.tunamemoryset( 2, ''WaitUntilTime'', (now() + ''30 seconds''::interval)::text)');
@@ -39,7 +48,8 @@ select px.tunaLoad( 2, 'WHILE px.tunamemoryget( 2, ''WaitUntilTime'')::timestamp
 select px.tunaLoad( 2,   '1');
 select px.tunaLoad( 2,  'RETURN');
 
-
+-- End Loop
+select px.tunaLoad( 2, 'RETURN');
 
 
 

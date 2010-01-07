@@ -2970,6 +2970,35 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getConfigFile( int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( stn int) returns xml as $$
+  -- returns xml listing all puck id's in station stn
+  DECLARE
+    rtn xml;
+    tmp xml;
+    poses record;
+  BEGIN
+    SELECT xmlagg( xmlelement( name "Child",
+                     xmlattributes( hpid as id,
+                                    hpindex as index,
+                                    (((hpid & x'00ff0000'::int) >> 16) - 3)*3 + hpindex as pucknum,
+                                    htype as type,
+                                    hname as name,
+                                    hbarcode as barcode,
+                                    hrfid as rfid)))
+           INTO tmp
+           FROM px.holderpositions
+           LEFT JOIN px.holderhistory ON hpid=hhposition
+           LEFT JOIN px.holders ON hhholder=hkey
+           WHERE hhstate='Present' and
+                 hpid & x'000000ff'::int=0 and
+                 hpid & x'0000ff00'::int !=0 and
+                 hpid & x'ff000000'::int = (stn<<24);
+    rtn := xmlelement( name "allPuckPositions", xmlattributes( stn as station), tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getAllPuckPositionsxml( int) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
   DECLARE
     rtn int;
@@ -3653,6 +3682,30 @@ $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.insertHolder( int, int, text) OWNER TO lsadmin;
 
 
+CREATE  OR REPLACE FUNCTION px.insertPuck( expId int, theId int, theName text, barcode text, rfid text, addsamples boolean) RETURNS int AS $$
+  DECLARE
+    rtn int;
+    cnt int;
+    smp record;
+  BEGIN
+    SELECT px.insertHolder( expId, theId, theName, NULL, barcode, rfid) INTO cnt;
+    IF NOT FOUND or cnt=0 THEN
+      return 0;
+    END IF;
+    rtn := cnt;
+
+    IF addsamples THEN
+      FOR smp IN SELECT * from px.holderpositions where (hpid & x'ffffff00'::int) = theId and hpidres = 1 LOOP
+        PERFORM px.insertHolder( expId, smp.hpid, 'Sample ' || smp.hpindex::text, NULL, NULL, NULL);
+        rtn := rtn + 1;
+      END LOOP;
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO lsadmin;
+
+
 
 
 CREATE TABLE px._md2queue (
@@ -3988,6 +4041,7 @@ ALTER TABLE px.transferPoints OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, tableZ numeric, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, omega numeric, kappa numeric) returns void as $$
   BEGIN
+    UPDATE cats._toolcorrection SET tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation();
     INSERT INTO px.transferPoints( tpStn, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
       ( px.getStation(), tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
@@ -4461,6 +4515,7 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
     icount int;		-- the iteration counter of the current statement
     pc  bigint;		-- current program counter
     rtn bigint;		-- return value: the next program counter for the next non-statement instruction
+    tmp bigint;		-- address of RETURN statement
     test text;		-- SQL that evaluates to a boolean
     testResult boolean;	-- the result of executing "test"
   BEGIN
@@ -4549,13 +4604,25 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
 
           EXIT;
         ELSE
-          -- Find the next line at the current stack level
-          SELECT tcKey INTO rtn FROM px.tunacode WHERE tcStn=theStn and tcKey > rtn and tclevel=stack;
+          -- Find the corresponding RETURN statement
+          SELECT tcKey INTO tmp FROM px.tunacode WHERE tcStn=theStn and tcKey > rtn and tclevel=stack+1 and tcinstruction='RETURN' ORDER BY tcKey asc LIMIT 1;
           IF NOT FOUND THEN
-            -- Program ended in a subroutine.  OK.
+            -- No return? Should raise error but will return end of program instead.
             rtn := 0;
             EXIT;
           END IF;
+          -- Set the program counter at this position
+          UPDATE px.tunapc SET pcpc=tmp WHERE pcstn=theStn and pcStack=stack;
+
+          -- Find the next instruction
+          SELECT tcKey INTO rtn FROM px.tunacode WHERE tcStn=theStn and tcKey > tmp ORDER BY tcKey asc LIMIT 1;
+
+          IF NOT FOUND THEN
+            -- Program ended in a subroutine.  Should raise error but will return end of program instead.
+            rtn := 0;
+            EXIT;
+          END IF;
+
         END IF;
       ELSEIF instruct = 'START' THEN
         -- 
@@ -4687,3 +4754,97 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.tunaStep( bigint) OWNER TO lsadmin;
+
+
+
+
+CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int, wtime int) returns void AS $$
+  DECLARE
+    s int;	-- the current sample
+    tms text;   -- tunamemoryset( theStn,
+    tmse text;   -- ')'
+    tmg text;   -- tunamemoryget( theStn,
+    tmge text;  -- ')'
+    dew text;
+    puc text;
+    sam text;
+    lab text;
+  BEGIN
+
+    tms := 'px.tunamemoryset('||theStn::text||',';
+    tmse := ')';
+    tmg := 'px.tunamemoryget('||theStn::text||',';
+    tmge := ')';
+
+    PERFORM px.tunaLoadInit( theStn);	-- initialize tuna program
+    PERFORM px.tunaLoad( theStn, tms || '''loopCounter'',''' || ntimes::text || '''' || tmse );  -- initialize the loop counter
+    PERFORM px.tunaLoad( theStn, 'WHILE ' || tmg || '''loopCounter'''||tmge||'::int > 0');             -- start loop
+
+    FOR i IN array_lower( samples, 1) .. array_upper( samples, 1) LOOP
+      IF (((samples[i] & x'ff000000'::int)>>24) & x'ff'::int) = theStn THEN
+        s := samples[i];
+        dew := (((s & x'00ff0000'::int) >> 16)  - 2)::text;
+        puc := ((((s & x'0000ff00'::int) >>  8) -1 )%3 + 1)::text;
+        sam :=   (s & x'000000ff'::int)::text;
+
+        lab := 'Dewar: ' || dew || ' Puck: ' || puc || ' Sample: ' || sam;
+
+        PERFORM px.tunaLoad( theStn, tms || '''Status'', ''Mounting ' || lab || '''' || tmse);
+        PERFORM px.tunaLoad( theStn, tms || '''terseStatus'', ''Mounting''' || tmse);
+        PERFORM px.tunaLoad( theStn, tms || '''sampleNo'', '''|| s::text || '''' || tmse);
+
+        PERFORM px.tunaLoad( theStn, 'px.requestTransfer( ' || theStn::text || ',''' || s::text || ''')' );
+
+        -- Wait until the correct sample is mounted
+        PERFORM px.tunaLoad( theStn, 'WHILE px.getCurrentSampleId( ' || theStn::text || ') != '||s::text);
+        PERFORM px.tunaLoad( theStn,   '1');
+        PERFORM px.tunaLoad( theStn, 'RETURN');
+
+        PERFORM px.tunaLoad( theStn, tms || '''Status'', ''Mounted ' || lab || '''' || tmse);
+        PERFORM px.tunaLoad( theStn, tms || '''terseStatus'', ''Mounted''' || tmse);
+
+        -- Sleep, part one
+        PERFORM px.tunaLoad( theStn, tms || '''WaitUntilTime'', (now()+'''||wtime::text||' seconds''::interval)::text'  ||tmse);
+
+        -- Wait for the robot to finish its cycle
+        PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 235) != 99 FROM cats.machinestate() WHERE "Station"='||theStn::text);
+        PERFORM px.tunaLoad( theStn,   '1');
+        PERFORM px.tunaLoad( theStn, 'RETURN');
+
+        PERFORM px.tunaLoad( theStn, tms || '''Status'', '|| '''Waiting for the thaw ' || lab || '''' || tmse);
+        PERFORM px.tunaLoad( theStn, tms || '''terseStatus'', ''Waiting''' || tmse);
+
+        -- Sleep, part two
+        PERFORM px.tunaLoad( theStn, 'WHILE ' || tmg || '''WaitUntilTime'''|| tmge || '::timestamptz > now()');
+        PERFORM px.tunaLoad( theStn,   '1');
+        PERFORM px.tunaLoad( theStn, 'RETURN');
+
+      END IF;
+    END LOOP;
+    -- Decrement Counter
+    PERFORM px.tunaLoad( theStn, tms || '''loopCounter'', (' || tmg || '''loopCounter''' || tmge || '::int - 1)::text'||tmse);
+    PERFORM px.tunaLoad( theStn, 'RETURN'); -- end loop
+
+    PERFORM px.tunaLoad( theStn, tms || '''Status'', '|| '''Dismounting ' || lab || '''' || tmse);
+    PERFORM px.tunaLoad( theStn, tms || '''terseStatus'', ''Dismounting''' || tmse);
+    PERFORM px.tunaLoad( theStn, tms || '''sampleNo'', ''0''' || tmse);
+
+    PERFORM px.tunaLoad( theStn, 'px.requestTransfer( ' || theStn::text || ', 0)' );
+
+    -- Wait until the correct sample is mounted
+    PERFORM px.tunaLoad( theStn, 'WHILE px.getCurrentSampleId( ' || theStn::text || ') != 0');
+    PERFORM px.tunaLoad( theStn,   '1');
+    PERFORM px.tunaLoad( theStn, 'RETURN');
+
+    -- Wait for the robot to finish its cycle
+    PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 235) != 99 FROM cats.machinestate() WHERE "Station"='||theStn::text);
+    PERFORM px.tunaLoad( theStn,   '1');
+    PERFORM px.tunaLoad( theStn, 'RETURN');
+
+    PERFORM px.tunaLoad( theStn, tms || '''Status'', '|| '''Done''' || tmse);
+    PERFORM px.tunaLoad( theStn, tms || '''terseStatus'', ''Done''' || tmse);
+
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.testSamples( int, int[], int, int) OWNER TO lsadmin;
