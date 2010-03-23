@@ -3785,9 +3785,27 @@ ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as $$
   DECLARE
     rtn text;
+    stn int;		-- the station
+    lid int;		-- the dewar
+    puc int;		-- the puck
+    pindex int;         -- index of the puck location (1= lid 1 puck 1, ... 10=lid 3 puck 3)  0=N/A
+    pOk boolean;        -- the puck is ok
   BEGIN
     rtn := 'Unknown';
-    SELECT hhState INTO rtn FROM px.holderHistory WHERE hhPosition=theId ORDER BY hhKey DESC LIMIT 1;
+    stn = ((theId & x'ff000000'::int) >> 24) & x'000000ff'::int;
+    lid = ((theId & x'00ff0000'::int) >> 16) & x'000000ff'::int;
+    puc = ((theId & x'0000ff00'::int) >>  8) & x'000000ff'::int;
+    pindex = 0;
+    pOk = true;
+    IF lid > 0 and puc > 0 THEN
+      pindex = (lid-3)*3 + ((puc-1)%3);
+      SELECT INTO pOk ((B'1'::bit(99) >> (pindex+12)) & dii) != B'0'::bit(99) FROM cats.di WHERE distn=stn;
+    END IF;
+    IF not pOk THEN
+      rtn := 'Absent';
+    ELSE
+      SELECT hhState INTO rtn FROM px.holderHistory WHERE hhPosition=theId ORDER BY hhKey DESC LIMIT 1;
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4848,3 +4866,113 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.testSamples( int, int[], int, int) OWNER TO lsadmin;
+
+
+CREATE TABLE px.trigcamtable (
+       tckey serial primary key,
+       tcStn bigint not null,
+       tcts timestamptz not null,
+       tcZoom int,
+       tcStartAngle float,
+       tcSpeed float
+);
+ALTER TABLE px.trigcamtable OWNER TO lsadmin;
+
+CREATE TYPE px.trigcamtype AS ( ts timestamptz, zoom int, startAngle float, speed float);
+
+CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype AS $$
+  DECLARE
+    rtn px.trigcamtype;
+  BEGIN
+    SELECT tcts, tcZoom, tcStartAngle, tcSpeed INTO rtn.ts, rtn.zoom, rtn.startAngle, rtn.speed FROM px.trigcamtable WHERE tcStn=theStn ORDER BY tcts DESC LIMIT 1;
+    DELETE FROM px.trigcamtable WHERE tcStn = theStn;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.gettrigcam( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.gettrigcam() RETURNS px.trigcamtype AS $$
+  DECLARE
+    rtn px.trigcamtype;
+  BEGIN
+    rtn = px.gettrigcam( px.getStation());
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.gettrigcam() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, startAngle float, speed float) RETURNS VOID AS $$
+  DECLARE
+  BEGIN
+
+  INSERT INTO px.trigcamtable (tcStn, tcts, tcZoom, tcStartAngle, tcSpeed) VALUES ( theStn, ts, zoom, startAngle, speed);
+  -- INSERT INTO px.trigcamtable (tcStn, tcts, tcZoom, tcStartAngle, tcSpeed) VALUES ( theStn, now(), zoom, startAngle, speed);
+  EXECUTE 'NOTIFY ROTTEST';
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.trigcam( bigint, timestamptz, int, float, float) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.trigcam( ts timestamptz, zoom int, startAngle float, speed float) RETURNS VOID AS $$
+  BEGIN
+    PERFORM px.trigcam(px.getStation(), ts, zoom, startAngle, speed);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.trigcam( timestamptz, int, float, float) OWNER TO lsadmin;
+
+CREATE TABLE px.centertable (
+       ckey serial primary key,
+       cts timestamptz default now(),
+       cstn bigint not null,
+       cx float,	-- Centering table horizontal (focus direction)
+       cy float,	-- Centering table vertical
+       cz float		-- Alignment table y (horizontal as seen on screen)
+);
+ALTER TABLE px.centertable OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, x float, y float, z float) returns void AS $$
+  BEGIN
+    DELETE FROM px.centertable WHERE cstn=theStn;
+    INSERT INTO px.centertable (cstn,cx,cy,cz) VALUES (theStn, x, y, z);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setcenter( bigint, float, float, float) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.setcenter( x float, y float, z float) returns void AS $$
+  BEGIN
+    PERFORM px.setcenter( px.getStation(), x, y, z);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setcenter( float, float, float) OWNER TO lsadmin;
+
+
+CREATE TYPE px.centertype AS (x float, y float, z float);
+
+CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS $$
+  DECLARE
+    rtn px.centertype;  
+  BEGIN
+    SELECT cx, cy, cz INTO rtn.x, rtn.y, rtn.z FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
+    IF NOT FOUND THEN
+      rtn.x = 0.0;
+      rtn.y = 0.0;
+      rtn.z = 0.0;
+    END IF;
+    DELETE FROM px.centertable WHERE cstn=theStn;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getcenter( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getcenter() returns px.centertype AS $$
+  DECLARE
+    rtn px.centertype;
+  BEGIN
+    SELECT * from px.getcenter( px.getStation()) INTO rtn;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getcenter() OWNER TO lsadmin;
+
+
