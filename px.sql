@@ -4925,36 +4925,39 @@ CREATE TABLE px.centertable (
        ckey serial primary key,
        cts timestamptz default now(),
        cstn bigint not null,
+       czoom int not null default 1,
        cx float,	-- Centering table horizontal (focus direction)
        cy float,	-- Centering table vertical
        cz float		-- Alignment table y (horizontal as seen on screen)
 );
 ALTER TABLE px.centertable OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, x float, y float, z float) returns void AS $$
+CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, zoom int, x float, y float, z float) returns void AS $$
   BEGIN
     DELETE FROM px.centertable WHERE cstn=theStn;
-    INSERT INTO px.centertable (cstn,cx,cy,cz) VALUES (theStn, x, y, z);
+    INSERT INTO px.centertable (cstn,czoom,cx,cy,cz) VALUES (theStn, zoom, x, y, z);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.setcenter( bigint, float, float, float) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setcenter( x float, y float, z float) returns void AS $$
+CREATE OR REPLACE FUNCTION px.setcenter( zoom int, x float, y float, z float) returns void AS $$
   BEGIN
-    PERFORM px.setcenter( px.getStation(), x, y, z);
+    PERFORM px.setcenter( px.getStation(), zoom, x, y, z);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( int, float, float, float) OWNER TO lsadmin;
 
 
-CREATE TYPE px.centertype AS (x float, y float, z float);
+DROP TYPE px.centertype CASCADE;
+CREATE TYPE px.centertype AS (zoom int, x float, y float, z float);
 
 CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS $$
   DECLARE
     rtn px.centertype;  
   BEGIN
-    SELECT cx, cy, cz INTO rtn.x, rtn.y, rtn.z FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
+    SELECT czoom, cx, cy, cz INTO rtn.zoom, rtn.x, rtn.y, rtn.z FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
     IF NOT FOUND THEN
+      rtn.zoom = 1;
       rtn.x = 0.0;
       rtn.y = 0.0;
       rtn.z = 0.0;
