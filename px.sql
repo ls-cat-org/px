@@ -1007,6 +1007,75 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getdatasets( int, int) OWNER TO lsadmin;
 
 
+
+CREATE TABLE px.editDStable (
+       edsKey serial primary key,	-- our key
+       edsName text not null,		-- the name of the item to change
+       edsFunc text not null,		-- the function to call
+       edsQuotes boolean not null       -- need quotes?
+);
+ALTER TABLE px.editDStable OWNER TO lsadmin;
+
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'dir', 'px.ds_set_dir',         true);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'fp',  'px.ds_set_fp',          true);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'start', 'px.ds_set_start',     false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'owidth', 'px.ds_set_owidth',   false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'delta', 'px.ds_set_delta',     false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'noscs', 'px.ds_set_noscs',     false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'nwedge', 'px.ds_set_nwedge',   false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'end', 'px.ds_set_end',         false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'nframes', 'px.ds_set_nframes', false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'exp', 'px.ds_set_exp',         false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'phi', 'px.ds_set_phi',         false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'omega', 'px.ds_set_omega',     false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'kappa', 'px.ds_set_kappa',     false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'dist', 'px.ds_set_dist',       false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'energy', 'px.ds_set_energy',   false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'wavelength', 'px.ds_set_wavelength', false);
+INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'state', 'px.ds_set_state',     true);
+
+
+CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, theValue text) returns XML AS $$
+  DECLARE
+    rtn xml;
+    qs text;
+    thedspid text;
+    eds record;
+    needq boolean;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+    IF NOT FOUND THEN
+      return xmlelement( name "editDS", xmlattributes( 'false' as success, 'access refused' as msg));
+    END IF;
+
+    SELECT edsFunc, edsQuotes INTO qs, needq FROM px.editDStable WHERE edsName = theKey;
+    IF NOT FOUND THEN
+      return xmlelement( name "editDS", xmlattributes( 'false' as success, 'key not found' as msg));
+    END IF;
+
+    SELECT ssdsedit INTO thedspid FROM px.stnstatus WHERE ssstn=theStn;
+    IF NOT FOUND THEN
+      return xmlelement( name "editDS", xmlattributes( 'false' as success, 'status not found' as msg));
+    END IF;
+
+    IF needq THEN
+     qs := qs || '(''' || thedspid || ''',''' || theValue || ''')';
+    ELSE
+     qs := qs || '(''' || thedspid || ''',' || theValue || ')';
+    END IF;
+
+    EXECUTE 'select ' || qs;
+
+    SELECT * INTO eds FROM px.datasets WHERE dspid=thedspid;
+    rtn := xmlelement( name "editDS", xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
+                            eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes));
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.editDS( text, bigint, text, text) OWNER TO lsadmin;
+
+
 --
 -- ESAF
 CREATE OR REPLACE FUNCTION px.ds_set_esaf( token text, arg2 int) RETURNS void as $$
@@ -1176,12 +1245,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_delta( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_owidth( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_delta( text, numeric) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_get_delta( token text) RETURNS numeric as $$
   SELECT dsdelta FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_owidth( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_delta( text) OWNER TO lsadmin;
 
 
 --
