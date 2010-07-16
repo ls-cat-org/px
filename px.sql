@@ -106,6 +106,24 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pushqueue( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.pushqueue( theStn bigint, cmd text) RETURNS VOID AS $$
+--
+-- Function to push command onto the queue
+--
+  DECLARE
+    c text;     -- trimmed cmd
+    ntfy text;
+  BEGIN
+    SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=theStn;
+    c = trim( cmd);
+    IF length( c) > 0 THEN
+      INSERT INTO px._marqueue (mqcmd,mqc) SELECT c, cdetector from px._config where cstnkey=theStn limit 1;
+      EXECUTE 'NOTIFY ' || ntfy;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.pushqueue( bigint, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
 --
 -- specify client address (ca) to queue up
@@ -717,6 +735,11 @@ CREATE OR REPLACE FUNCTION px.chkdir( token text) returns void AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.chkdir( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.chkdir( theStn bigint, token text) returns void AS $$
+  SELECT px.pushqueue( $1, 'checkdir,'|| $2);
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.chkdir( bigint, text) OWNER TO lsadmin;
+
 
 CREATE TABLE px.datasets (
         dskey      serial primary key,                          -- table key
@@ -945,6 +968,27 @@ CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix te
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir text, newPrefix text) RETURNS text AS $$
+  DECLARE
+    pfx text;           -- prefix after being cleaned up
+    dir text;           -- directory after being cleaned up
+    rtn text;           -- new token
+  BEGIN
+    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
+    pfx := px.fix_fn( newPrefix);
+    dir := px.fix_dir( newDir);
+    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsdir=''' || dir || ''', dsstn=' || theStn::text;
+    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
+    EXECUTE 'DROP TABLE "' || rtn || '"';
+    PERFORM px.chkdir( theStn, rtn);
+    PERFORM px.mkshots( rtn);
+
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.copydataset( bigint, text, text, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text AS $$
   DECLARE
     tmp text;           -- used to see if the directory needs checking
@@ -1041,12 +1085,33 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
     qs text;
     thedspid text;
     eds record;
-    needq boolean;
+    needq boolean;	-- need quotes
+    cDir text;		-- current directory
+    cFp  text;		-- current file prefix
+    curSam int;         -- the current sample
   BEGIN
     PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
     IF NOT FOUND THEN
       return xmlelement( name "editDS", xmlattributes( 'false' as success, 'access refused' as msg));
     END IF;
+
+
+    SELECT dsdir, dsfp, dspid INTO cDir, cFp, thedspid FROM px.datasets LEFT JOIN px.stnstatus ON ssdsedit=dspid where ssstn=theStn LIMIT 1;
+
+    IF (theKey='dir' and theValue != cDir) or (theKey='fp' and theValue != cFp) THEN
+      IF theKey='dir' THEN
+        SELECT px.copydataset( theStn, thedspid, theValue, cFp) INTO thedspid;
+        PERFORM px.setCurrentToken( theStn, thedspid);
+      END IF;
+      IF theKey='fp' THEN
+        SELECT px.copydataset( theStn, thedspid, cDir, theValue) INTO thedspid;
+        PERFORM px.setCurrentToken( theStn, thedspid);
+      END IF;
+    END IF;
+
+    -- Make sure we collect (only) on the current sample
+    SELECT coalesce(px.getCurrentSampleID( theStn),0) INTO curSam;
+    UPDATE px.datasets SET dspositions[1] = cursam WHERE dspid = thedspid;
 
     SELECT edsFunc, edsQuotes INTO qs, needq FROM px.editDStable WHERE edsName = theKey;
     IF NOT FOUND THEN
@@ -1058,13 +1123,15 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
       return xmlelement( name "editDS", xmlattributes( 'false' as success, 'status not found' as msg));
     END IF;
 
-    IF needq THEN
-     qs := qs || '(''' || thedspid || ''',''' || theValue || ''')';
-    ELSE
-     qs := qs || '(''' || thedspid || ''',' || theValue || ')';
-    END IF;
+    IF theKey != 'dir' and theKey != 'fp' THEN
+      IF needq THEN
+       qs := qs || '(''' || thedspid || ''',''' || theValue || ''')';
+      ELSE
+       qs := qs || '(''' || thedspid || ''',' || theValue || ')';
+      END IF;
 
-    EXECUTE 'select ' || qs;
+      EXECUTE 'select ' || qs;
+    END IF;
 
     SELECT * INTO eds FROM px.datasets WHERE dspid=thedspid;
     rtn := xmlelement( name "editDS", xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
@@ -1074,6 +1141,137 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.editDS( text, bigint, text, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text, theStartAngle float) RETURNS XML AS $$
+  DECLARE
+    cursam int;
+    thedspid text;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+    IF NOT FOUND THEN
+      return xmlelement( name "runDS", xmlattributes( 'false' as success, 'access refused' as msg));
+    END IF;
+
+    -- Make sure we collect (only) on the current sample
+    SELECT ssdsedit INTO thedspid FROM px.stnstatus WHERE ssstn = theStn;
+    SELECT coalesce(px.getCurrentSampleID( theStn),0) INTO curSam;
+    UPDATE px.datasets SET dspositions[1] = cursam WHERE dspid = thedspid;
+
+    -- Make sure we don't start up an old dataset
+    PERFORM px.runqueue_clear( theStn);
+
+    IF theType = 'snap' THEN
+      PERFORM px.mksnap( theStn, ssdsedit,  theStartAngle::numeric) FROM px.stnstatus WHERE ssstn=theStn;
+    END IF;
+    IF theType = 'orthosnap' THEN
+      PERFORM px.mkorthosnap( theStn, ssdsedit,  theStartAngle::numeric) FROM px.stnstatus WHERE ssstn=theStn;
+    END IF;
+    IF theType = 'norm' THEN
+      PERFORM px.pushrunqueue( theStn, ssdsedit, 'normal') FROM px.stnstatus WHERE ssstn=theStn;
+      PERFORM px.unpause( theStn);
+    END IF;
+
+    return xmlelement( name "runDS", xmlattributes( 'true' as success));
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runDS( text, bigint, text, float) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.getCurrentToken( theStn bigint) returns text AS $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT ssdsedit INTO rtn FROM px.stnstatus WHERE ssstn=theStn;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentToken(bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getCurrentToken() returns text AS $$
+  BEGIN
+    return px.getCurrentToken( px.getStation());
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getCurrentToken() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.setCurrentToken( theStn bigint, token text) returns void AS $$
+  DECLARE
+    rtn text;
+  BEGIN
+    UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setCurrentToken(bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.setCurrentToken( token text) returns void AS $$
+  BEGIN
+    PERFORM px.setCurrentToken( px.getStation(), token);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setCurrentToken( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.getDS( thePid text, theDspid text) returns xml AS $$
+  DECLARE
+    rtn xml;
+    esaf int;
+    eds record;
+    scnt int;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkDSAccess( thePid, theDspid);
+    IF NOT FOUND THEN
+      return xmlelement( name "getDS",  xmlattributes( false as success, 'access denied' as msg));
+    END IF;
+
+    SELECT count(*) INTO scnt FROM px.shots WHERE sdspid=theDspid and sState='Done';
+    IF NOT FOUND THEN
+      scnt := 0;
+    END IF;
+
+    SELECT * INTO eds FROM px.datasets WHERE dspid=thedspid;
+      rtn := xmlelement( name "editDS", xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
+                            eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, eds.dsdonets as dsts, px.ds_get_nframes( eds.dspid) as nframes, scnt as ndone));
+
+  return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getDS( text, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.dfpList( thePid text, theStn bigint) returns xml AS $$
+  DECLARE
+    dss record;
+    esaf int;
+    rtn xml;
+    tmp xml;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+    IF NOT FOUND THEN
+      return xmlelement( name "dfpList");
+    END IF;
+
+    SELECT ssesaf INTO esaf FROM px.stnstatus WHERE ssstn = theStn;
+    IF NOT FOUND THEN
+      return xmlelement( name "dfpList");
+    END IF;
+    
+    FOR dss IN SELECT dspid, dsdir, dsfp, dsdonets FROM px.datasets WHERE dsstn=theStn and dsesaf=esaf and dsdonets is not null ORDER BY dsdonets desc LOOP
+      PERFORM 1 FROM px.datasets WHERE dss.dsdir=dsdir and dss.dsfp=dsfp and dsdonets < dss.dsdonets;
+      IF NOT FOUND THEN
+        tmp := xmlconcat( tmp, xmlelement( name item, xmlattributes( dss.dspid as dspid, dss.dsdonets as dsts, dss.dsdir as dsdir, dss.dsfp as dsfp)));
+      END IF;
+    END LOOP;
+    rtn = xmlelement( name "dfpList", tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.dfpList( text, bigint) OWNER TO lsadmin;
+
+
+
 
 
 --
@@ -1850,10 +2048,53 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mksnap( text, numeric) OWNER TO lsadmin;
 
 
+CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeric) RETURNS void AS $$
+  DECLARE
+    nexti int;  -- next value of the index
+    fp text;    -- file prefix
+    ds record;  -- our dataset
+    sample int; -- current sample number
+    kidtok text; -- dspid of children
+
+  BEGIN
+    SELECT * INTO ds FROM px.datasets WHERE dspid=pid;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'token % not found', pid;
+    END IF;
+
+    IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
+      -- Here we have multiple samples.  Make snaps but not for this one
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY ds.dspositions[1] LOOP
+        PERFORM px.mksnap( theStn, kidtok, initialpos);
+      END LOOP;
+    ELSE
+      -- Here we just have one sample, use old code
+      -- Need to add sposition <-----
+      SELECT dsfp, coalesce( dspositions[1], 0) INTO fp, sample FROM px.datasets WHERE dspid=pid;
+      SELECT coalesce(max(sindex)+1,1) INTO nexti FROM px.shots WHERE sdspid=pid and stype='snap';
+      INSERT INTO px.shots (sdspid, stype, sindex, sfn, sstart, sstate, sposition) VALUES (
+        pid, 'snap', nexti, fp || '_S.' || trim(to_char(nexti,'099')), initialpos, 'NotTaken', sample
+      );
+      PERFORM px.pushrunqueue( theStn, pid, 'snap');
+      PERFORM px.unpause( theStn);
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.mksnap( bigint, text, numeric) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.mkorthosnap( pid text, initialpos numeric) RETURNS void AS $$
   BEGIN
     PERFORM px.mksnap( pid, initialpos);
     PERFORM px.mksnap( pid, initialpos+90);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.mkorthosnap( theStn bigint, pid text, initialpos numeric) RETURNS void AS $$
+  BEGIN
+    PERFORM px.mksnap( theStn, pid, initialpos);
+    PERFORM px.mksnap( theStn, pid, initialpos+90);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO lsadmin;
@@ -2087,6 +2328,16 @@ CREATE TABLE px.pause (
 );
 ALTER TABLE px.pause OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.pauseUpdateTF()  returns trigger AS $$
+  DECLARE
+  BEGIN
+    UPDATE px.stnstatus SET sspaused = (NEW.pps != 'Not Paused') WHERE ssstn=NEW.pstn;
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.pauseUpdateTF() OWNER TO lsadmin;
+
+CREATE TRIGGER paused_trigger BEFORE UPDATE ON px.pause FOR EACH ROW EXECUTE PROCEDURE px.pauseUpdateTF();
 
 CREATE OR REPLACE FUNCTION px.ispaused() RETURNS boolean AS $$
   SELECT pps != 'Not Paused' FROM px.pause WHERE pStn = px.getstation();
@@ -2115,17 +2366,17 @@ CREATE OR REPLACE FUNCTION px.pauseRequest() RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pauseRequest() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.pauseRequest( stn bigint) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.pauseRequest( theStn bigint) RETURNS VOID AS $$
   DECLARE
     ntfy text;
   BEGIN
-    PERFORM 1 FROM px.pause where pStn=stn;
+    PERFORM 1 FROM px.pause where pStn=theStn;
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Please Pause' where pStn=px.getStation();
+      UPDATE px.pause set ptc=now(), pps='Please Pause' where pStn=theStn;
     ELSE
-      INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),stn,'Please Pause');
+      INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),theStn,'Please Pause');
     END IF;
-    SELECT INTO ntfy cnotifypause FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=stn;
+    SELECT INTO ntfy cnotifypause FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=theStn;
     EXECUTE 'NOTIFY ' || ntfy;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2162,7 +2413,7 @@ CREATE OR REPLACE FUNCTION px.unpause( stn bigint) RETURNS VOID AS $$
   BEGIN
     PERFORM 1 FROM px.pause where pStn=stn;
     IF FOUND THEN
-      UPDATE px.pause set ptc=now(), pps='Not Paused' where pStn=px.getStation();
+      UPDATE px.pause set ptc=now(), pps='Not Paused' where pStn=stn;
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(), stn,'Not Paused');
     END IF;
@@ -2187,9 +2438,12 @@ ALTER TABLE px.runqueue OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.runqueue_delete_tf() RETURNS trigger AS $$
   DECLARE
+    theStn bigint;
   BEGIN
-    PERFORM 1 FROM px.runqueue WHERE rqStn=px.getstation();
-    IF NOT FOUND THEN
+    theStn := px.getStation();
+
+    PERFORM 1 FROM px.runqueue WHERE rqStn=theStn;
+    IF NOT FOUND and theStn is not null THEN
       PERFORM px.unpause();
     END IF;
     RETURN NULL;
@@ -2231,6 +2485,42 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pushrunqueue( text, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.pushrunqueue( theStn bigint, token text, stype text) RETURNS void AS $$
+  --
+  -- a version without assuming we know where we are
+  --
+  DECLARE
+    samples int[];      -- Array of samples in the dataset
+    pid text;           -- dspid from a child
+  BEGIN
+    SELECT dspositions INTO samples FROM px.datasets WHERE dspid=token;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'token % not found', token;
+    END IF;
+
+    IF array_lower( samples, 1) != array_upper( samples, 1) THEN
+      FOR pid IN SELECT dspid FROM px.datasets WHERE dsparent=token ORDER BY dspositions[1] LOOP
+        PERFORM px.pushrunqueue( theStn, pid, stype);
+      END LOOP;
+    ELSE
+      PERFORM dskey FROM px.datasets WHERE dspid=token and dsdirs='Valid';
+      IF FOUND THEN
+        PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
+        IF NOT FOUND THEN
+          INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( theStn, token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=theStn));
+          PERFORM 1 FROM px.pause WHERE pStn=theStn and pps='Not Paused';
+          IF FOUND THEN
+            PERFORM px.startrun( theStn);
+          END IF;
+        END IF;
+      ELSE
+        PERFORM px.pusherror( 20001, 'Directory ' || dsdir || ' not proven valid') FROM px.datasets WHERE dsdir=token;
+      END IF;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.pushrunqueue( bigint, text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.runqueue_up( theKey bigint) RETURNS void AS $$
 --
@@ -2367,6 +2657,38 @@ CREATE OR REPLACE FUNCTION px.runqueue_get( theStn bigint) returns SETOF px.runq
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.runqueue_get( bigint) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) returns xml AS $$
+  DECLARE
+    rq record;
+    tmp xml;
+    tmp2 xml;
+    rtn xml;
+    startTime timestamp with time zone;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+    IF FOUND THEN
+      startTime := now();
+
+      FOR rq IN SELECT rqtoken, rqtype, dsfp, px.ds_get_et( rqtoken, rqtype) as deltaTime, count(*) as total, count(*)-count(nullif(sstate,'Done')) as done
+            FROM px.runqueue
+            LEFT JOIN px.datasets on rqtoken=dspid
+            LEFT JOIN px.shots on rqtoken=sdspid
+            WHERE rqStn=theStn
+            GROUP BY rqtoken, rqtype, dsfp, et
+            ORDER BY rqOrder
+            LOOP
+
+        startTime := startTime + rq.deltaTime;
+	tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
+        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
+      END LOOP;
+      rtn = xmlelement( name runqueue, xmlattributes( 'true' as success), tmp);
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_get_xml( text, bigint) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   DECLARE
@@ -2381,6 +2703,14 @@ CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.runqueue_remove( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.runqueue_clear( theStn bigint) RETURNS void AS $$
+  DECLARE
+  BEGIN
+    DELETE FROM px.runqueue WHERE rqStn=theStn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_clear( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.runqueuecount() RETURNS int AS $$
   SELECT count(*)::int FROM px.runqueue WHERE rqStn=px.getstation();
@@ -2449,6 +2779,19 @@ CREATE OR REPLACE FUNCTION px.startrun() returns void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.startrun() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.startrun( theStn bigint) returns void AS $$
+  DECLARE
+    nt text;    -- notify condition
+  BEGIN
+    SELECT INTO nt cnotifyrun FROM px._config left join px.stations on stnname=cstation WHERE stnkey=theStn;
+    IF FOUND THEN
+      UPDATE px.pause SET ptc=now(), pps='Not Paused' WHERE pStn=theStn;
+      EXECUTE 'NOTIFY ' || nt;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.startrun( bigint) OWNER TO lsadmin;
 
 
 
@@ -4256,7 +4599,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
           LEFT JOIN px.datasets ON sdspid=dspid
           WHERE ssStn=theStn.stnkey and ssesaf=dsesaf;
       IF FOUND THEN
-        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.dsesaf as esaf));
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.dsesaf as esaf, case when shts.sspaused then 'true' else 'false' end as paused));
       ELSE
         tmp2 := NULL;
       END IF;
@@ -4390,7 +4733,8 @@ CREATE TABLE px.stnstatus (
 	sssfn  text default null,	-- copy of shots table entry
 	ssspath text default null,      -- copy of shots table entry
         sssbupath text default null,     -- copy of shots table entry
-        ssdsedit text default null references px.datasets (dspid)
+        ssdsedit text default null references px.datasets (dspid),
+        sspaused boolean not null default false
 );
 ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
@@ -4512,6 +4856,7 @@ CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as 
     tmp xml;
     shts record;
     aok boolean;
+    paused_t text;
   BEGIN
     SELECT rmt.checkTokenAccess( pid, token) INTO aok;
     IF NOT FOUND or NOT aok THEN
@@ -4520,10 +4865,11 @@ CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as 
 
     tmp := NULL;
     FOR shts IN SELECT * FROM px.getShots( token) LOOP
-      tmp := xmlconcat( tmp, xmlelement( name shot, xmlattributes( shts.sfn as sfn, shts.sstart as sstart, shts.sstate as sstate, shts.sindex as sindex, shts.skey as skey)));
+      tmp := xmlconcat( tmp, xmlelement( name shot, xmlattributes( shts.sfn as sfn, shts.stype as stype, shts.sstart as sstart, shts.sstate as sstate, shts.sindex as sindex, shts.skey as skey)));
     END LOOP;
 
-    rtn := xmlelement( name "shots", xmlattributes( token as sdspid), tmp);
+    SELECT case when px.stnstatus.sspaused then 'true' else 'false' end INTO paused_t FROM px.stnstatus LEFT JOIN px.datasets on dspid=token WHERE ssstn=dsstn;
+    rtn := xmlelement( name "shots", xmlattributes( token as sdspid, paused_t as paused), tmp);
 
     return rtn;
   END;
