@@ -359,9 +359,9 @@ CREATE TABLE px._config (
         cdiffractometer  inet   not null,               -- ip address of the diffractometer
         crobot           inet   not null,               -- ip address of the robot control process (our python script)
         ccats            inet   not null,               -- ip address of the CATS robot (the Stuabli controller)
-        cstation         text                           -- station where detector and diffractometer live
+        cstation         text   not null                -- station where detector and diffractometer live
                 references px.stations (stnname),
-        cstnkey          bigint
+        cstnkey          bigint not null
                 references px.stations (stnkey),
         cdifflocktable   text   not null,               -- name of diffractometer locking table
         cdetectlocktable text   not null,               -- name of detector locking table
@@ -375,7 +375,8 @@ CREATE TABLE px._config (
         cnotifywarning   text   not null,
         cnotifyerror     text   not null,
         cnotifyxfer      text   not null,
-        cnotifyrobot     text   not null
+        cnotifyrobot     text   not null,
+	cnotifycenter    text   not null
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -3315,6 +3316,11 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( thePid text, theId int) returns tex
     IF FOUND THEN
       SELECT px.getConfigFile( theId) INTO rtn;
     END IF;
+    -- KLUDGE: assume that anything using this function needs
+    -- URL's changed from 'contrabass.ls-cat.org' to 'ls-cat.org' for the images
+    --
+    rtn = replace( rtn, 'http://contrabass.ls-cat.org', 'http://ls-cat.org');
+
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -3353,6 +3359,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
       IF itm.hpImageMaskURL IS NOT NULL THEN
         rtn = rtn || 'overlayImage="' || itm.hpImageMaskURL || '" ';
       END IF;
+
       rtn = rtn || E'>\n';
       rtn = rtn || E'  <Color name="current" r="255" g="0" b = "0" a="100" />\n';
       rtn = rtn || E'  <Selected r="120" g="120" b = "0" a="127" />\n';
@@ -3542,6 +3549,37 @@ CREATE TABLE px.nextSamples (
 );
 ALTER TABLE px.nextSamples OWNER TO lsadmin;
 
+CREATE TABLE px.lastSamples ( 
+       lsKey serial primary key,
+       lsts timestamp with time zone default now(),
+       lsStn int not null references px.stations (stnKey) on update cascade,
+       lsId int not null
+);
+ALTER TABLE px.lastSamples OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lastSample( theStn bigint) returns int as $$
+  DECLARE
+    rtn int;
+  BEGIN
+    SELECT lsId INTO rtn FROM px.lastSamples WHERE lsStn=theStn ORDER BY lsKey DESC LIMIT 1;
+    IF NOT FOUND THEN
+      rtn = 0;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lastSample( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lastSample() returns int as $$
+  DECLARE
+  BEGIN
+    return px.lastSamples( px.getStation());
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lastSample() OWNER TO lsadmin;
+
+
+
 CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
   DECLARE
     rtn int;
@@ -3563,6 +3601,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
   DECLARE
   BEGIN
     INSERT INTO px.nextSamples (nsStn, nsId) VALUES (px.getstation(), theId);
+    INSERT INTO px.lastSamples (lsStn, lsId) VALUES (px.getstation(), theId);
     PERFORM px.md2pushqueue( 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -3572,6 +3611,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns vo
   DECLARE
   BEGIN
     INSERT INTO px.nextSamples (nsStn, nsId) VALUES (stn, theId);
+    INSERT INTO px.lastSamples (lsStn, lsId) VALUES (stn, theId);
     PERFORM px.md2pushqueue( stn, 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4579,6 +4619,12 @@ CREATE TABLE px.lockstates  (
 );
 ALTER TABLE px.lockstates OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.locks( theStn bigint) returns int AS $$
+  SELECT bit_or((2^(objid::int-1))::int) FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.locks( bigint) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
   DECLARE
     lcks record;
@@ -5382,6 +5428,7 @@ CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, 
   DECLARE
     theIp inet;
     thePort int;
+    ntfy text;
   BEGIN
 
   SELECT coalesce( cip, '127.0.0.1'::inet), coalesce(cport,0) INTO theIp, thePort FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
@@ -5392,7 +5439,8 @@ CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, 
 
   DELETE FROM px.trigcamtable WHERE tcStn = theStn;
   INSERT INTO px.trigcamtable (tcStn, tcts, tcZoom, tcStartAngle, tcSpeed, tcip, tcport) VALUES ( theStn, ts, zoom, startAngle, speed, theIp, thePort);
-  EXECUTE 'NOTIFY ROTTEST';
+  SELECT cnotifycenter INTO ntfy FROM px._config WHERE cstnkey=theStn;
+  EXECUTE 'NOTIFY ' || ntfy;
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
