@@ -459,6 +459,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.dropDiffractometerOn() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
+  --
+  -- returns false if the diffractometer is on
+  --
   DECLARE
     rtn boolean;
   BEGIN
