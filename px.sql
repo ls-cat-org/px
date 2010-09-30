@@ -4842,22 +4842,73 @@ CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as 
   DECLARE
     rtn boolean;
   BEGIN
-    SELECT esaf.checkPassword( expid, thepwd) INTO rtn;
-    IF rtn = True THEN
-      UPDATE px.stnstatus SET ssesaf=expid WHERE ssstn=px.getstation();
-    END IF;
+    SELECT INTO rtn px.login( px.getstation(), expid, thepwd);
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.login( int, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) returns boolean as $$
+  DECLARE
+    rtn boolean;
+    lastInfo record;
+  BEGIN
+    PERFORM px.logout( theStn);
+    SELECT esaf.checkPassword( expid, thepwd) INTO rtn;
+    IF rtn = True THEN
+      INSERT INTO px.stnstatus (ssstn, ssesaf) VALUES (theStn, expid);
+      SELECT INTO lastInfo *
+             FROM px.datasets
+             LEFT JOIN px.shots ON dspid=sdspid
+             WHERE dsesaf=expid
+               and dsstn=theStn
+             ORDER BY sts desc
+             LIMIT 1;
+      IF FOUND THEN
+        UPDATE px.stnstatus SET ssskey=lastInfo.skey, ssdsedit=lastInfo.dspid WHERE ssstn=theStn;
+      END IF;
+      -- UPDATE px.stnstatus SET ssesaf=expid WHERE ssstn=theStn;
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.login( bigint, int, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.logout() returns void as $$
   DECLARE
   BEGIN
-    UPDATE px.stnstatus SET ssesaf=NULL WHERE ssstn=px.getstation();
+    PERFORM px.logout( px.getstation());
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.logout() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.logout( theStn bigint) returns void as $$
+  DECLARE
+  BEGIN
+    --UPDATE px.stnstatus SET ssesaf=NULL WHERE ssstn=theStn;
+    DELETE FROM px.stnstatus WHERE ssstn=theStn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.logout( bigint) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.whoami( theStn bigint) returns text AS $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT INTO rtn 'e' || ssesaf from px.stnstatus WHERE ssstn=theStn;
+    IF FOUND THEN
+      return rtn;
+    END IF;
+    return NULL;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.whoami( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.whoami() returns text AS $$
+  SELECT px.whoami( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.whoami() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_twitter() returns text AS $$
@@ -5348,7 +5399,8 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
         PERFORM px.tunaLoad( theStn, tms || '''WaitUntilTime'', (now()+'''||wtime::text||' seconds''::interval)::text'  ||tmse);
 
         -- Wait for the robot to finish its cycle
-        PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 235) != 99 FROM cats.machinestate() WHERE "Station"='||theStn::text);
+        -- Not in exclusion zone, path not running, Diffractometer on and has AR, cryo locked
+        PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 739) != 99 FROM cats.machinestate('|| theStn::text ||')');
         PERFORM px.tunaLoad( theStn,   '1');
         PERFORM px.tunaLoad( theStn, 'RETURN');
 
@@ -5378,7 +5430,7 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
     PERFORM px.tunaLoad( theStn, 'RETURN');
 
     -- Wait for the robot to finish its cycle
-    PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 235) != 99 FROM cats.machinestate() WHERE "Station"='||theStn::text);
+    PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 739) != 99 FROM cats.machinestate(' || theStn::text || ')');
     PERFORM px.tunaLoad( theStn,   '1');
     PERFORM px.tunaLoad( theStn, 'RETURN');
 
@@ -5431,8 +5483,8 @@ CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, 
   DECLARE
     theIp inet;
     thePort int;
-    ntfy text;
-  BEGIN
+    ntfy text; 
+ BEGIN
 
   SELECT coalesce( cip, '127.0.0.1'::inet), coalesce(cport,0) INTO theIp, thePort FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
   IF NOT FOUND THEN
