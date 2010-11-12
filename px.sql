@@ -2018,6 +2018,9 @@ ALTER FUNCTION px.delshots( text, text, int, int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void AS $$
+  --
+  --  fixed the ORDER BY
+  --
   DECLARE
     nexti int;  -- next value of the index
     fp text;    -- file prefix
@@ -2033,7 +2036,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
 
     IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
       -- Here we have multiple samples.  Make snaps but not for this one
-      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY ds.dspositions[1] LOOP
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY dspositions[1] LOOP
         PERFORM px.mksnap( kidtok, initialpos);
       END LOOP;
     ELSE
@@ -2061,6 +2064,9 @@ CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeri
     kidtok text; -- dspid of children
 
   BEGIN
+    --
+    -- fixed order by
+    --
     SELECT * INTO ds FROM px.datasets WHERE dspid=pid;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'token % not found', pid;
@@ -2068,7 +2074,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeri
 
     IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
       -- Here we have multiple samples.  Make snaps but not for this one
-      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY ds.dspositions[1] LOOP
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY dspositions[1] LOOP
         PERFORM px.mksnap( theStn, kidtok, initialpos);
       END LOOP;
     ELSE
@@ -3192,7 +3198,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0( stn bigint) returns text AS $$
     --SELECT INTO theCurrent pvmvaluen FROM epics._pvmonitors WHERE pvmname='S:SRcurrentAI';
     --SELECT INTO theIzero  pvmvaluen FROM epics._pvmonitors LEFT JOIN px.epicsPVMLink ON epvmlPV=pvmname WHERE epvmlStn=px.getstation() and epvmlName='Io';
 
-    SELECT epics.caget( epvmlname) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=stn AND epvmlName='Io';
+    SELECT epics.caget( epvmlpv) INTO theIzero FROM px.epicsPVMLink WHERE epvmlStn=stn AND epvmlName='Io';
     IF NOT FOUND THEN
       theIzero := 1;
     END IF;
@@ -3865,7 +3871,7 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
       IF curDist < 400 THEN
         rtn := False;
         IF stopped THEN
-          PERFORM px.rt_set_dist( 650);
+          PERFORM px.rt_set_dist( 651);
         END IF;
       ELSE
         SELECT px.requestAirRights() INTO rtn;
@@ -4772,6 +4778,19 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.stnstatusxml( int) OWNER TO lsadmin;
 
 
+CREATE TABLE px.stnmodes (
+       sm text primary key
+);
+ALTER TABLE px.stnmodes OWNER TO lsadmin;
+
+INSERT INTO px.stnmodes (sm) VALUES ('CollectState');
+INSERT INTO px.stnmodes (sm) VALUES ('CenterState');
+INSERT INTO px.stnmodes (sm) VALUES ('ParamsState');
+INSERT INTO px.stnmodes (sm) VALUES ('RecoverState');
+INSERT INTO px.stnmodes (sm) VALUES ('SampleState');
+INSERT INTO px.stnmodes (sm) VALUES ('TransferState');
+
+
 
 CREATE TABLE px.stnstatus (
 	sskey serial primary key,
@@ -4783,7 +4802,8 @@ CREATE TABLE px.stnstatus (
 	ssspath text default null,      -- copy of shots table entry
         sssbupath text default null,     -- copy of shots table entry
         ssdsedit text default null references px.datasets (dspid),
-        sspaused boolean not null default false
+        sspaused boolean not null default false,
+	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null
 );
 ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
@@ -4965,7 +4985,7 @@ CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as 
 
     tmp := NULL;
     FOR shts IN SELECT * FROM px.getShots( token) LOOP
-      tmp := xmlconcat( tmp, xmlelement( name shot, xmlattributes( shts.sfn as sfn, shts.stype as stype, shts.sstart as sstart, shts.sstate as sstate, shts.sindex as sindex, shts.skey as skey)));
+      tmp := xmlconcat( tmp, xmlelement( name shot, xmlattributes( shts.sfn as sfn, shts.stype as stype, shts.sstart as sstart, shts.sstate as sstate, shts.sindex as sindex, shts.skey as skey, shts.sbupath as sbupath)));
     END LOOP;
 
     SELECT case when px.stnstatus.sspaused then 'true' else 'false' end INTO paused_t FROM px.stnstatus LEFT JOIN px.datasets on dspid=token WHERE ssstn=dsstn;
@@ -5478,6 +5498,21 @@ CREATE OR REPLACE FUNCTION px.gettrigcam() RETURNS px.trigcamtype AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.gettrigcam() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.gettrigcam( ntfy text) RETURNS px.trigcamtype AS $$
+  DECLARE
+    rtn px.trigcamtype;
+    theStn bigint;
+  BEGIN
+    SELECT INTO theStn cstn FROM rmt.cams WHERE ntfy=ccenternotify;
+    rtn := NULL;
+    IF FOUND THEN
+      rtn = px.gettrigcam( theStn);
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.gettrigcam(text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, startAngle float, speed float) RETURNS VOID AS $$
   DECLARE
@@ -5520,37 +5555,39 @@ CREATE TABLE px.centertable (
        czoom int not null default 1,
        cx float,	-- Centering table horizontal (focus direction)
        cy float,	-- Centering table vertical
-       cz float		-- Alignment table y (horizontal as seen on screen)
+       cz float,	-- Alignment table y (horizontal as seen on screen)
+       b  float,	-- y offset to edge of screen
+       t0 float         -- angle
 );
 ALTER TABLE px.centertable OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet, thePort int, zoom int, x float, y float, z float) returns void AS $$
+CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   BEGIN
     PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
     IF FOUND THEN
       DELETE FROM px.centertable WHERE cstn=theStn;
-      INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z);
+      INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz, cb, ct0) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z, b, t0);
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( bigint, text, inet, int, int, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( bigint, text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setcenter( thePid text, theIp inet, thePort int, zoom int, x float, y float, z float) returns void AS $$
+CREATE OR REPLACE FUNCTION px.setcenter( thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   BEGIN
-    PERFORM px.setcenter( px.getStation(), thePid, theIp, thePort, zoom, x, y, z);
+    PERFORM px.setcenter( px.getStation(), thePid, theIp, thePort, zoom, x, y, z, b, t0);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
 
 
 DROP TYPE px.centertype CASCADE;
-CREATE TYPE px.centertype AS (pid text, ip inet, port int, zoom int, x float, y float, z float);
+CREATE TYPE px.centertype AS (pid text, ip inet, port int, zoom int, x float, y float, z float, b float, t0 float);
 
 CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS $$
   DECLARE
     rtn px.centertype;  
   BEGIN
-    SELECT cpid, cip, cport, czoom, cx, cy, cz INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom, rtn.x, rtn.y, rtn.z FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
+    SELECT cpid, cip, cport, czoom, cx, cy, cz, cb, ct0 INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom, rtn.x, rtn.y, rtn.z, rtn.b, rtn.t0 FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
     IF NOT FOUND THEN
       rtn.pid = '0';
       rtn.ip  = '127.0.0.1'::inet;
@@ -5559,6 +5596,8 @@ CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS
       rtn.x = 0.0;
       rtn.y = 0.0;
       rtn.z = 0.0;
+      rtn.b = 0.0;
+      rtn.t0 = 0.0;
     END IF;
     --    DELETE FROM px.centertable WHERE cstn=theStn;
     RETURN rtn;
@@ -5575,5 +5614,20 @@ CREATE OR REPLACE FUNCTION px.getcenter() returns px.centertype AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getcenter() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getcenter( ntfy text) returns px.centertype AS $$
+  DECLARE
+    rtn px.centertype;
+    theStn bigint;
+  BEGIN
+    SELECT INTO theStn cstn FROM rmt.cams WHERE ccenternotify=ntfy limit 1;
+    SELECT INTO rtn * FROM px.getcenter( theStn);
+    IF NOT FOUND THEN
+      RETURN NULL;
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
 
 
