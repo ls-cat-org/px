@@ -266,7 +266,7 @@ class PxMarServer:
         # Here the distance is not specified or is boggus
         print >> sys.stderr, time.asctime(), theDist
         if self.skey != None:
-            self.query("update px.shots set sstate='Moving' where skey=%d" % (self.skey))
+            self.query("update px.shots set sstate='Moving' where skey=%d" % (int(self.skey)))
 
         if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
@@ -308,7 +308,7 @@ class PxMarServer:
                     if r["isthere"] == 't':
                         loopFlag=0
         if self.skey != None:
-            self.query( "update px.shots set sstate='Exposing' where skey=%d" % (self.skey))
+            self.query( "update px.shots set sstate='Exposing' where skey=%d" % (int(self.skey)))
 
             
 
@@ -436,7 +436,7 @@ class PxMarServer:
                         #
                         # get most of the information we'll need to write the header and so forth
                         #
-                        qs = "select * from px.marheader( %s)" % self.skey
+                        qs = "select * from px.marheader( %d)" % (int(self.skey))
                         qr = self.query( qs)
                         r  = qr.dictresult()[0]
 
@@ -476,7 +476,7 @@ class PxMarServer:
                         # Wait for the detector movement
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
-                        self.waitdist(r["sdist"], skey)
+                        self.waitdist(r["sdist"])
 
 
                         if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:

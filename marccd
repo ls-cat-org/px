@@ -23,6 +23,23 @@ Marccd*ShutterMenuBar*foreground: grey80
 Marccd*ShutterMenuBar*Sensitive: False
 EOF
 
+currentuser=`psql -qAn --pset tuples_only -h 10.1.0.3 -U lsuser -c "select * from px.whoami()" ls`
+iam=`whoami`
 
+if [[ "ZZ"$currentuser != "ZZ"$iam ]]; then    
+    if [[ "ZZ"$currentuser == "ZZ" ]]; then
+	zenity --warning --title="Marccd Startup Warning"  --text "No one is logged into the MD2.  Are you sure you want to continue?"
+	if [ $? -ne 0 ]; then
+	    exit
+	fi
+    else
+	zenity --error --title="Marccd Startup Error"  --text "$currentuser is logged in to the MD2 but you are $iam"
+	exit
+    fi
+fi
+
+cd ~
 /home/marccd/bin/linux/marccd -rf
+
+
 
