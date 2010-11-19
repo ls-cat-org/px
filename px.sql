@@ -843,18 +843,29 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.next_prefix( text, int) OWNER TO lsadmin;
 
 
-
-
-CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION px.newdataset( theStn bigint, expid int) RETURNS text AS $$
 --
 -- create a new data set with an experiment id of expid
   DECLARE
     rtn text;           -- new token
   BEGIN
     SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, px.getstation(), expid, (select stndataroot from px.stations where stnkey=px.getstation()));
+    INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, theStn, expid, (select stndataroot from px.stations where stnkey=theStn));
     PERFORM px.chkdir( rtn);
     PERFORM px.mkshots( rtn);
+    RETURN rtn;
+  END;
+
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.newdataset( bigint, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
+--
+-- create a new data set with an experiment id of expid
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT INTO rtn px.newdataset( px.getstation(), expid);
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1147,10 +1158,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.editDS( text, bigint, text, text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text, theStartAngle float) RETURNS XML AS $$
+CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text) RETURNS XML AS $$
   DECLARE
     cursam int;
     thedspid text;
+    theStartAngle numeric;
+
   BEGIN
     PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
     IF NOT FOUND THEN
@@ -1161,6 +1174,9 @@ CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text, t
     SELECT ssdsedit INTO thedspid FROM px.stnstatus WHERE ssstn = theStn;
     SELECT coalesce(px.getCurrentSampleID( theStn),0) INTO curSam;
     UPDATE px.datasets SET dspositions[1] = cursam WHERE dspid = thedspid;
+
+    -- Get the start angle for snap and orthosnap
+    SELECT INTO theStartAngle dsstart FROM px.datasets WHERE dspid = thedspid;
 
     -- Make sure we don't start up an old dataset
     PERFORM px.runqueue_clear( theStn);
@@ -1179,7 +1195,7 @@ CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text, t
     return xmlelement( name "runDS", xmlattributes( 'true' as success));
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runDS( text, bigint, text, float) OWNER TO lsadmin;
+ALTER FUNCTION px.runDS( text, bigint, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.getCurrentToken( theStn bigint) returns text AS $$
@@ -4654,7 +4670,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
           LEFT JOIN px.datasets ON sdspid=dspid
           WHERE ssStn=theStn.stnkey and ssesaf=dsesaf;
       IF FOUND THEN
-        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.dsesaf as esaf, case when shts.sspaused then 'true' else 'false' end as paused));
+        tmp2 := xmlelement( name file, xmlattributes( shts.skey as skey, shts.sfn as label, shts.spath as path, shts.sbupath as bupath, shts.ssesaf as esaf, case when shts.sspaused then 'true' else 'false' end as paused));
       ELSE
         tmp2 := NULL;
       END IF;
@@ -4682,6 +4698,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     stt text;
     eds record;  -- editing dataset
     rqs record;  -- runqueue
+    esaf int;	 -- current esaf
     kvpname text;
     kvpvalue text;
     thePrefix text;
@@ -4690,6 +4707,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     FOR theStn IN SELECT * FROM px.stations WHERE rmt.checkstnaccess( stnkey, thePid) ORDER BY stnkey LOOP
       SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
       SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
+      SELECT INTO esaf ssesaf FROM px.stnstatus WHERE ssstn=theStn.stnkey;
       SELECT * INTO shts
           FROM px.stnstatus
           LEFT JOIN px.shots ON ssskey=skey
@@ -4725,7 +4743,8 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       SELECT cats.getrobotstatekvpxml( theStn.stnkey) INTO tmp6;
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
-                             xmlelement( name kvpair, xmlattributes( shts.ssesaf as value, 'esaf' as name)),
+                             xmlelement( name kvpair, xmlattributes( esaf as value, 'esaf' as name)),
+			     xmlelement( name kvpair, xmlattributes( shts.ssmode as value, 'mode' as name)),
                              xmlelement( name kvpair, xmlattributes( st as value, 'lockState' as name)),
                              xmlelement( name kvpair, xmlattributes( stt as value, 'label' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_dist( theStn.stnkey) as value, 'dist' as name)),
@@ -4872,6 +4891,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
   DECLARE
     rtn boolean;
     lastInfo record;
+    token text;
   BEGIN
     PERFORM px.logout( theStn);
     SELECT esaf.checkPassword( expid, thepwd) INTO rtn;
@@ -4886,8 +4906,10 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
              LIMIT 1;
       IF FOUND THEN
         UPDATE px.stnstatus SET ssskey=lastInfo.skey, ssdsedit=lastInfo.dspid WHERE ssstn=theStn;
+      ELSE
+        SELECT INTO token px.newdataset( theStn, expid);
+	UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
       END IF;
-      -- UPDATE px.stnstatus SET ssesaf=expid WHERE ssstn=theStn;
     END IF;
     return rtn;
   END;
