@@ -265,6 +265,9 @@ class PxMarServer:
         #
         # Here the distance is not specified or is boggus
         print >> sys.stderr, time.asctime(), theDist
+        if self.skey != None:
+            self.query("update px.shots set sstate='Moving' where skey=%d" % (self.skey))
+
         if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
@@ -274,7 +277,7 @@ class PxMarServer:
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
+                        self.query( "select px.pusherror( 10006, 'Perhaps a Dewar is blocking the laser scanner.  Go have a look.')")
                         dewarWarningGiven = True
                         
                     time.sleep( 0.21)
@@ -296,7 +299,7 @@ class PxMarServer:
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Did you leave something on the yellow mat?')")
+                        self.query( "select px.pusherror( 10006, 'Perhaps a Dewar is blocking the laser scanner.  Go have a look.')")
                         dewarWarningGiven = True
                         
                     time.sleep( 0.21)
@@ -304,6 +307,8 @@ class PxMarServer:
                     r = qr.dictresult()[0]
                     if r["isthere"] == 't':
                         loopFlag=0
+        if self.skey != None:
+            self.query( "update px.shots set sstate='Exposing' where skey=%d" % (self.skey))
 
             
 
@@ -414,7 +419,7 @@ class PxMarServer:
                 cmd = self.nextCmd()
                 if cmd != None:
                     #
-                    # Force status read before outputing anynthing else
+                    # Force status read before outputting anynthing else
                     self.waitForStatus = True
                     self.blockOutput()
 
@@ -425,13 +430,13 @@ class PxMarServer:
                     if cmd.find( "collect") == 0:
                         #
                         # save the file name and queue up the readout command
-                        self.key = cmd.split(",")[1]
+                        self.skey = cmd.split(",")[1]
                         
 
                         #
                         # get most of the information we'll need to write the header and so forth
                         #
-                        qs = "select * from px.marheader( %s)" % self.key
+                        qs = "select * from px.marheader( %s)" % self.skey
                         qr = self.query( qs)
                         r  = qr.dictresult()[0]
 
@@ -471,7 +476,7 @@ class PxMarServer:
                         # Wait for the detector movement
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
-                        self.waitdist(r["sdist"])
+                        self.waitdist(r["sdist"], skey)
 
 
                         if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
@@ -502,7 +507,7 @@ class PxMarServer:
                         print >> sys.stderr, time.asctime(), hs
                         self.queue.insert( 0, hs)
 
-                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.key)
+                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
 
 
                         cmd = "start"

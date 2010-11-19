@@ -665,6 +665,7 @@ GRANT SELECT ON px.shotstates TO PUBLIC;
 
 INSERT INTO px.shotstates (ssstate) VALUES ( 'NotTaken');
 INSERT INTO px.shotstates (ssstate) VALUES ( 'Preparing');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'Moving');
 INSERT INTO px.shotstates (ssstate) VALUES ( 'Exposing');
 INSERT INTO px.shotstates (ssstate) VALUES ( 'FinishingUp');
 INSERT INTO px.shotstates (ssstate) VALUES ( 'Done');
