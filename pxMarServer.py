@@ -224,6 +224,12 @@ class PxMarServer:
         self.dbfd     = self.db.fileno()
         self.p.register( self.dbfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
 
+    def es( self, s):
+        """
+        mimic the pg connection escape_string which is oddly missing in RHEL5
+        """
+        return s.replace("'","''")
+
     def reset( self):
         succeeded = False
         while not succeeded:
@@ -343,7 +349,7 @@ class PxMarServer:
             else:
                 #
                 # Probably the directory path includes something we do not have permissions for
-                qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
+                qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(theDir), errno, self.es(strerror))
                 self.db.query( qs);
                 print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
@@ -446,7 +452,7 @@ class PxMarServer:
                                 os.makedirs( r["dsdir"])
                             except OSError, (errno, strerror):
                                 if errno != 17:
-                                    qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s' % (theDir, errno, strerror)"
+                                    qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(r["dsdir"]), int(errno), self.es(strerror))
                                     self.db.query( qs);
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
