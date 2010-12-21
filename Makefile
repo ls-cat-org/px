@@ -1,4 +1,4 @@
-VERSION= 1.3
+VERSION= 1.4
 help:
 	echo "Usage: sudo make install"
 
@@ -16,10 +16,11 @@ dist:
 	rm -f pxMarServer-$(VERSION)
 
 install: 
-	install pxMarServer.py /usr/local/bin
-	install marccd /usr/local/bin
-	install fixMarccdLog /usr/local/bin
+	@install pxMarServer.py /usr/local/bin
+	@install marccd /usr/local/bin
+	@install fixMarccdLog /usr/local/bin
+	@install AutoDetector.py /usr/local/bin
 
-	grep -q pxMarServer /etc/sudoers || echo "Please append append.to.sudoers to /etc/sudoers"
+	@grep -q AutoDetector /etc/sudoers || echo "Please append append.to.sudoers to /etc/sudoers"
 
 
