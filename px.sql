@@ -376,7 +376,8 @@ CREATE TABLE px._config (
         cnotifyerror     text   not null,
         cnotifyxfer      text   not null,
         cnotifyrobot     text   not null,
-	cnotifycenter    text   not null
+	cnotifycenter    text   not null,
+	cnotifylogin     text   not null
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -787,7 +788,9 @@ CREATE TABLE px.datasets (
         dscomment  text DEFAULT NULL,                           -- comment
 	dsobfuscated boolean default false,			-- fp and dir have been obfuscated
         dsparent   text DEFAULT NULL references px.datasets (dspid),
-        dspositions int[] default '{0}'                         -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
+        dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
+	dseditts timestamp with time zone default now(),	-- time of last edit
+	dseditnum integer default 0				-- increment each time an edit is made
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
@@ -802,7 +805,26 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets_dskey_seq TO PUBLIC;
 create index esaf_idx on px.datasets (dsesaf);
 
 
+CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
+  DECLARE
+    
+  BEGIN
+    new.dseditts = now();		-- any change updates the time stamp
+    new.dseditnum = old.dseditnum+1;	-- enumerate changes
+    return new;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.datasetsupdatetf() OWNER TO lsadmin;
+
+CREATE TRIGGER datasetsUpdateTrigger BEFORE UPDATE ON px.datasets FOR EACH ROW EXECUTE PROCEDURE px.datasetsUpdateTF();
+
+
 CREATE OR REPLACE FUNCTION px.next_prefix( prefix text) RETURNS text AS $$
+  --
+  -- Candidate for deletion
+  --
+  -- called only from a function that is a candidate for deletion
+  --
   DECLARE
     nexti int;
     rtn   text;
@@ -846,6 +868,9 @@ ALTER FUNCTION px.next_prefix( text, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.newdataset( theStn bigint, expid int) RETURNS text AS $$
 --
+-- used by px.login
+-- called indirectly by BLUMax through px.newdataset( expid)
+--
 -- create a new data set with an experiment id of expid
   DECLARE
     rtn text;           -- new token
@@ -862,6 +887,8 @@ ALTER FUNCTION px.newdataset( bigint, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
 --
+-- called from BLUMax
+--
 -- create a new data set with an experiment id of expid
   DECLARE
     rtn text;
@@ -874,6 +901,9 @@ ALTER FUNCTION px.newdataset( int ) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.newdataset() RETURNS text AS $$
+  --
+  -- Candidate for deletion
+  --
 --
 -- create a new data set without an experiment id
   DECLARE
@@ -890,6 +920,9 @@ ALTER FUNCTION px.newdataset( ) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.newdataset( token text) RETURNS text AS $$
+  --
+  -- Candidate for deletion
+  --
 --
 -- create a new data set based on the old one
   DECLARE
@@ -927,6 +960,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.newdataset( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text) RETURNS text AS $$
+  --
+  -- Candidate for deletion
+  --
   DECLARE
     rtn text;           -- new token
   BEGIN
@@ -944,6 +980,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS text AS $$
+  --
+  -- Candidate for deletion
+  --
   DECLARE
     pfx text;           -- prefix after being cleaned up
     rtn text;           -- new token
@@ -963,40 +1002,31 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( text, text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
-  DECLARE
-    pfx text;           -- prefix after being cleaned up
-    dir text;           -- directory after being cleaned up
-    rtn text;           -- new token
-  BEGIN
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    pfx := px.fix_fn( newPrefix);
-    dir := px.fix_dir( newDir);
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsdir=''' || dir || ''', dsstn=px.getstation()';
-    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-    EXECUTE 'DROP TABLE "' || rtn || '"';
-    PERFORM px.chkdir( rtn);
-    PERFORM px.mkshots( rtn);
-
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
-
 CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir text, newPrefix text) RETURNS text AS $$
+  --
+  -- Called from px.editDS
+  -- and indirectly from BLUMax via px.copydataset( token, newDir, newPrefix)
+  --
+  -- Perhaps makes a copy of a dataset with dspid = token using the new director and prefix specified.
+  -- If the directory and prefix exist already using this ESAF then the existing dataset is returned.
+  --
   DECLARE
     pfx text;           -- prefix after being cleaned up
     dir text;           -- directory after being cleaned up
     rtn text;           -- new token
+    theEsaf int;	-- our esaf
   BEGIN
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    pfx := px.fix_fn( newPrefix);
-    dir := px.fix_dir( newDir);
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsdir=''' || dir || ''', dsstn=' || theStn::text;
-    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-    EXECUTE 'DROP TABLE "' || rtn || '"';
+    SELECT INTO theEsaf dsesaf FROM px.datasets WHERE dspid = token;
+    SELECT INTO rtn dspid FROM px.datasets WHERE dsdir = newDir and dsfp = newPrefix and dsesaf = theEsaf;
+    IF NOT FOUND THEN
+      SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
+      pfx := px.fix_fn( newPrefix);
+      dir := px.fix_dir( newDir);
+      EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
+      EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsdir=''' || dir || ''', dsstn=' || theStn::text;
+      EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
+      EXECUTE 'DROP TABLE "' || rtn || '"';
+    END IF;
     PERFORM px.chkdir( theStn, rtn);
     PERFORM px.mkshots( rtn);
 
@@ -1005,7 +1035,15 @@ CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir tex
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.copydataset( bigint, text, text, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
+  SELECT px.copydataset( px.getstation(), $1, $2, $3);
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text AS $$
+  --
+  -- Called from px.mkshots
+  --
   DECLARE
     tmp text;           -- used to see if the directory needs checking
     p  record;          -- parent datasets
@@ -1114,15 +1152,14 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
 
     SELECT dsdir, dsfp, dspid INTO cDir, cFp, thedspid FROM px.datasets LEFT JOIN px.stnstatus ON ssdsedit=dspid where ssstn=theStn LIMIT 1;
 
-    IF (theKey='dir' and theValue != cDir) or (theKey='fp' and theValue != cFp) THEN
-      IF theKey='dir' THEN
-        SELECT px.copydataset( theStn, thedspid, theValue, cFp) INTO thedspid;
-        PERFORM px.setCurrentToken( theStn, thedspid);
-      END IF;
-      IF theKey='fp' THEN
-        SELECT px.copydataset( theStn, thedspid, cDir, theValue) INTO thedspid;
-        PERFORM px.setCurrentToken( theStn, thedspid);
-      END IF;
+    IF theKey='dir' and theValue != cDir THEN
+      SELECT px.copydataset( theStn, thedspid, theValue, cFp) INTO thedspid;
+      PERFORM px.setCurrentToken( theStn, thedspid);
+    END IF;
+
+    IF theKey='fp' and theValue != cFp THEN
+      SELECT px.copydataset( theStn, thedspid, cDir, theValue) INTO thedspid;
+      PERFORM px.setCurrentToken( theStn, thedspid);
     END IF;
 
     -- Make sure we collect (only) on the current sample
@@ -1152,7 +1189,7 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
     SELECT * INTO eds FROM px.datasets WHERE dspid=thedspid;
     rtn := xmlelement( name "editDS", xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
                             eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
-                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes));
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes, eds.dseditnum as dseditnum));
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1254,7 +1291,7 @@ CREATE OR REPLACE FUNCTION px.getDS( thePid text, theDspid text) returns xml AS 
     SELECT * INTO eds FROM px.datasets WHERE dspid=thedspid;
       rtn := xmlelement( name "editDS", xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
                             eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
-                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, eds.dsdonets as dsts, px.ds_get_nframes( eds.dspid) as nframes, scnt as ndone));
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, eds.dsdonets as dsts, px.ds_get_nframes( eds.dspid) as nframes, scnt as ndone, eds.dseditnum as dseditnum));
 
   return rtn;
   END;
@@ -4699,7 +4736,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     stt text;
     eds record;  -- editing dataset
     rqs record;  -- runqueue
-    esaf int;	 -- current esaf
+    esaf int;    -- current esaf
     kvpname text;
     kvpvalue text;
     thePrefix text;
@@ -4723,7 +4760,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       IF FOUND THEN
         tmp3 := xmlelement( name edit, xmlattributes(  eds.dspid as dspid, eds.dsdir as dsdir, eds.dsdirs as dsdirs, eds.dsfp as dsfp, eds.dsstart as dsstart, eds.dsdelta as dsdelta, eds.dsowidth as dsowidth,
                             eds.dsnwedge as dsnwedge, eds.dsend as dsend, eds.dsexp as dsexp, eds.dsexpunit as dsexpunit, eds.dsphi as dsphi, eds.dsomega as dsomega, eds.dskappa as dskappa,
-                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes));
+                            eds.dsdist as dsdist, eds.dsnrg as dsnrg, px.ds_get_nframes( eds.dspid) as nframes, eds.dseditnum as dseditnum));
       END IF;
       tmp4 := NULL;
       FOR rqs IN SELECT * FROM px.runqueue_get( theStn.stnkey) LOOP
@@ -4745,7 +4782,8 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
                              xmlelement( name kvpair, xmlattributes( esaf as value, 'esaf' as name)),
-			     xmlelement( name kvpair, xmlattributes( shts.ssmode as value, 'mode' as name)),
+                             xmlelement( name kvpair, xmlattributes( shts.ssmode as value, 'mode' as name)),
+                             xmlelement( name kvpair, xmlattributes( shts.ssselectedposition as value, 'selectedPostion' as name)),
                              xmlelement( name kvpair, xmlattributes( st as value, 'lockState' as name)),
                              xmlelement( name kvpair, xmlattributes( stt as value, 'label' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_dist( theStn.stnkey) as value, 'dist' as name)),
@@ -4823,7 +4861,8 @@ CREATE TABLE px.stnstatus (
         sssbupath text default null,     -- copy of shots table entry
         ssdsedit text default null references px.datasets (dspid),
         sspaused boolean not null default false,
-	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null
+	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null,
+	ssselectedposition int default 0
 );
 ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
@@ -4911,6 +4950,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
         SELECT INTO token px.newdataset( theStn, expid);
 	UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
       END IF;
+      PERFORM px.autologinnotify( theStn);
     END IF;
     return rtn;
   END;
@@ -5653,4 +5693,52 @@ CREATE OR REPLACE FUNCTION px.getcenter( ntfy text) returns px.centertype AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.autologininit( theStn bigint) returns void as $$
+  DECLARE
+    ntfy text;
+  BEGIN
+    SELECT INTO ntfy cnotifylogin FROM px._config WHERE cstnkey=theStn;
+    IF FOUND THEN
+      EXECUTE 'LISTEN ' || ntfy;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.autologininit( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.autologininit() returns void as $$
+  SELECT px.autologininit( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.autologininit() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.autologinnotify( theStn bigint) returns void as $$
+  DECLARE
+    ntfy text;
+  BEGIN
+    SELECT INTO ntfy cnotifylogin FROM px._config WHERE cstnkey=theStn;
+    IF FOUND THEN
+      EXECUTE 'NOTIFY ' || ntfy;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.autologinnotify( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.autologinnotify() returns void as $$
+  SELECT px.autologinnotify( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.autologinnotify() OWNER TO lsadmin;
+
+
+CREATE TYPE px.lnnamestype AS (src text, dest text);
+CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS $$
+  DECLARE
+    rtn px.lnnamestype;
+  BEGIN
+    FOR rtn.src, rtn.dest IN SELECT sfn, sbupath FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
 
