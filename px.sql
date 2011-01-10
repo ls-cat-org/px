@@ -6,9 +6,6 @@
 --CREATE SCHEMA px;
 GRANT USAGE ON SCHEMA px TO PUBLIC;
 
-DROP SCHEMA pxlocks CASCADE;
-CREATE SCHEMA pxlocks;
-
 CREATE TABLE px._marinit (
 --
 -- commands to run with the mar starts up
@@ -819,32 +816,6 @@ ALTER FUNCTION px.datasetsupdatetf() OWNER TO lsadmin;
 CREATE TRIGGER datasetsUpdateTrigger BEFORE UPDATE ON px.datasets FOR EACH ROW EXECUTE PROCEDURE px.datasetsUpdateTF();
 
 
-CREATE OR REPLACE FUNCTION px.next_prefix( prefix text) RETURNS text AS $$
-  --
-  -- Candidate for deletion
-  --
-  -- called only from a function that is a candidate for deletion
-  --
-  DECLARE
-    nexti int;
-    rtn   text;
-  BEGIN
-
-    rtn := rtrim(prefix,'0123456789');
-
-    SELECT INTO nexti max(coalesce(substr( dsfp, length(rtrim(dsfp,'0123456789'))+1)::int,0)) FROM px.datasets WHERE dsfp similar to replace(rtn,'_','\\_') || '[0-9]+';
-    IF FOUND AND nexti is not null THEN
-      nexti := nexti + 1;
-      rtn := rtn || nexti;
-    ELSE
-      rtn := prefix || '_1';
-    END IF;
-
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.next_prefix( text) OWNER TO lsadmin;
-
 CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text AS $$
   DECLARE
     rtn   text;
@@ -898,108 +869,6 @@ CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.newdataset( int ) OWNER TO lsadmin;
-
-
-CREATE OR REPLACE FUNCTION px.newdataset() RETURNS text AS $$
-  --
-  -- Candidate for deletion
-  --
---
--- create a new data set without an experiment id
-  DECLARE
-    rtn text;           -- new token
-  BEGIN
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    INSERT INTO px.datasets (dspid, dsstn, dsdir) VALUES (rtn, px.getstation(), (select stndataroot from px.stations where stnkey=px.getstation()));
-    PERFORM px.chkdir( rtn);
-    PERFORM px.mkshots( rtn);
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.newdataset( ) OWNER TO lsadmin;
-
-
-CREATE OR REPLACE FUNCTION px.newdataset( token text) RETURNS text AS $$
-  --
-  -- Candidate for deletion
-  --
---
--- create a new data set based on the old one
-  DECLARE
-    rtn text;           -- new token
-  BEGIN
-
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsstn=px.getstation()';
-    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-    EXECUTE 'DROP TABLE "' || rtn || '"';
-    PERFORM px.chkdir( rtn);
-    PERFORM px.mkshots( rtn);
-
-
-    -- From old dataset
-    -- Delete all normal frames if none have been taken
-    PERFORM skey FROM px.shots WHERE sdspid=token and sstate='Done' and stype='normal' limit 1;
-    IF NOT FOUND THEN
-      DELETE FROM px.shots WHERE sdspid=token and stype='normal';
-    END IF;
-
-    -- From old dataset
-    -- Delete all frames if none have been taken: delete the dataset as well.
-    PERFORM skey FROM px.shots WHERE sdspid=token and sstate='Done' limit 1;
-    IF NOT FOUND THEN
-      DELETE FROM px.shots WHERE sdspid=token;
-      DELETE FROM px.datasets WHERE dspid=token;
-    END IF;
-
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.newdataset( text) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.copydataset( token text) RETURNS text AS $$
-  --
-  -- Candidate for deletion
-  --
-  DECLARE
-    rtn text;           -- new token
-  BEGIN
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=px.next_prefix(dsfp), dsstn=px.getstation()';
-    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-    EXECUTE 'DROP TABLE "' || rtn || '"';
-    PERFORM px.chkdir( rtn);
-    PERFORM px.mkshots( rtn);
-
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( text) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.copydataset( token text, newPrefix text) RETURNS text AS $$
-  --
-  -- Candidate for deletion
-  --
-  DECLARE
-    pfx text;           -- prefix after being cleaned up
-    rtn text;           -- new token
-  BEGIN
-    SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
-    pfx := px.fix_fn( newPrefix);
-    EXECUTE 'CREATE TEMPORARY TABLE "' || rtn || '" AS SELECT * FROM px.datasets WHERE dspid=''' || token || '''';
-    EXECUTE 'UPDATE "' || rtn || '" SET dspid=''' || rtn || ''', dskey=nextval( ''px.datasets_dskey_seq''), dsfp=''' || pfx || ''', dsstn=px.getstation()';
-    EXECUTE 'INSERT INTO px.datasets SELECT * FROM "' || rtn || '"';
-    EXECUTE 'DROP TABLE "' || rtn || '"';
-    PERFORM px.chkdir( rtn);
-    PERFORM px.mkshots( rtn);
-
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( text, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir text, newPrefix text) RETURNS text AS $$
