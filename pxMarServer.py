@@ -130,11 +130,11 @@ class PxMarServer:
                 # Got it
                 print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
                 #
-                qs = "UPDATE px.shots SET spath='%s' WHERE skey=%d" % (d+"/"+f, int(shotKey))
+                qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
                 self.db.query( qs)
 
                 # find the backup home directory
-                qs = "select esaf.e2BUDir(dsesaf) as bp from px.datasets left join px.shots on dspid=sdspid where skey='%s'" % (shotKey)
+                qs = "select esaf.e2BUDir(px.shots_get_esaf(%d)) as bp" % (int(shotKey))
                 qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
@@ -194,7 +194,7 @@ class PxMarServer:
                         self.db.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
-                        qs = "UPDATE px.shots SET sbupath='%s' WHERE skey=%d" % ( bfn, int(shotKey))
+                        qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
                         self.db.query( qs);
                     
                     self.hlList.pop( self.hlList.index(hl))
@@ -272,7 +272,7 @@ class PxMarServer:
         # Here the distance is not specified or is boggus
         print >> sys.stderr, time.asctime(), theDist
         if self.skey != None:
-            self.query("update px.shots set sstate='Moving' where skey=%d" % (int(self.skey)))
+            self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
 
         if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
@@ -314,7 +314,7 @@ class PxMarServer:
                     if r["isthere"] == 't':
                         loopFlag=0
         if self.skey != None:
-            self.query( "update px.shots set sstate='Exposing' where skey=%d" % (int(self.skey)))
+            self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing')
 
             
 
@@ -326,13 +326,12 @@ class PxMarServer:
             self.waitdist(value)
 
     def checkdir( self, token):
-        qr = self.query( "select dskey, dsdir from px.datasets where dspid='"+token+"'")
+        qr = self.query( "select dsdir from px.getdataset('%s')" % (str(token)))
         rd = qr.dictresult()
         if len(rd) == 0:
             return
         r = qr.dictresult()[0]
         theDir = r["dsdir"]
-        theKey = r["dskey"]
         theDirState = None
         #
         # Try to create directory
@@ -354,8 +353,7 @@ class PxMarServer:
                 print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
 
-        self.query( "update px.datasets set dsdirs='%s' where dskey=%d" % (theDirState, theKey))
-
+        self.query( "select px.ds_set_dirs( '%s', '%s')" % (token, theDirState))
 
     def serviceIn( self, event):
         #

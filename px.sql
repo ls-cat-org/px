@@ -686,16 +686,6 @@ INSERT INTO px.oscsenses (os) VALUES ( '-');
 INSERT INTO px.oscsenses (os) VALUES ( '+/-');
 INSERT INTO px.oscsenses (os) VALUES ( '-/+');
 
-CREATE TABLE px.dsstates (
-        dss text primary key
-);
-ALTER TABLE px.dsstates OWNER TO lsadmin;
-GRANT SELECT ON px.dsstates TO PUBLIC;
-
-INSERT INTO px.dsstates (dss) VALUES ('active');
-INSERT INTO px.dsstates (dss) VALUES ('inactive');
-INSERT INTO px.dsstates (dss) VALUES ('creating');
-
 --
 -- fix_fn
 -- removes illegal characters from file name
@@ -749,16 +739,10 @@ CREATE TABLE px.datasets (
         dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
         dscreatets timestamp with time zone default now(),      -- creatation time stamp
         dsdonets   timestamp with time zone default NULL,	-- time of last done frame
-        dsstate    text NOT NULL DEFAULT 'active'               -- active or not
-                references px.dsstates (dss),
         dsesaf     int default NULL,                            -- The ESAF used for this experiment
 -- A real references is not used as we currently delete the esaf routinely (during a modification, for example)
 -- until this is thought trhough and tested completely it is better just to leave the reference hanging
 --              references esaf.esafs (eexperimentid),
-        dswho      bigint default NULL,                         -- Who set up this dataset
---              references esaf._people (pbadgeno),
-        dsinst     bigint default NULL,                         -- The institution that "owns" the data collection time
---              references lsched.schedinsts (sikey),
         dsdir      text NOT NULL default 'data',                -- the collection directory
         dsdirs     text NOT NULL default 'New'                  -- the directory state
                 references px.dirstates (dirs),
@@ -972,8 +956,6 @@ CREATE OR REPLACE FUNCTION px.getdatasets( stnkey int, expid int) RETURNS SETOF 
   SELECT * FROM px.datasets where dsstn=$1 and dsesaf=$2 order by dsfp, dscreatets DESC;
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getdatasets( int, int) OWNER TO lsadmin;
-
-
 
 CREATE TABLE px.editDStable (
        edsKey serial primary key,	-- our key
@@ -1289,6 +1271,13 @@ CREATE OR REPLACE FUNCTION px.ds_get_dir( token text) RETURNS text as $$
   SELECT dsdir FROM  px.datasets where dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_dir( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ds_set_dirs( token text, arg2 text) RETURNS void as $$
+  BEGIN
+    UPDATE px.datasets SET dsdirs=arg2 WHERE dspid=token;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_dirs( text, text) OWNER TO lsadmin;
 
 
 --
@@ -1635,18 +1624,6 @@ CREATE OR REPLACE FUNCTION px.ds_get_comment( token text) RETURNS text as $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_comment( text) OWNER TO lsadmin;
 
---
--- State
---
-CREATE OR REPLACE FUNCTION px.ds_set_state( token text, arg2 text) RETURNS void as $$
-  BEGIN UPDATE px.datasets set dsstate=arg2 where dspid=token; end; $$
-LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_state( text, text) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.ds_get_state( token text) RETURNS text as $$
-  SELECT dsstate FROM px.datasets WHERE dspid=$1;
-$$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_state( text) OWNER TO lsadmin;
 
 
 --
@@ -1699,6 +1676,46 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
 
 
+
+CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
+  UPDATE px.shots SET sphi=$2, skappa=$3, sdist=( SELECT dsdist FROM px.datasets WHERE dspid=sdspid) WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_params( bigint, numeric, numeric) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) returns void as $$ 
+  UPDATE px.shots SET sts=now(),sstate=$2 WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_count_done_snaps( thePid text) returns bigint as $$
+  SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='snap' AND sstate='Done';
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_count_done_snaps( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_count_snaps( thePid text) returns bigint as $$
+  SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='snap';
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_count_snaps( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_count_done_normals( thePid text) returns bigint as $$
+  SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='normal' AND sstate='Done';
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_count_done_normals( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_get_esaf( theKey bigint) returns int as $$
+  SELECT dsesaf FROM px.datasets LEFT JOIN px.shots on dspid=sdspid WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_get_esaf( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_set_path( theKey bigint, theDir text) returns void as $$
+  UPDATE px.shots SET spath=$2 WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_path( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_set_bupath( theKey bigint, theDir text) returns void as $$
+  UPDATE px.shots SET sbupath=$2 WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_bupath( bigint, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
@@ -4600,6 +4617,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     tmp4 xml;
     tmp5 xml;
     tmp6 xml;
+    tmp7 xml;
     shts record;
     st int;
     stt text;
@@ -4648,6 +4666,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       END LOOP;
 
       SELECT cats.getrobotstatekvpxml( theStn.stnkey) INTO tmp6;
+      SELECT px.uistatus_get_xml( thePid, theStn.stnkey) INTO tmp7;
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
                              xmlelement( name kvpair, xmlattributes( esaf as value, 'esaf' as name)),
@@ -4658,7 +4677,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
                              xmlelement( name kvpair, xmlattributes( px.rt_get_dist( theStn.stnkey) as value, 'dist' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_wavelength( theStn.stnkey) as value, 'wavelength' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_ni0( theStn.stnkey) as value, 'ni0' as name)),
-                             tmp2, tmp3, xmlelement( name runqueue, tmp4), tmp5, tmp6
+                             tmp2, tmp3, xmlelement( name runqueue, tmp4), tmp5, tmp6, tmp7
                         ));
     END LOOP;
     rtn := xmlelement( name "stationStatus", xmlelement( name aps, xmlelement( name kvpair, xmlattributes(  'current' as name, epics.caget( 'S:SRcurrentAI')::numeric(5,1) as value))), tmp);
@@ -4730,10 +4749,90 @@ CREATE TABLE px.stnstatus (
         sssbupath text default null,     -- copy of shots table entry
         ssdsedit text default null references px.datasets (dspid),
         sspaused boolean not null default false,
-	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null,
-	ssselectedposition int default 0
+	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null
 );
 ALTER TABLE px.stnstatus OWNER TO lsadmin;
+
+CREATE TABLE px.uistatus (
+       --
+       -- Support to synchronize remote UI's
+       -- 
+       uikey serial primary key,	-- our key
+       uisskey bigint not null		-- the station status this is part of
+       	       references px.stnstatus (sskey) on delete cascade,
+       uin int not null default 0,	-- the edit number for this variable
+       uik text,			-- the k of the kv pair
+       uiv text				-- the v of the kv pair
+);
+ALTER TABLE px.uistatus OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.uistatusUpdateTF() returns trigger as $$
+  --
+  -- Auto increment the edit number for each field
+  --
+  DECLARE
+  BEGIN
+    new.uin = old.uin + 1;
+    return new;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.uistatusUpdateTF() OWNER TO lsadmin;
+
+CREATE TRIGGER uistatusUpdateTrigger BEFORE UPDATE ON px.uistatus FOR EACH ROW EXECUTE PROCEDURE px.uistatusUpdateTF();
+
+
+CREATE OR REPLACE FUNCTION px.uistatus_set( pid text, theStn bigint, theKey text, theValue text) returns void as $$
+  --
+  --  Set a key/value pair for the UI
+  --
+  DECLARE
+    theSSKey bigint;
+  BEGIN
+
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, pid);
+    IF NOT FOUND THEN
+      --
+      -- Silently ignore invalid request
+      --
+      return;
+    END IF;
+    --
+    -- Assume that there is an entry for this theStn in stnstatus as one should be created when
+    -- logging in
+    --
+    SELECT INTO theSSKey sskey FROM px.stnstatus LEFT JOIN px.uistatus on sskey=uisskey WHERE ssstn=theStn and uik=theKey;
+    IF FOUND THEN
+      UPDATE px.uistatus SET uiv = theValue WHERE uisskey = theSSKey and uik = theKey;
+    ELSE
+      INSERT INTO px.uistatus (uisskey, uik, uiv) VALUES ((SELECT sskey FROM px.stnstatus WHERE ssstn=theStn), theKey, theValue);
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.uistatus_set( text, bigint, text, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.uistatus_get_xml( pid text, theStn bigint) returns xml as $$
+  DECLARE
+    rtn xml;
+    tmp xml;
+    k text;
+    v text;
+    n int;
+  BEGIN
+    PERFORM 1 WHERE rmt.checkstnaccess( theStn, pid);
+    IF NOT FOUND THEN
+      return xmlelement( name uistatus, xmlattributes( 'false' as success, 'Access denied' as msg));
+    END IF;
+    
+    FOR k, v, n IN SELECT uik, uiv, uin FROM px.stnstatus LEFT JOIN px.uistatus ON sskey=uisskey WHERE ssstn = theStn and uik is not null LOOP
+      tmp = xmlconcat( tmp, xmlelement( name kvpair, xmlattributes( k as name, v as value, n as nedit)));
+    END LOOP;
+    rtn = xmlelement( name uistatus, xmlattributes( theStn as stn), tmp);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.uistatus_get_xml( text, bigint) OWNER TO lsadmin;
+
+
 
 CREATE TABLE px.esafstatus (
 	eskey serial primary key,
