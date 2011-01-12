@@ -1717,6 +1717,28 @@ CREATE OR REPLACE FUNCTION px.shots_set_bupath( theKey bigint, theDir text) retu
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_bupath( bigint, text) OWNER TO lsadmin;
 
+CREATE TYPE px.shots_stats_type AS ( ntaken int, ntotal int);
+
+CREATE OR REPLACE FUNCTION px.shots_get_snap_stats( token text) returns px.shots_stats_type as $$
+  DECLARE
+    rtn px.shots_stats_type;
+  BEGIN
+    SELECT INTO rtn.ntaken, rtn.ntotal count(*) - count( nullif( sstate, 'Done')), count(*) FROM px.shots WHERE sdspid=$1 and stype='snap';
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.shots_get_snap_stats( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.shots_get_normal_stats( token text) returns px.shots_stats_type as $$
+  DECLARE
+    rtn px.shots_stats_type;
+  BEGIN
+    SELECT INTO rtn.ntaken, rtn.ntotal count(*) - count( nullif( sstate, 'Done')), count(*) FROM px.shots WHERE sdspid=$1 and stype='normal';
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.shots_get_normal_stats( text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
   DECLARE
