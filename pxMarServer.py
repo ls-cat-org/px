@@ -314,7 +314,7 @@ class PxMarServer:
                     if r["isthere"] == 't':
                         loopFlag=0
         if self.skey != None:
-            self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing')
+            self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
 
             
 
