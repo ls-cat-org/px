@@ -2848,15 +2848,22 @@ CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric) RETURNS VOID AS $$
+  DECLARE
+  BEGIN
+   PERFORM epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=theStn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.moveit( bigint, text, numeric) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS VOID AS $$
   DECLARE
   BEGIN
-  -- PERFORM px.isthere( motion, value);
-   PERFORM epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=px.getStation();
+    PERFORM 1 FROM px.moveit( px.getStation(), motion, value);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
-
 
 CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
   DECLARE
@@ -2924,6 +2931,19 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_set_dist( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d text) returns void AS $$
+  DECLARE
+  BEGIN
+    PERFORM px.moveit( theStn, 'distance', d::numeric);
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_set_dist( bigint, text) OWNER TO lsadmin;
+
+
+
+
 
 --CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
 --  DECLARE
@@ -3581,6 +3601,13 @@ ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns void AS $$
   DECLARE
   BEGIN
+    -- Make sure we don't start up an old dataset
+    --
+    -- This supports the REMOTE interface
+    -- and is not the expected behaviour on the MD2 interface
+    --
+    PERFORM px.runqueue_clear( stn);
+    --
     INSERT INTO px.nextSamples (nsStn, nsId) VALUES (stn, theId);
     INSERT INTO px.lastSamples (lsStn, lsId) VALUES (stn, theId);
     PERFORM px.md2pushqueue( stn, 'transfer');
@@ -4650,9 +4677,11 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     kvpvalue text;
     thePrefix text;
     theStatus text;
+    running boolean;  -- when all the current images have been taken
   BEGIN
     FOR theStn IN SELECT * FROM px.stations WHERE rmt.checkstnaccess( stnkey, thePid) ORDER BY stnkey LOOP
-      SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      -- SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      SELECT INTO st cats.machinestate( theStn.stnkey);
       SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
       SELECT INTO esaf ssesaf FROM px.stnstatus WHERE ssstn=theStn.stnkey;
       SELECT * INTO shts
@@ -4681,6 +4710,11 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
               LIMIT 1;
         tmp4 := xmlconcat( tmp4, xmlelement( name entry, xmlattributes( rqs.dspid as dspid, rqs.type as "type", rqs.k as k, rqs.etc as etc, thePrefix as fp, theStatus as status)));
       END LOOP;
+      IF NOT FOUND THEN
+        running := false;
+      ELSE
+        running := not shts.sspaused;
+      END IF;
 
       tmp5 = NULL;
       FOR kvpname, kvpvalue IN SELECT kvname, kvvalue FROM px.kvs WHERE kvstn=theStn.stnkey LOOP
@@ -4692,6 +4726,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
                              xmlelement( name kvpair, xmlattributes( esaf as value, 'esaf' as name)),
+                             xmlelement( name kvpair, xmlattributes( (case when running then 'collecting' else (case when (st & 905) = 129 then 'transfering' else 'idle' end) end) as value, 'rdstate' as name)),
                              xmlelement( name kvpair, xmlattributes( shts.ssmode as value, 'mode' as name)),
                              xmlelement( name kvpair, xmlattributes( shts.ssselectedposition as value, 'selectedPostion' as name)),
                              xmlelement( name kvpair, xmlattributes( st as value, 'lockState' as name)),
@@ -4699,7 +4734,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
                              xmlelement( name kvpair, xmlattributes( px.rt_get_dist( theStn.stnkey) as value, 'dist' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_wavelength( theStn.stnkey) as value, 'wavelength' as name)),
                              xmlelement( name kvpair, xmlattributes( px.rt_get_ni0( theStn.stnkey) as value, 'ni0' as name)),
-                             tmp2, tmp3, xmlelement( name runqueue, tmp4), tmp5, tmp6, tmp7
+                             tmp2, tmp3, xmlelement( name runqueue, xmlattributes( (case when shts.sspaused then 'true' else 'false' end) as paused), tmp4), tmp5, tmp6, tmp7
                         ));
     END LOOP;
     rtn := xmlelement( name "stationStatus", xmlelement( name aps, xmlelement( name kvpair, xmlattributes(  'current' as name, epics.caget( 'S:SRcurrentAI')::numeric(5,1) as value))), tmp);
@@ -5724,7 +5759,7 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
   DECLARE
     rtn px.lnnamestype;
   BEGIN
-    FOR rtn.src, rtn.dest IN SELECT sfn, sbupath FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
       return next rtn;
     END LOOP;
     return;
