@@ -135,7 +135,7 @@ class PxMarServer:
 
                 # find the backup home directory
                 qs = "select esaf.e2BUDir(px.shots_get_esaf(%d)) as bp" % (int(shotKey))
-                qr = self.query( qs)
+                qr = self.db.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
                     print >> sys.stderr, time.asctime(), "Shot no longer exists, abandoning it"
@@ -190,16 +190,16 @@ class PxMarServer:
                     try:
                         os.link( d+'/'+f, bfn)
                     except:
-                        qs = "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error')
-                        self.query( qs)
+                        qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Error')
+                        self.db.query( qs)
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.db.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
                         qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
                         self.db.query( qs);
-                        qs = "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Done')
-                        self.query( qs)
+                        qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
+                        self.db.query( qs)
                     
                     self.hlList.pop( self.hlList.index(hl))
 
@@ -353,7 +353,7 @@ class PxMarServer:
                 #
                 # Probably the directory path includes something we do not have permissions for
                 qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(theDir), errno, self.es(strerror))
-                self.db.query( qs);
+                self.query( qs);
                 print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
 
@@ -455,7 +455,7 @@ class PxMarServer:
                             except OSError, (errno, strerror):
                                 if errno != 17:
                                     qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(r["dsdir"]), int(errno), self.es(strerror))
-                                    self.db.query( qs);
+                                    self.query( qs);
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
                             #
@@ -476,7 +476,7 @@ class PxMarServer:
                             r["sfn"]   = "null"
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             qs = "select px.pusherror( 10005, '')"
-                            self.db.query( qs);
+                            self.query( qs);
                             print >> sys.stderr, time.asctime(), "Could not determine either the filename or the directory: data sent to /dev/null instead"
 
 
@@ -595,24 +595,24 @@ class PxMarServer:
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
                     print >> sys.stderr, time.asctime(), "Your wish is my command.  Waiting patiently for your instructions."
-                    self.db.query( "select px.lock_detector()")
+                    self.query( "select px.lock_detector()")
                     self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
                     print >> sys.stderr, time.asctime(), "Integrating..."
-                    self.db.query( "select px.unlock_detector()")  # give up mar lock
+                    self.query( "select px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
                     # this is the exposure, command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
                     print >> sys.stderr, time.asctime(), "Waiting for exposure to end..."
-                    self.db.query( "select px.lock_diffractometer()")
+                    self.query( "select px.lock_diffractometer()")
                     print >> sys.stderr, time.asctime(), "Exposure ended"
 
                     # eventually we'll get the lock, give it up immediately
-                    self.db.query( "select px.unlock_diffractometer()")
+                    self.query( "select px.unlock_diffractometer()")
                     print >> sys.stderr, time.asctime(), "Diffractometer unlocked"
 
                     #
