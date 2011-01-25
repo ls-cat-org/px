@@ -1768,7 +1768,7 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
       SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
-        WHERE dspid=rq.rqToken and sstate != 'Done'
+        WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
         ORDER BY sindex ASC
         LIMIT 1;
       IF NOT FOUND THEN
@@ -1789,12 +1789,19 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
   BEGIN
+    --
+    -- update status variables
+    --
     IF coalesce(OLD.sbupath,'') != coalesce(NEW.sbupath,'') and NEW.sstate = 'Done' THEN
       UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
       INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
     END IF;
-    IF OLD.sstate != NEW.sstate and NEW.sstate = 'Done' THEN
-      PERFORM 1 FROM px.shots WHERE sdspid=NEW.sdspid and stype=NEW.stype and sstate!='Done' and sKey != NEW.sKey;
+    --
+    -- Clean up the run queue when finished with a dataset
+    -- It's safe to go on to the next shot while still writing
+    --
+    IF OLD.sstate != NEW.sstate and (NEW.sstate = 'Done' or NEW.sstate = 'Writing') THEN
+      PERFORM 1 FROM px.shots WHERE sdspid=NEW.sdspid and stype=NEW.stype and sstate!='Done' and sstate!='Writing' and sKey != NEW.sKey;
       IF NOT FOUND THEN
         PERFORM px.poprunqueue();
       END IF;

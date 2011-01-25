@@ -190,12 +190,16 @@ class PxMarServer:
                     try:
                         os.link( d+'/'+f, bfn)
                     except:
+                        qs = "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error')
+                        self.query( qs)
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.db.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
                         qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
                         self.db.query( qs);
+                        qs = "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Done')
+                        self.query( qs)
                     
                     self.hlList.pop( self.hlList.index(hl))
 
