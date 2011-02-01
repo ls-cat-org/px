@@ -373,8 +373,8 @@ CREATE TABLE px._config (
         cnotifyerror     text   not null,
         cnotifyxfer      text   not null,
         cnotifyrobot     text   not null,
-	cnotifycenter    text   not null,
-	cnotifylogin     text   not null
+        cnotifycenter    text   not null,
+        cnotifylogin     text   not null
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -703,12 +703,12 @@ CREATE OR REPLACE FUNCTION px.fix_dir( dir text) RETURNS text as $$
   DECLARE
     rtn text;
   BEGIN
-    SELECT regexp_replace( dir, '[^-._a-zA-Z0-9/]*', '', 'g') INTO rtn;	-- remove illegal characters
-    SELECT regexp_replace( rtn, E'^\\.+', '') INTO rtn;			-- don't allow begining dots
-    SELECT regexp_replace( rtn, E'\\.\\.+', '', 'g') INTO rtn;		-- remove double (or worse) dots
-    SELECT regexp_replace( rtn, '^/+', '') INTO rtn;			-- remove begining slashs
-    SELECT regexp_replace( rtn, '/+', '/', 'g') INTO rtn;		-- make multiple slashs just one
-    SELECT regexp_replace( rtn, '/+$', '')  INTO rtn;			-- kill the trailing slash
+    SELECT regexp_replace( dir, '[^-._a-zA-Z0-9/]*', '', 'g') INTO rtn; -- remove illegal characters
+    SELECT regexp_replace( rtn, E'^\\.+', '') INTO rtn;                 -- don't allow begining dots
+    SELECT regexp_replace( rtn, E'\\.\\.+', '', 'g') INTO rtn;          -- remove double (or worse) dots
+    SELECT regexp_replace( rtn, '^/+', '') INTO rtn;                    -- remove begining slashs
+    SELECT regexp_replace( rtn, '/+', '/', 'g') INTO rtn;               -- make multiple slashs just one
+    SELECT regexp_replace( rtn, '/+$', '')  INTO rtn;                   -- kill the trailing slash
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -738,7 +738,7 @@ CREATE TABLE px.datasets (
         dskey      serial primary key,                          -- table key
         dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
         dscreatets timestamp with time zone default now(),      -- creatation time stamp
-        dsdonets   timestamp with time zone default NULL,	-- time of last done frame
+        dsdonets   timestamp with time zone default NULL,       -- time of last done frame
         dsesaf     int default NULL,                            -- The ESAF used for this experiment
 -- A real references is not used as we currently delete the esaf routinely (during a modification, for example)
 -- until this is thought trhough and tested completely it is better just to leave the reference hanging
@@ -767,11 +767,11 @@ CREATE TABLE px.datasets (
         dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
         dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
         dscomment  text DEFAULT NULL,                           -- comment
-	dsobfuscated boolean default false,			-- fp and dir have been obfuscated
+        dsobfuscated boolean default false,                     -- fp and dir have been obfuscated
         dsparent   text DEFAULT NULL references px.datasets (dspid),
         dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
-	dseditts timestamp with time zone default now(),	-- time of last edit
-	dseditnum integer default 0				-- increment each time an edit is made
+        dseditts timestamp with time zone default now(),        -- time of last edit
+        dseditnum integer default 0                             -- increment each time an edit is made
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
@@ -790,8 +790,8 @@ CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
   DECLARE
     
   BEGIN
-    new.dseditts = now();		-- any change updates the time stamp
-    new.dseditnum = old.dseditnum+1;	-- enumerate changes
+    new.dseditts = now();               -- any change updates the time stamp
+    new.dseditnum = old.dseditnum+1;    -- enumerate changes
     return new;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -867,7 +867,7 @@ CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir tex
     pfx text;           -- prefix after being cleaned up
     dir text;           -- directory after being cleaned up
     rtn text;           -- new token
-    theEsaf int;	-- our esaf
+    theEsaf int;        -- our esaf
   BEGIN
     SELECT INTO theEsaf dsesaf FROM px.datasets WHERE dspid = token;
     SELECT INTO rtn dspid FROM px.datasets WHERE dsdir = newDir and dsfp = newPrefix and dsesaf = theEsaf;
@@ -958,9 +958,9 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getdatasets( int, int) OWNER TO lsadmin;
 
 CREATE TABLE px.editDStable (
-       edsKey serial primary key,	-- our key
-       edsName text not null,		-- the name of the item to change
-       edsFunc text not null,		-- the function to call
+       edsKey serial primary key,       -- our key
+       edsName text not null,           -- the name of the item to change
+       edsFunc text not null,           -- the function to call
        edsQuotes boolean not null       -- need quotes?
 );
 ALTER TABLE px.editDStable OWNER TO lsadmin;
@@ -990,9 +990,9 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
     qs text;
     thedspid text;
     eds record;
-    needq boolean;	-- need quotes
-    cDir text;		-- current directory
-    cFp  text;		-- current file prefix
+    needq boolean;      -- need quotes
+    cDir text;          -- current directory
+    cFp  text;          -- current file prefix
     curSam int;         -- the current sample
   BEGIN
     PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
@@ -1661,12 +1661,12 @@ CREATE TABLE px.shots (
         sstate   text                                   -- current state of the shot
                  references px.shotstates (ssstate) ON UPDATE CASCADE,
         sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
-	spath    text           DEFAULT NULL,		-- the full file path used
+        spath    text           DEFAULT NULL,           -- the full file path used
         sbupath  text           DEFAULT NULL,           -- the full path of the backup file
-	sobfuscated boolean     DEFAULT false,		-- fn, path, and bupath have been obfuscated
-	stimes   int            DEFAULT 0,              -- number of times this has been run
-	sfsize   int            DEFAULT NULL,           -- size of the file in bytes
-	stape    boolean        DEFALUT False		-- true if file is known to be on a backup tape
+        sobfuscated boolean     DEFAULT false,          -- fn, path, and bupath have been obfuscated
+        stimes   int            DEFAULT 0,              -- number of times this has been run
+        sfsize   int            DEFAULT NULL,           -- size of the file in bytes
+        stape    boolean        DEFALUT False           -- true if file is known to be on a backup tape
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1792,7 +1792,7 @@ CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
     --
     -- update status variables
     --
-    IF coalesce(OLD.sbupath,'') != coalesce(NEW.sbupath,'') and NEW.sstate = 'Done' THEN
+    IF OLD.sstate != 'Done' and NEW.sstate = 'Done' and coalesce( NEW.sbupath,'') != '' THEN
       UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
       INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
     END IF;
@@ -2548,14 +2548,14 @@ CREATE OR REPLACE FUNCTION px.runqueue_top( theKey bigint) RETURNS void AS $$
   BEGIN
     SELECT rqOrder INTO cv FROM px.runqueue WHERE rqKey=theKey;
     IF FOUND THEN
-      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;	-- temporarly make 0 so we do not violate uniqueness in loop
+      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;      -- temporarly make 0 so we do not violate uniqueness in loop
       i := cv;
       -- Only loop over items above the one we are moving
       FOR k IN SELECT rqKey FROM px.runqueue WHERE rqStn=px.getStation() and rqOrder<cv and rqKey!= theKey ORDER BY rqOrder desc LOOP
         UPDATE px.runqueue SET rqOrder = i WHERE rqKey=k;
         i := i-1;
       END LOOP;
-      UPDATE px.runqueue SET rqOrder=1 WHERE rqKey=theKey;	-- Now we can put it at the top of the list
+      UPDATE px.runqueue SET rqOrder=1 WHERE rqKey=theKey;      -- Now we can put it at the top of the list
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2575,14 +2575,14 @@ CREATE OR REPLACE FUNCTION px.runqueue_bottom( theKey bigint) RETURNS void AS $$
     IF FOUND THEN
       SELECT max(rqOrder) INTO mx FROM px.runqueue WHERE rqStn=px.getStation();
 
-      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;	-- temporarly make 0 so we do not violate uniqueness in loop
+      UPDATE px.runqueue SET rqOrder=0 WHERE rqKey=theKey;      -- temporarly make 0 so we do not violate uniqueness in loop
       i := cv;
       -- Only loop over items above the one we are moving
       FOR k IN SELECT rqKey FROM px.runqueue WHERE rqStn=px.getStation() and rqOrder>cv ORDER BY rqOrder asc LOOP
         UPDATE px.runqueue SET rqOrder = i WHERE rqKey=k;
         i := i+1;
       END LOOP;
-      UPDATE px.runqueue SET rqOrder=mx WHERE rqKey=theKey;	-- Now we can put it at the top of the list
+      UPDATE px.runqueue SET rqOrder=mx WHERE rqKey=theKey;     -- Now we can put it at the top of the list
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2658,7 +2658,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) retu
             LOOP
 
         startTime := startTime + rq.deltaTime;
-	tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
+        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
         tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
       END LOOP;
       rtn = xmlelement( name runqueue, xmlattributes( 'true' as success), tmp);
@@ -3331,9 +3331,9 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
     chitms record;      -- the record(s) of the child items under theId
     rtn text;           -- xml return text
     inf text;           -- Information on this ID
-    stn int;		-- the station
-    lid int;		-- the dewar
-    puc int;		-- the puck
+    stn int;            -- the station
+    lid int;            -- the dewar
+    puc int;            -- the puck
     pindex int;         -- index of the puck location (1= lid 1 puck 1, ... 10=lid 3 puck 3)  0=N/A
     pOk boolean;        -- the puck is ok
   BEGIN
@@ -3615,6 +3615,13 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns vo
     --
     PERFORM px.runqueue_clear( stn);
     --
+    -- Remove reference in stnstatus to the centering video
+    --
+    UPDATE px.stnstatus SET sscvhash = NULL WHERE ssstn = stn;
+
+    --
+    -- queue up the next sample and record the last one
+    --
     INSERT INTO px.nextSamples (nsStn, nsId) VALUES (stn, theId);
     INSERT INTO px.lastSamples (lsStn, lsId) VALUES (stn, theId);
     PERFORM px.md2pushqueue( stn, 'transfer');
@@ -3628,14 +3635,14 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     mp px.locationtype;         -- current table
     tp record;                  -- saved position
     rtn int;
-    xx numeric;			-- corrected coordinates to send to robot
+    xx numeric;                 -- corrected coordinates to send to robot
     yy numeric;
     zz numeric;
-    xx1 numeric;		-- corrected coordinates to send to robot prior to final rotation
+    xx1 numeric;                -- corrected coordinates to send to robot prior to final rotation
     yy1 numeric;
     zz1 numeric;
-    theStn int;			-- our station
-    angr float;			-- rotation angle (in rads)
+    theStn int;                 -- our station
+    angr float;                 -- rotation angle (in rads)
   BEGIN
     --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
     SELECT px.getStation() INTO theStn;
@@ -4273,9 +4280,9 @@ ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as $$
   DECLARE
     rtn text;
-    stn int;		-- the station
-    lid int;		-- the dewar
-    puc int;		-- the puck
+    stn int;            -- the station
+    lid int;            -- the dewar
+    puc int;            -- the puck
     pindex int;         -- index of the puck location (1= lid 1 puck 1, ... 10=lid 3 puck 3)  0=N/A
     pOk boolean;        -- the puck is ok
   BEGIN
@@ -4803,17 +4810,19 @@ INSERT INTO px.stnmodes (sm) VALUES ('TransferState');
 
 
 CREATE TABLE px.stnstatus (
-	sskey serial primary key,
+        sskey serial primary key,
         ssts timestamp with time zone default now(),
-	ssstn bigint references px.stations (stnkey) unique,
-	ssesaf int,
-	ssskey bigint references px.shots (skey) on delete set null unique,
-	sssfn  text default null,	-- copy of shots table entry
-	ssspath text default null,      -- copy of shots table entry
+        ssstn bigint references px.stations (stnkey) unique,
+        ssesaf int,
+        ssskey bigint references px.shots (skey) on delete set null unique,
+        sssfn  text default null,       -- copy of shots table entry
+        ssspath text default null,      -- copy of shots table entry
         sssbupath text default null,     -- copy of shots table entry
         ssdsedit text default null references px.datasets (dspid),
         sspaused boolean not null default false,
-	ssmode text default null references px.stnmodes (sm) on update cascade on delete set null
+        ssmode text default null
+               references px.stnmodes (sm) on update cascade on delete set null,
+        sscvhash text default null              -- centering video hash, if any
 );
 ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
@@ -4821,12 +4830,12 @@ CREATE TABLE px.uistatus (
        --
        -- Support to synchronize remote UI's
        -- 
-       uikey serial primary key,	-- our key
-       uisskey bigint not null		-- the station status this is part of
-       	       references px.stnstatus (sskey) on delete cascade,
-       uin int not null default 0,	-- the edit number for this variable
-       uik text,			-- the k of the kv pair
-       uiv text				-- the v of the kv pair
+       uikey serial primary key,        -- our key
+       uisskey bigint not null          -- the station status this is part of
+               references px.stnstatus (sskey) on delete cascade,
+       uin int not null default 0,      -- the edit number for this variable
+       uik text,                        -- the k of the kv pair
+       uiv text                         -- the v of the kv pair
 );
 ALTER TABLE px.uistatus OWNER TO lsadmin;
 
@@ -4899,11 +4908,11 @@ ALTER FUNCTION px.uistatus_get_xml( text, bigint) OWNER TO lsadmin;
 
 
 CREATE TABLE px.esafstatus (
-	eskey serial primary key,
+        eskey serial primary key,
         ests timestamp with time zone default now(),
-	esstn bigint references px.stations (stnkey),
-	esesaf int,
-	esskey bigint references px.shots (skey) on delete set null unique,
+        esstn bigint references px.stations (stnkey),
+        esesaf int,
+        esskey bigint references px.shots (skey) on delete set null unique,
         essfn text default null,
         esspath text default null,
         essbupath text default null,
@@ -4980,7 +4989,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
         UPDATE px.stnstatus SET ssskey=lastInfo.skey, ssdsedit=lastInfo.dspid WHERE ssstn=theStn;
       ELSE
         SELECT INTO token px.newdataset( theStn, expid);
-	UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
+        UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
       END IF;
       PERFORM px.autologinnotify( theStn);
     END IF;
@@ -5147,14 +5156,14 @@ CREATE TABLE px.tunamemory (
        -- Each station gets it's own memory space
        -- Currently Memory is both global and persistant
        --
-       mKey serial primary key,				-- our table key
-       mCreateTS timestamptz default now(),		-- creation time stamp
-       mSetTS    timestamptz default now(),		-- time varaible was last set
-       mGetTS    timestamptz default null,		-- time varable was last read
-       mStn bigint references px.stations( stnkey),	-- station number
-       mK   text not null,				-- variable name
-       mV   text default null,				-- value
-       UNIQUE( mStn, mK)				-- only single values are permitted
+       mKey serial primary key,                         -- our table key
+       mCreateTS timestamptz default now(),             -- creation time stamp
+       mSetTS    timestamptz default now(),             -- time varaible was last set
+       mGetTS    timestamptz default null,              -- time varable was last read
+       mStn bigint references px.stations( stnkey),     -- station number
+       mK   text not null,                              -- variable name
+       mV   text default null,                          -- value
+       UNIQUE( mStn, mK)                                -- only single values are permitted
 );
 ALTER TABLE px.tunamemory OWNER TO lsadmin;
 
@@ -5191,15 +5200,15 @@ CREATE TABLE px.tunacode (
 --
 -- something's fishy about this
 --
-       tcKey serial primary key,				-- our table key
+       tcKey serial primary key,                                -- our table key
        tcstn bigint references px.stations (stnkey),    -- Keep the stations separate
-       tccreatets timestamptz not null default now(),	-- time our entry was created
-       tccstartts timestamptz default null,		-- time first iteration was started
-       tcstartts  timestamptz default null,		-- time most recent iteration was started
-       tccendts   timestamptz default null,		-- time most recent iteration ended
-       tcn        int default 0,			-- Number of times this line has been run;
-       tclevel    int default 0,			-- Stack level to support loops
-       tcinstruction text default ''			-- default instruction       
+       tccreatets timestamptz not null default now(),   -- time our entry was created
+       tccstartts timestamptz default null,             -- time first iteration was started
+       tcstartts  timestamptz default null,             -- time most recent iteration was started
+       tccendts   timestamptz default null,             -- time most recent iteration ended
+       tcn        int default 0,                        -- Number of times this line has been run;
+       tclevel    int default 0,                        -- Stack level to support loops
+       tcinstruction text default ''                    -- default instruction       
 );
 ALTER TABLE px.tunacode OWNER TO lsadmin;
 
@@ -5207,24 +5216,24 @@ CREATE TABLE px.tunapc (
        -- tuna program counter
        -- A running program has one or more program counters
        --
-       pcKey serial primary key,		-- our table key
+       pcKey serial primary key,                -- our table key
        pcStn bigint references px.stations (stnkey),
-       pcStack int default 0,			-- level: subroutine calls insert a new pc
-       pcpc bigint references px.tunacode,	-- pointer to our program
-       UNIQUE( pcStn, pcStack)			-- only allow one pointer per stack level
+       pcStack int default 0,                   -- level: subroutine calls insert a new pc
+       pcpc bigint references px.tunacode,      -- pointer to our program
+       UNIQUE( pcStn, pcStack)                  -- only allow one pointer per stack level
 );
 ALTER TABLE px.tunapc OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
   DECLARE
-    stack int;		-- how deep are we?
-    instruct text;	-- the current instruction: control statements are dealt with here
-    icount int;		-- the iteration counter of the current statement
-    pc  bigint;		-- current program counter
-    rtn bigint;		-- return value: the next program counter for the next non-statement instruction
-    tmp bigint;		-- address of RETURN statement
-    test text;		-- SQL that evaluates to a boolean
-    testResult boolean;	-- the result of executing "test"
+    stack int;          -- how deep are we?
+    instruct text;      -- the current instruction: control statements are dealt with here
+    icount int;         -- the iteration counter of the current statement
+    pc  bigint;         -- current program counter
+    rtn bigint;         -- return value: the next program counter for the next non-statement instruction
+    tmp bigint;         -- address of RETURN statement
+    test text;          -- SQL that evaluates to a boolean
+    testResult boolean; -- the result of executing "test"
   BEGIN
 
     -- Get the stack level and the current program counter
@@ -5375,8 +5384,8 @@ ALTER FUNCTION px.tunaLoadInit( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.tunaLoad( theStn bigint, istep text) returns void as $$
   DECLARE
-    theLevel int;	-- current level of code
-    lastIStep text;	-- the previous instruction step
+    theLevel int;       -- current level of code
+    lastIStep text;     -- the previous instruction step
   BEGIN
 
     IF istep = 'START' THEN
@@ -5418,11 +5427,11 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
   -- key words: RETURN, WHILE, LOOP
   --
   DECLARE
-    rtn int;	-- number of lines run: 0 or 1, 0 signaling the end of the program
-    pc bigint;	-- program counter
+    rtn int;    -- number of lines run: 0 or 1, 0 signaling the end of the program
+    pc bigint;  -- program counter
     stack int;  -- stack level
-    npc bigint;	-- new program counter
-    theI text;	-- the instruction
+    npc bigint; -- new program counter
+    theI text;  -- the instruction
   BEGIN
     rtn := 0;
     
@@ -5467,7 +5476,7 @@ ALTER FUNCTION px.tunaStep( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int, wtime int) returns void AS $$
   DECLARE
-    s int;	-- the current sample
+    s int;      -- the current sample
     tms text;   -- tunamemoryset( theStn,
     tmse text;   -- ')'
     tmg text;   -- tunamemoryget( theStn,
@@ -5483,7 +5492,7 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
     tmg := 'px.tunamemoryget('||theStn::text||',';
     tmge := ')';
 
-    PERFORM px.tunaLoadInit( theStn);	-- initialize tuna program
+    PERFORM px.tunaLoadInit( theStn);   -- initialize tuna program
     PERFORM px.tunaLoad( theStn, tms || '''loopCounter'',''' || ntimes::text || '''' || tmse );  -- initialize the loop counter
     PERFORM px.tunaLoad( theStn, 'WHILE ' || tmg || '''loopCounter'''||tmge||'::int > 0');             -- start loop
 
@@ -5570,14 +5579,15 @@ CREATE TABLE px.trigcamtable (
 );
 ALTER TABLE px.trigcamtable OWNER TO lsadmin;
 
-CREATE TYPE px.trigcamtype AS ( ip inet, port int, ts timestamptz, zoom int, startAngle float, speed float);
+CREATE TYPE px.trigcamtype AS ( ip inet, port int, ts timestamptz, zoom int, startAngle float, speed float, fullpath text, esaf int, uid int, gid int);
 
 CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype AS $$
   DECLARE
     rtn px.trigcamtype;
   BEGIN
     SELECT tcip, tcport, tcts, tcZoom, tcStartAngle, tcSpeed INTO rtn.ip, rtn.port, rtn.ts, rtn.zoom, rtn.startAngle, rtn.speed FROM px.trigcamtable WHERE tcStn=theStn ORDER BY tcts DESC LIMIT 1;
-    --    DELETE FROM px.trigcamtable WHERE tcStn = theStn;
+    SELECT INTO rtn.fullpath, rtn.uid, rtn.gid cvPath,cvuid,cvgid FROM rmt.centeringvideos LEFT JOIN px.stnstatus ON cvhash = sscvhash WHERE ssstn = theStn;
+
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -5643,24 +5653,56 @@ CREATE TABLE px.centertable (
        cts timestamptz default now(),
        cstn bigint not null,
 
-       cpid text references rmt.pids (ppid),	-- request authentication
-       cip inet not null,			-- ip address of requesting machine
-       cport int not null,			-- requesting port
-
+       cpid text references rmt.pids (ppid),    -- request authentication
+       cip inet not null,                       -- ip address of requesting machine
+       cport int not null,                      -- requesting port
+       ctcv text default null			-- the video started by this entry
+         references rmt.centeringVideos (cvHash)
+         ON DELETE SET NULL
+         ON UPDATE CASCADE,
        czoom int not null default 1,
-       cx float,	-- Centering table horizontal (focus direction)
-       cy float,	-- Centering table vertical
-       cz float,	-- Alignment table y (horizontal as seen on screen)
-       b  float,	-- y offset to edge of screen
-       t0 float         -- angle
+       cx float,        -- Centering table horizontal (focus direction)
+       cy float,        -- Centering table vertical
+       cz float,        -- Alignment table y (horizontal as seen on screen)
+       b  float,        -- y offset to edge of screen
+       t0 float,        -- angle
 );
 ALTER TABLE px.centertable OWNER TO lsadmin;
+CREATE INDEX centertableStn ON px.centertable (cstn);
+CREATE INDEX centertableCv  ON px.centertable (ctcv);
+
 
 CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
+  --
+  -- This is called on every request for a centering video.  When the
+  -- first video is requested after a sample transfer the x,y,z,b,t0
+  -- values are all zero.  Afterwards this is the result, perhaps, of
+  -- someone running the centering routine and we'd like to point
+  -- these values to the video.
+  --
+  -- If you want to show the user the point they selected you'll have
+  -- to look at the LAST entry (if any) in centertable for that video.
+  -- Note that the first video after a transfer has no point selected.
+  --
+
+  DECLARE
+    theHash text;     -- hash value into rmt.centeringvideos
   BEGIN
     PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+    IF NOT FOUND THEN
+      return;
+    END IF;
+    --
+    -- This initialization sets up the next centering video.
+    --
+    SELECT INTO theHash rmt.centeringVideoInit( theStn);
+    --
     IF FOUND THEN
-      DELETE FROM px.centertable WHERE cstn=theStn;
+      INSERT INTO px.centertable (cstn, cpid, cip, cport, ctcv, czoom,cx,cy,cz, cb, ct0) VALUES (theStn, thePid, theIp, thePort, theHash, zoom, x, y, z, b, t0);
+    ELSE
+      --
+      -- We get here if someone, like a super user, gets permission to run centering with no one logged in to the MD2.  Probably not a good idea.
+      -- 
       INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz, cb, ct0) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z, b, t0);
     END IF;
   END;
@@ -5694,7 +5736,6 @@ CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS
       rtn.b = 0.0;
       rtn.t0 = 0.0;
     END IF;
-    --    DELETE FROM px.centertable WHERE cstn=theStn;
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
