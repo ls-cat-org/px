@@ -1,6 +1,20 @@
 #! /usr/bin/python
+#
+# pxMarServer.py
+#
+# remote mode server to support Mar/Rayonix detectors as LS-CAT
+# (C) 2008-2011 by Keith Brister
+# All rights reserved.
+#
 
-import sys, os, select, pg, time, traceback, datetime
+import sys              # stderr and exit
+import os               # stat, link, unlink, etc
+import select           # we use pool to watch for action on the file descriptors
+import pg               # our database module
+import time             # error message time stamps
+import traceback        # where we were when things went wrong
+import datetime         # now...
+import subprocess       # run lfs to set the striping and pool for lustre
 
 #
 # Program States
@@ -30,6 +44,7 @@ import sys, os, select, pg, time, traceback, datetime
 #                ||||+--- Aquire   Status
 #                |||||+-- State
 #                ||||||
+
 zingMask     = 0x300000
 readMask     = 0x000300
 aquireMask   = 0x000030
@@ -163,7 +178,6 @@ class PxMarServer:
                             print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
                             self.hlList.pop( self.hlList.index(hl))
                             return
-
 
                     #
                     # see if the link already exists
@@ -358,6 +372,13 @@ class PxMarServer:
                 theDirState = 'Invalid'
 
         self.query( "select px.ds_set_dirs( '%s', '%s')" % (token, theDirState))
+        #
+        # Set the lustre options for the new directory
+        #
+        p = subprocess.Popen( ["/usr/bin/lfs", "-s", "4M", "-c", "-1", "-i", "-1", "-p", theDir], close_fds=True, shell=False)
+        p.wait()
+        print( "lfs returned %d", p.returncode)
+
 
     def serviceIn( self, event):
         #
