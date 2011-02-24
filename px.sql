@@ -1796,16 +1796,6 @@ CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
       UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
       INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
     END IF;
-    --
-    -- Clean up the run queue when finished with a dataset
-    -- It's safe to go on to the next shot while still writing
-    --
-    IF OLD.sstate != NEW.sstate and (NEW.sstate = 'Done' or NEW.sstate = 'Writing') THEN
-      PERFORM 1 FROM px.shots WHERE sdspid=NEW.sdspid and stype=NEW.stype and sstate!='Done' and sstate!='Writing' and sKey != NEW.sKey;
-      IF NOT FOUND THEN
-        PERFORM px.poprunqueue();
-      END IF;
-    END IF;
   RETURN NULL;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4740,7 +4730,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
                              xmlelement( name kvpair, xmlattributes( esaf as value, 'esaf' as name)),
-                             xmlelement( name kvpair, xmlattributes( (case when running then 'collecting' else (case when (st & 905) = 129 then 'transfering' else 'idle' end) end) as value, 'rdstate' as name)),
+                             xmlelement( name kvpair, xmlattributes( (case when running then 'collecting' else (case when (st & 512)!=0 or (st & 384)=128 then 'transfering' else 'idle' end) end) as value, 'rdstate' as name)),
                              xmlelement( name kvpair, xmlattributes( shts.ssmode as value, 'mode' as name)),
                              xmlelement( name kvpair, xmlattributes( shts.ssselectedposition as value, 'selectedPostion' as name)),
                              xmlelement( name kvpair, xmlattributes( st as value, 'lockState' as name)),
