@@ -3537,6 +3537,20 @@ CREATE TABLE px.nextSamples (
 );
 ALTER TABLE px.nextSamples OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
+  DECLARE
+  BEGIN
+    PERFORM 1 FROM px.nextsamples WHERE nsstn = NEW.nsstn;
+    IF FOUND THEN
+      return NULL;
+    END IF;
+    return NEW;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextsamples_insert_tf0() OWNER TO lsadmin;
+
+CREATE TRIGGER nextsamples_insert_trigger0 BEFORE INSERT ON px.nextsamples FOR EACH ROW EXECUTE PROCEDURE px.nextsamples_insert_tf0();
+
 CREATE TABLE px.lastSamples ( 
        lsKey serial primary key,
        lsts timestamp with time zone default now(),
@@ -3598,6 +3612,19 @@ ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns void AS $$
   DECLARE
   BEGIN
+    --
+    -- Don't do anything if there is a request still in nextSamples for this station
+    -- This should take care of the case where someone double clicks or two (or more) 
+    -- people click at the sample time to mount a sample.
+    --
+    PERFORM 1 FROM px.nextSamples WHERE nsstn = stn;
+    IF FOUND THEN
+      --
+      -- This does not quite protect us since another process could be running at the same time and also see that
+      -- there is nothing yet in the queue.
+      return;
+    END IF;
+
     -- Make sure we don't start up an old dataset
     --
     -- This supports the REMOTE interface
@@ -5575,8 +5602,18 @@ CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype 
   DECLARE
     rtn px.trigcamtype;
   BEGIN
-    SELECT tcip, tcport, tcts, tcZoom, tcStartAngle, tcSpeed INTO rtn.ip, rtn.port, rtn.ts, rtn.zoom, rtn.startAngle, rtn.speed FROM px.trigcamtable WHERE tcStn=theStn ORDER BY tcts DESC LIMIT 1;
-    SELECT INTO rtn.fullpath, rtn.uid, rtn.gid cvPath,cvuid,cvgid FROM rmt.centeringvideos LEFT JOIN px.stnstatus ON cvhash = sscvhash WHERE ssstn = theStn;
+    SELECT tcip,   tcport,   to_char(tcts, 'YYYY-MM-DD HH24:MI:SS.MS'), tcZoom,   tcStartAngle,   tcSpeed
+      INTO rtn.ip, rtn.port, rtn.ts,                                  rtn.zoom, rtn.startAngle, rtn.speed
+      FROM px.trigcamtable
+      WHERE tcStn=theStn
+      ORDER BY tcts
+      DESC LIMIT 1;
+
+    SELECT cvPath,       cvuid,    cvgid
+      INTO rtn.fullpath, rtn.uid, rtn.gid
+      FROM rmt.centeringvideos
+      LEFT JOIN px.stnstatus ON cvhash = sscvhash
+      WHERE ssstn = theStn;
 
     return rtn;
   END;
