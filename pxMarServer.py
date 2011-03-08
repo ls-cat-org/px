@@ -535,7 +535,7 @@ class PxMarServer:
 
 
                         self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector %s  kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s'  kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                             dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                             )
                         print >> sys.stderr, time.asctime(), hs
