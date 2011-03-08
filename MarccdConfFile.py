@@ -204,6 +204,15 @@ if __name__ == "__main__":
         #
         print marccdConfFile
 
+    elif sys.argv[1] == "-h" or sys.argv[1] == "--help":
+        print ""
+        print "Usage:"
+        print "%s                   => full config parameters, sorted." % (sys.argv[0])
+        print "%s files             => list of files used in marccd.conf" % (sys.argv[0])
+        print "%s detector_info     => detector make, model, and serial number" % (sys.argv[0])
+        print "%s <parameter name>  => value of the requested parameter" % (sys.argv[0])
+        print ""
+
     elif sys.argv[1] == "detector_info":
         #
         # Print out the detector information usable as a comment in an image file
