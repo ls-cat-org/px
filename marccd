@@ -34,7 +34,7 @@ sudo /usr/bin/killall -q -s KILL pxMarServer.py
 #
 . /home/marccd/marccd_setup.sh
 
-/usr/local/bin/MarccdConfFile.py detector_model_name
+export LS_CAT_DETECTOR_INFO=`/usr/local/bin/MarccdConfFile.py detector_info`
 
 #
 # Remove the stop and shutter buttons from the marccd
