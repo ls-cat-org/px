@@ -535,8 +535,8 @@ class PxMarServer:
 
 
                         self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s'  kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                            dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s rotation_axis is really omega,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                            dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                             )
                         print >> sys.stderr, time.asctime(), hs
                         self.queue.insert( 0, hs)
@@ -685,6 +685,7 @@ class PxMarServer:
         self.fdout = int(os.getenv("OUT_FD"))
             
         self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO"))
+        self.beamline      = str(os.getenv("LS_CAT_BEAMLINE"))
 
         #
         # return from select when fdout has a problem 
