@@ -1,4 +1,4 @@
-VERSION= 1.4
+VERSION= 1.5
 help:
 	echo "Usage: sudo make install"
 
@@ -20,7 +20,7 @@ install:
 	@install marccd /usr/local/bin
 	@install fixMarccdLog /usr/local/bin
 	@install AutoDetector.py /usr/local/bin
-
+	@install MarccdConfFile.py /usr/local/bin
 	@grep -q AutoDetector /etc/sudoers || echo "Please append append.to.sudoers to /etc/sudoers"
 
 

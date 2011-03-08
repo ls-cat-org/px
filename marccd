@@ -6,7 +6,7 @@
 # when marccd is run it runs correctly.  It should refuse to run if
 # the MD2 is not running as the same user.
 #
-# Copyright (C) 2009-2010 by Keith Brister
+# Copyright (C) 2009-2011 by Keith Brister
 # All rights reserved.
 
 #
@@ -33,6 +33,8 @@ sudo /usr/bin/killall -q -s KILL pxMarServer.py
 # set up the marccd environment
 #
 . /home/marccd/marccd_setup.sh
+
+/usr/local/bin/MarccdConfFile.py detector_model_name
 
 #
 # Remove the stop and shutter buttons from the marccd
