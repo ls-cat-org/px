@@ -2,7 +2,7 @@
 #
 # MarccdConfFile.py
 #
-# Version 11030801
+# Version 11030802
 #
 
 # This file contains the class MarccdConfFile that parses
