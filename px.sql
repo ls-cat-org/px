@@ -417,6 +417,12 @@ CREATE OR REPLACE FUNCTION px.getstation( thestn text) RETURNS int AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getstation( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.getstationname() returns text as $$
+  SELECT cstation FROM px._config WHERE cstnkey=px.getstation();
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.getstationname() OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
   SELECT host(ccats) FROM px._config WHERE cstnkey = px.getStation();
 $$ LANGUAGE SQL SECURITY DEFINER;
