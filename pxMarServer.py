@@ -518,8 +518,8 @@ class PxMarServer:
                             qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
                             qr2 = self.query( qs2)
                             r2 = qr2.dictresult()[0]
-                            beam_x = self.xsize/2.0 - float( r2["bcx"])/self.xpixsize
-                            beam_y = self.ysize/2.0 - float( r2["bcy"])/self.ypixsize
+                            beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
+                            beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
                             dist = r2["dist"]
                             print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
                         else:

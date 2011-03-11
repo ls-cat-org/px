@@ -121,6 +121,24 @@ CREATE OR REPLACE FUNCTION px.pushqueue( theStn bigint, cmd text) RETURNS VOID A
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pushqueue( bigint, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.setbin( theStn bigint, binsize int) RETURNS VOID AS $$
+  DECLARE
+    cmd text;
+  BEGIN
+    perform px.pushqueue( theStn, 'set_bin,'||binsize::text||','||binsize::text);
+    perform px.pushqueue( theStn, 'get_bin');
+    perform px.pushqueue( theStn, 'set_size');
+    FOR cmd IN SELECT miitem FROM px._marinit ORDER BY miorder LOOP
+      perform px.pushqueue( theStn, cmd);
+    END LOOP;
+    
+  END;
+
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER FUNCTION px.setbin( bigint, int) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
 --
 -- specify client address (ca) to queue up
