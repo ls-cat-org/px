@@ -694,27 +694,13 @@ class PxMarServer:
         # There are a small number of things that are oddly missing from the marccd protocol
         # that we need to know none the less.
         #
-        if os.getenv.has_key( "LS_CAT_DETECTOR_INFO"):
-            self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO"))
-        else:
-            self.detector_info = "unknonwn"
+        self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO", "unknown"))
 
-        if os.getenv.has_key( "LS_CAT_BEAMLINE"):
-            self.beamline = str(os.getenv("LS_CAT_BEAMLINE"))
-        else:
-            self.beamline = "21-ID"
+        self.beamline = str(os.getenv("LS_CAT_BEAMLINE", "21-ID"))
 
 
-        if os.getenv.has_key( "LS_CAT_CCD_PIXELSIZE"):
-            xpixsize = float(os.getenv["LS_CAT_CCD_PIXELSIZE"])/1000.0          # the config file uses microns, we need millimeters
-            ypixsize = xpixsize
-        else:
-            #
-            # We cannot get the pixel size from the remote server
-            #
-            xpixsize = 0.073242 # size size of a pixel in mm
-            ypixsize = 0.073242 # size size of a pixel in mm
-            
+        xpixsize = float(os.getenv("LS_CAT_CCD_PIXELSIZE", "73.242")/1000.0          # the config file uses microns, we need millimeters
+        ypixsize = xpixsize
 
         #
         # return from select when fdout has a problem 
