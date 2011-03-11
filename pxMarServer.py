@@ -95,8 +95,6 @@ class PxMarServer:
     xbin  = None        # current binning
     ybin  = None
 
-    xpixsize = 0.073242 # size size of a pixel in mm
-    ypixsize = 0.073242 # size size of a pixel in mm
 
     def hlPush( self, d, f, expt, shotKey):
         #
@@ -681,11 +679,42 @@ class PxMarServer:
                 self.pushCmd( cmd)
 
     def __init__( self):
+        """
+        Grab needed parameters from the environment and set up polling file descriptors
+        to communicate with marccd and the database.
+        """
+
+        #
+        # we use the environment to get our filedescriptors from marccd
+        #
         self.fdin = int(os.getenv( "IN_FD"))
         self.fdout = int(os.getenv("OUT_FD"))
             
-        self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO"))
-        self.beamline      = str(os.getenv("LS_CAT_BEAMLINE"))
+        #
+        # There are a small number of things that are oddly missing from the marccd protocol
+        # that we need to know none the less.
+        #
+        if os.getenv.has_key( "LS_CAT_DETECTOR_INFO"):
+            self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO"))
+        else:
+            self.detector_info = "unknonwn"
+
+        if os.getenv.has_key( "LS_CAT_BEAMLINE"):
+            self.beamline = str(os.getenv("LS_CAT_BEAMLINE"))
+        else:
+            self.beamline = "21-ID"
+
+
+        if os.getenv.has_key( "LS_CAT_CCD_PIXELSIZE"):
+            xpixsize = float(os.getenv["LS_CAT_CCD_PIXELSIZE"])
+            ypixsize = xpixsize
+        else:
+            #
+            # We cannot get the pixel size from the remote server
+            #
+            xpixsize = 0.073242 # size size of a pixel in mm
+            ypixsize = 0.073242 # size size of a pixel in mm
+            
 
         #
         # return from select when fdout has a problem 

@@ -34,8 +34,13 @@ sudo /usr/bin/killall -q -s KILL pxMarServer.py
 #
 . /home/marccd/marccd_setup.sh
 
+#
+# add a couple of needed parameters not available elsewhere
+#
 export LS_CAT_DETECTOR_INFO=`/usr/local/bin/MarccdConfFile.py detector_info`
 export LS_CAT_BEAMLINE=`psql -q -h 10.1.0.3 -U lsuser -t --pset=format=u ls -c "select px.getstationname()"`
+export LS_CAT_CCD_PIXEL_SIZE=`/usr/local/bin/MarccdConfFile.py ccd_pixelsize`
+
 #
 # Remove the stop and shutter buttons from the marccd
 # interface.  Although this is perhaps a cheesy way of 
