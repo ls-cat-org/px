@@ -245,6 +245,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         v = vars[k]
+        rtn = ""
         # rtn = "%s" % (k)      // print out value only so we don't have to parse out the key in scripts
 
         if issubclass( list, type(v)):
