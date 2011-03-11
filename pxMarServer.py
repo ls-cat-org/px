@@ -699,7 +699,7 @@ class PxMarServer:
         self.beamline = str(os.getenv("LS_CAT_BEAMLINE", "21-ID"))
 
 
-        xpixsize = float(os.getenv("LS_CAT_CCD_PIXELSIZE", "73.242")/1000.0          # the config file uses microns, we need millimeters
+        xpixsize = float(os.getenv("LS_CAT_CCD_PIXELSIZE", "73.242"))/1000.0          # the config file uses microns, we need millimeters
         ypixsize = xpixsize
 
         #
