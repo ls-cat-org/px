@@ -706,7 +706,7 @@ class PxMarServer:
 
 
         if os.getenv.has_key( "LS_CAT_CCD_PIXELSIZE"):
-            xpixsize = float(os.getenv["LS_CAT_CCD_PIXELSIZE"])
+            xpixsize = float(os.getenv["LS_CAT_CCD_PIXELSIZE"])/1000.0          # the config file uses microns, we need millimeters
             ypixsize = xpixsize
         else:
             #
