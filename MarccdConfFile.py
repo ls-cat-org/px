@@ -245,13 +245,18 @@ if __name__ == "__main__":
             sys.exit(1)
 
         v = vars[k]
-        rtn = "%s" % (k)
+        # rtn = "%s" % (k)      // print out value only so we don't have to parse out the key in scripts
 
         if issubclass( list, type(v)):
+            needSpace = False;
             for i in range( len(v)):
-                rtn += " %s" % (str(v[i]))
+                if needSpace:
+                    rtn += " "
+                else:
+                    needSpace = True
+                rtn += "%s" % (str(v[i]))
         else:
-            rtn += " %s" % (str( v))
+            rtn += str( v)
 
         print rtn
         
