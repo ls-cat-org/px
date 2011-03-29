@@ -138,6 +138,13 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 ALTER FUNCTION px.setbin( bigint, int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.setbin( binsize int) RETURNS VOID AS $$
+  BEGIN
+    PERFORM px.setbin( px.getStation(), binsize);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setbin( int) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
 --
@@ -392,7 +399,8 @@ CREATE TABLE px._config (
         cnotifyxfer      text   not null,
         cnotifyrobot     text   not null,
         cnotifycenter    text   not null,
-        cnotifylogin     text   not null
+        cnotifylogin     text   not null,
+        clustrepool      text   not null default 'pffs.pool_slow'
 );
 ALTER TABLE px._config OWNER TO lsadmin;
 GRANT SELECT ON px._config TO PUBLIC;
@@ -439,6 +447,11 @@ CREATE OR REPLACE FUNCTION px.getstationname() returns text as $$
   SELECT cstation FROM px._config WHERE cstnkey=px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getstationname() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getkustrepool() returns text as $$
+  SELECT clustrepool FROM px._config WHERE cstnkey=px.getstation();
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.getlustrepool() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
@@ -3554,9 +3567,19 @@ ALTER FUNCTION px.md2CallFailed( bigint) OWNER TO lsadmin;
 
 
 
+CREATE TABLE px.nextSamplesState (
+       nss text primary key
+);
+ALTER TABLE px.nextSamplesState OWNER TO lsadmin;
+INSERT INTO px.nextSamplesState (nss) VALUES ('NEW');
+INSERT INTO px.nextSamplesState (nss) VALUES ('WORKING');
+INSERT INTO px.nextSamplesState (nss) VALUES ('DONE');
+
 CREATE TABLE px.nextSamples ( 
        nsKey serial primary key,
        nsStn int not null references px.stations (stnKey) on update cascade,
+       nsState text default 'NEW'
+         references px.nextSamplesState (nss) ON UPDATE cascade,
        nsId int not null
 );
 ALTER TABLE px.nextSamples OWNER TO lsadmin;
@@ -3564,7 +3587,7 @@ ALTER TABLE px.nextSamples OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
   DECLARE
   BEGIN
-    PERFORM 1 FROM px.nextsamples WHERE nsstn = NEW.nsstn;
+    PERFORM 1 FROM px.nextsamples WHERE nsstn = NEW.nsstn and (nsState = 'NEW' or nsState = 'WORKING');
     IF FOUND THEN
       return NULL;
     END IF;
@@ -3612,9 +3635,16 @@ CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
     k  bigint;
   BEGIN
     rtn = 0;
-    SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() ORDER BY nsKey DESC LIMIT 1;
+    SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() and nsstate='NEW'  ORDER BY nsKey DESC LIMIT 1;
     IF FOUND THEN
-      DELETE FROM px.nextSamples WHERE nsKey=k;
+      --
+      -- Mark current one 
+      -- get rid of others (if any)
+      --
+      UPDATE px.nextSamples set nsstate='WORKING' WHERE nsKey=k;
+      DELETE FROM px.nextSamples WHERE nsKey != k and nsStn=px.getstation();
+    ELSE
+      DELETE FROM px.nextSamples WHERE nsStn=px.getstation();
     END IF;
     return rtn;
   END;
@@ -3626,7 +3656,7 @@ ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
   DECLARE
   BEGIN
-    INSERT INTO px.nextSamples (nsStn, nsId) VALUES (px.getstation(), theId);
+    INSERT INTO px.nextSamples (nsStn, nsId, nsState) VALUES (px.getstation(), theId, 'NEW');
     INSERT INTO px.lastSamples (lsStn, lsId) VALUES (px.getstation(), theId);
     PERFORM px.md2pushqueue( 'transfer');
   END;
@@ -3663,7 +3693,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns vo
     --
     -- queue up the next sample and record the last one
     --
-    INSERT INTO px.nextSamples (nsStn, nsId) VALUES (stn, theId);
+    INSERT INTO px.nextSamples (nsStn, nsId, nsState) VALUES (stn, theId, 'NEW');
     INSERT INTO px.lastSamples (lsStn, lsId) VALUES (stn, theId);
     PERFORM px.md2pushqueue( stn, 'transfer');
   END;
@@ -4240,7 +4270,6 @@ CREATE  OR REPLACE FUNCTION px.insertPuck( expId int, theId int, theName text, b
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO lsadmin;
-
 
 
 
@@ -5865,4 +5894,5 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
+
 

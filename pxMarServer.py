@@ -374,7 +374,7 @@ class PxMarServer:
         # Set the lustre options for the new directory
         #
         try:
-            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "-1", "-i", "-1", "-p", "pffs.pool_fast", theDir], close_fds=True, shell=False)
+            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "-1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
             p.wait()
             if p.returncode != 0:
                 print( "lfs returned %d" % (p.returncode))
@@ -690,17 +690,6 @@ class PxMarServer:
         self.fdin = int(os.getenv( "IN_FD"))
         self.fdout = int(os.getenv("OUT_FD"))
             
-        #
-        # There are a small number of things that are oddly missing from the marccd protocol
-        # that we need to know none the less.
-        #
-        self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO", "unknown"))
-
-        self.beamline = str(os.getenv("LS_CAT_BEAMLINE", "21-ID"))
-
-
-        self.xpixsize = float(os.getenv("LS_CAT_CCD_PIXELSIZE", "73.242"))/1000.0          # the config file uses microns, we need millimeters
-        self.ypixsize = self.xpixsize
 
         #
         # return from select when fdout has a problem 
@@ -718,6 +707,22 @@ class PxMarServer:
             self.fdout     : self.serviceOut,
             self.dbfd      : self.dbServiceIn,
             }
+
+        #
+        # There are a small number of things that are oddly missing from the marccd protocol
+        # that we need to know none the less.
+        #
+        self.detector_info = str(os.getenv("LS_CAT_DETECTOR_INFO", "unknown"))
+
+        self.xpixsize = float(os.getenv("LS_CAT_CCD_PIXELSIZE", "73.242"))/1000.0          # the config file uses microns, we need millimeters
+        self.ypixsize = self.xpixsize
+
+        qs = "select coalesce(px.getstationname(),'21-ID') as sn, coalesce(px.getlustrepool(),'pffs.slow_pool') as lp"
+        qr = self.query(qs)
+        r = qr.dictresult()[0]
+        self.beamline   = r["sn"]
+        self.lustrePool = r["lp"]
+
 
     def run( self):
         runFlag = True
