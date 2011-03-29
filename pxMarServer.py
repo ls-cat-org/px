@@ -124,7 +124,7 @@ class PxMarServer:
                 #
                 tmp = datetime.datetime.now() - t
                 qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up.')" % (tmp.days*24*3600 +tmp.seconds, f);
-                self.db.query( qs);
+                self.query( qs);
                 print >> sys.stderr, time.asctime(), "------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
             else:
@@ -144,11 +144,11 @@ class PxMarServer:
                 print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
                 #
                 qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
-                self.db.query( qs)
+                self.query( qs)
 
                 # find the backup home directory
                 qs = "select esaf.e2BUDir(px.shots_get_esaf(%d)) as bp" % (int(shotKey))
-                qr = self.db.query( qs)
+                qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
                     print >> sys.stderr, time.asctime(), "Shot no longer exists, abandoning it"
@@ -172,7 +172,7 @@ class PxMarServer:
                     except OSError, (errno, strerr):
                         if errno != 17:
                             qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
-                            self.db.query( qs);
+                            self.query( qs);
                             print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
                             self.hlList.pop( self.hlList.index(hl))
                             return
@@ -203,15 +203,15 @@ class PxMarServer:
                         os.link( d+'/'+f, bfn)
                     except:
                         qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Error')
-                        self.db.query( qs)
+                        self.query( qs)
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
-                        self.db.query( qs);
+                        self.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     else:
                         qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
-                        self.db.query( qs);
+                        self.query( qs);
                         qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
-                        self.db.query( qs)
+                        self.query( qs)
                     
                     self.hlList.pop( self.hlList.index(hl))
 
