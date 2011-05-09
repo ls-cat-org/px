@@ -448,7 +448,7 @@ CREATE OR REPLACE FUNCTION px.getstationname() returns text as $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getstationname() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.getkustrepool() returns text as $$
+CREATE OR REPLACE FUNCTION px.getlustrepool() returns text as $$
   SELECT clustrepool FROM px._config WHERE cstnkey=px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.getlustrepool() OWNER TO lsadmin;
@@ -4649,7 +4649,7 @@ ALTER TABLE px.transferPoints OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, tableZ numeric, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, omega numeric, kappa numeric) returns void as $$
   BEGIN
-    UPDATE cats._toolcorrection SET tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation();
+    UPDATE cats._toolcorrection SET tcts=now(), tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation();
     INSERT INTO px.transferPoints( tpStn, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
       ( px.getStation(), tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
