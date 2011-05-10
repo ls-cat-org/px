@@ -1724,6 +1724,12 @@ CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) ret
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.shots_set_energy( theKey bigint) returns void as $$
+  UPDATE px.shots SET snrg = px.rt_get_nenergy( dsstn) FROM px.datasets WHERE sdspid = dspid and skey=$1
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_energy( bigint) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.shots_count_done_snaps( thePid text) returns bigint as $$
   SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='snap' AND sstate='Done';
 $$ LANGUAGE SQL SECURITY DEFINER;
@@ -2844,22 +2850,43 @@ INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnK
 INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'Door', 'PA:21ID:IA_STA_G_DR1_CLOS');
 
 
-CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION px.isthere( thestn bigint, motion text, value numeric) RETURNS boolean AS $$
   DECLARE
     stopped boolean;
     rtn boolean;
+    tmp   boolean;
+    errmsg  text;
+    thepv text;
   BEGIN
-    SELECT epics.isthere( elPV, value) INTO rtn FROM px.epicsLink WHERE elStn=px.getStation() and elName=motion;
+    SELECT INTO thepv elPV FROM px.epicsLink WHERE elStn=thestn and elName=motion;
+    SELECT  INTO rtn  epics.isthere( thepv, value);
     IF NOT rtn THEN
-      SELECT px.isstopped( motion) INTO stopped;
+      SELECT px.isstopped( thestn, motion) INTO stopped;
       IF stopped THEN
-        PERFORM px.moveit( motion, value);
+        SELECT INTO tmp px.moveit( thestn, motion, value);
+        IF not tmp THEN
+          --
+          -- when moveit returns false something bad happened
+          -- signal this by returning null here
+          --
+          SELECT INTO errmsg emsg FROM epics.errors WHERE epvn=thepv ORDER BY ekey desc LIMIT 1;
+	  PERFORM px.pusherror( thestn, 100, errmsg);
+          RETURN NULL;
+        END IF;
       END IF;
     END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.isthere( bigint, text, numeric) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) returns boolean AS $$
+  BEGIN
+    return px.isther( px.getstation(), motion, value);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isthere( text, numeric) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
   DECLARE
@@ -2871,30 +2898,40 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isthere( text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION px.isstopped( thestn bigint, motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
   BEGIN
     rtn = NULL;
-    SELECT epics.isstopped( elPV) INTO rtn FROM px.epicsLink WHERE elName=motion and elStn=px.getStation()::bigint;
+    SELECT epics.isstopped( elPV) INTO rtn FROM px.epicsLink WHERE elName=motion and elStn=thestn;
     return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.isstopped( bigint, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
+  BEGIN
+    return px.isstopped( px.getstation(), motion);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric) RETURNS BOOLEAN AS $$
   DECLARE
+    rtn boolean;
   BEGIN
-   PERFORM epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=theStn;
+   SELECT INTO rtn  epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=theStn;
+   return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( bigint, text, numeric) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS boolean AS $$
   DECLARE
   BEGIN
-    PERFORM 1 FROM px.moveit( px.getStation(), motion, value);
+    return px.moveit( px.getStation(), motion, value);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
@@ -2919,6 +2956,16 @@ CREATE OR REPLACE FUNCTION px.rt_get_bcy() returns text as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_bcy() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns text as $$
+  DECLARE
+    rtn numeric;
+  BEGIN
+    SELECT epics.caget( epvmlpv)::numeric INTO rtn FROM px.epicspvmlink WHERE epvmlname='bcy' and epvmlstn=thestn;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_nbcy(bigint) OWNER TO lsadmin;
+
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
@@ -2942,6 +2989,16 @@ CREATE OR REPLACE FUNCTION px.rt_get_dist( stn bigint) returns text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_dist( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_ndist( stn bigint) returns numeric AS $$
+  DECLARE
+    rtn numeric;   -- return value
+  BEGIN
+    SELECT INTO rtn epics.position(elPV)::numeric FROM px.epicsLink WHERE elStn=stn and elName='distance';
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_ndist( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_can_home_omega() returns boolean AS $$
   SELECT px.rt_get_dist() >= 100.0;
@@ -2974,19 +3031,6 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d text) returns void A
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_set_dist( bigint, text) OWNER TO lsadmin;
-
-
-
-
-
---CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
---  DECLARE
---  BEGIN
---    PERFORM px.moveit( 'distance', d);
---    RETURN;
---  END;
---$$ LANGUAGE plpgsql SECURITY DEFINER;
---ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO lsadmin;
 
 
 CREATE TABLE px.distSaves (
@@ -3162,7 +3206,24 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy( stn bigint) returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_energy() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_energy( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_nenergy( stn bigint) returns numeric AS $$
+  --
+  -- Current energy returned as a numeric
+  --
+  DECLARE
+    rtn numeric;
+  BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=stn and eluType='epics';
+    SELECT INTO rtn eluValue FROM px.energyLookUp WHERE eluStn=stn;
+    IF NOT FOUND THEN
+      rtn := '12.73';
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_nenergy( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_set_energy( e text) returns void AS $$
   DECLARE
@@ -5896,3 +5957,111 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
 
 
+
+CREATE TABLE px.detectorinfo (
+       dikey serial primary key,		-- our key
+       dits timestamp with time zone		-- last update
+            default now(),
+       distn bigint not null			-- the station
+         references px.stations (stnkey),
+       diinfo text,				-- detector info string
+       dixpixsize numeric,			-- pixel size in mm
+       diypixsize numeric,
+       dixsize int,				-- full size in pixels
+       diysize int,
+       dibin int				-- bin mode
+);
+ALTER TABLE px.detectorinfo OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.setdetectorinfo( thestn bigint, info text, xpixsize numeric, ypixsize numeric, xsize int, ysize int, bin int) returns void as $$
+  DECLARE
+    t record;
+  BEGIN
+    SELECT * FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
+    IF NOT FOUND OR
+      ( t.diinfo != info or t.dixpixsize != xpixsize or t.diypixsize != ypixsize or t.dixsize != xsize or t.diysize != ysize or t.dibin != bin)
+      THEN
+        INSERT INTO px.detectorinfo (distn, diinfo, dixpixsize, diypixsize, dixsize, diysize, dibin) VALUES
+                                    (thestn, info, xpixsize, ypixsize, xsize, ysize, bin);
+    END IF;
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setdetectorinfo( bigint, text, numeric, numeric, int, int, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.setdetectorinfo( info text, xpixsize numeric, ypixsize numeric, xsize int, ysize int, bin int) returns void as $$
+  BEGIN
+    PERFORM px.setdetectorinfo( px.getstation(), info, xpixsize, ypixsize, xsize, ysize, bin);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setdetectorinfo( text, numeric, numeric, int, int, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as $$
+  DECLARE
+    rtn numeric;	-- return value
+    topd numeric;	-- distance to top of detector (mm)
+    theta numeric;
+  BEGIN
+
+  SELECT INTO topd (diysize * diypixsize / dibin)/2.0 - px.rt_get_nbcy( thestn) FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
+  IF NOT FOUND THEN
+    return null;
+  END IF;
+  
+  theta := atan2( topd, px.rt_get_ndist( thestn))/2.0;		-- 2 theta from geometry
+  rtn   := 6.1992092867/sin(theta)/px.rt_get_nenergy( thestn);	-- Bragg's law. hc/2 in units of keV⋅Å
+
+  return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_ntopres( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_set_topres( thestn bigint, res numeric) returns void as $$
+  DECLARE
+    rtn numeric;	-- return value
+    topd numeric;	-- distance to top of detector (mm)
+    theta numeric;
+    d numeric;		-- possibly the distance to use
+  BEGIN
+
+    SELECT INTO topd (diysize * diypixsize / dibin)/2.0 - px.rt_get_nbcy( thestn) FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
+    IF NOT FOUND THEN
+      return;
+    END IF;
+  
+    theta := asin( 6.199209867 / px.rt_get_nenergy( thestn) / res);  -- theta from Bragg's law
+    d     := topd / tan( 2.0 * theta);
+
+    PERFORM px.rt_set_dist( thestn, d);
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_set_topres( bigint, numeric) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_set_topres( res numeric) returns void as $$
+  BEGIN
+    PERFORM px.rt_set_topres( px.getstation(), res);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_set_topres( numeric) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.rt_get_topres( thestn bigint ) returns text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT INTO rtn to_char(px.rt_get_ntopres( thestn), '999.99');
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_topres( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_topres( ) returns text as $$
+  DECLARE
+    rtn text;
+  BEGIN
+    SELECT INTO rtn px.rt_get_topres( px.getstation);
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_topres( ) OWNER TO lsadmin;

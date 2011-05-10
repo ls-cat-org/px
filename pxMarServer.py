@@ -310,12 +310,17 @@ class PxMarServer:
         else:
             #
             # Here we have a defined and perhaps resonable distance
-            # TODO: Error signaling if limit is hit or limits are badly defined
             #
             qs = "select px.isthere( 'distance', %s) as isthere" % (theDist)
             qr = self.query( qs)
             r = qr.dictresult()[0]
-            if r["isthere"] != 't':
+            if r["isthere"] == None:
+                # something bad happened, abort.
+                self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
+                self.query( "select px.pauserequest()");
+                return False
+                
+            if r["isthere"] == 'f':
                 loopFlag = 1
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
@@ -327,19 +332,20 @@ class PxMarServer:
                     time.sleep( 0.21)
                     qr = self.query( qs)
                     r = qr.dictresult()[0]
+
+                    if r["isthere"] == None:
+                        # something bad happened, abort.
+                        self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
+                        self.query( "select px.pauserequest()");
+                        return False
+
                     if r["isthere"] == 't':
                         loopFlag=0
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
-
+            self.query( "select px.shots_set_energy( %d)" % (int(self.skey)))
+        return True;
             
-
-    def movedist( self, value):
-        qr = self.query( "select px.isthere( 'distance', %s) as isthere" % (value))
-        r = qr.dictresult()[0]
-        if r["isthere"] != 't':
-            self.query( "select px.rt_set_dist(%s)" % (value))
-            self.waitdist(value)
 
     def checkdir( self, token):
         qr = self.query( "select dsdir from px.getdataset('%s')" % (str(token)))
@@ -508,44 +514,42 @@ class PxMarServer:
                         # Wait for the detector movement
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
-                        self.waitdist(r["sdist"])
-
-
-                        if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
-                            #
-                            # get the beam center information
-                            #
-                            qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
-                            qr2 = self.query( qs2)
-                            r2 = qr2.dictresult()[0]
-                            beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
-                            beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
-                            dist = r2["dist"]
-                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
-                        else:
-                            beam_x = 2048
-                            beam_y = 2048
-                            qs2 = "select px.rt_get_dist() as dist"
-                            qr2 = self.query( qs2)
-                            r2 = qr2.dictresult()[0]
-                            dist = r2["dist"]
-                        
-
-
-                        self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                            dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
-                            )
-                        print >> sys.stderr, time.asctime(), hs
-                        self.queue.insert( 0, hs)
-
-                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
-
-
-                        cmd = "start"
-                        self.collectingFlag = True
-                        self.flushStatus    = True
-                        print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
+                        if self.waitdist(r["sdist"]):
+                            if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
+                                #
+                                # get the beam center information
+                                #
+                                qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
+                                qr2 = self.query( qs2)
+                                r2 = qr2.dictresult()[0]
+                                beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
+                                beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
+                                dist = r2["dist"]
+                                print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
+                            else:
+                                beam_x = 2048
+                                beam_y = 2048
+                                qs2 = "select px.rt_get_dist() as dist"
+                                qr2 = self.query( qs2)
+                                r2 = qr2.dictresult()[0]
+                                dist = r2["dist"]
+                            
+        
+        
+                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                            hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                                dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                                )
+                            print >> sys.stderr, time.asctime(), hs
+                            self.queue.insert( 0, hs)
+        
+                            self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
+        
+        
+                            cmd = "start"
+                            self.collectingFlag = True
+                            self.flushStatus    = True
+                            print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
 
                         
                     #
