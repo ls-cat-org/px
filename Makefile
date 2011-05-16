@@ -16,11 +16,11 @@ dist:
 	rm -f pxMarServer-$(VERSION)
 
 install: 
-	@install pxMarServer.py /usr/local/bin
-	@install marccd /usr/local/bin
-	@install fixMarccdLog /usr/local/bin
-	@install AutoDetector.py /usr/local/bin
-	@install MarccdConfFile.py /usr/local/bin
+	install pxMarServer.py /usr/local/bin
+	install marccd /usr/local/bin
+	install fixMarccdLog /usr/local/bin
+	install AutoDetector.py /usr/local/bin
+	install MarccdConfFile.py /usr/local/bin
 	@grep -q AutoDetector /etc/sudoers || echo "Please append append.to.sudoers to /etc/sudoers"
 
 
