@@ -2882,7 +2882,7 @@ ALTER FUNCTION px.isthere( bigint, text, numeric) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) returns boolean AS $$
   BEGIN
-    return px.isther( px.getstation(), motion, value);
+    return px.isthere( px.getstation(), motion, value);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isthere( text, numeric) OWNER TO lsadmin;
@@ -2956,7 +2956,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_bcy() returns text as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_bcy() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns text as $$
+CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns numeric as $$
   DECLARE
     rtn numeric;
   BEGIN
