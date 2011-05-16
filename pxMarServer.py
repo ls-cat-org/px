@@ -750,6 +750,7 @@ class PxMarServer:
                 #
                 qs = "select px.setdetectorinfo( '%s', %f, %f, %d, %d, %d)" % (self.detector_info, self.xpixsize, self.ypixsize, self.xsize, self.ysize, self.ybin)
                 self.query( qs)
+                self.updatedDetectorInfo = True
                 
             #
             # check to see if any socket needs service
