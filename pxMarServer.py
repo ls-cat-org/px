@@ -590,12 +590,14 @@ class PxMarServer:
                 rsp = msg.split(",")
                 self.xsize=int(rsp[1])
                 self.ysize=int(rsp[2])
+                self.updatedDetectorInfo = False
                 print >>sys.stderr, time.asctime(), "SIZE: ", self.xsize,self.ysize
 
             if msg.find("is_bin")==0:
                 rsp = msg.split(",")
                 self.xbin=int(rsp[1])
                 self.ybin=int(rsp[2])
+                self.updatedDetectorInfo = False
                 print >>sys.stderr, time.asctime(), "BIN: ",self.xbin,self.ybin
 
     def setStatus( self, msg):
