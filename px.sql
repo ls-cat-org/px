@@ -5977,7 +5977,7 @@ CREATE OR REPLACE FUNCTION px.setdetectorinfo( thestn bigint, info text, xpixsiz
   DECLARE
     t record;
   BEGIN
-    SELECT * FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
+    SELECT INTO t * FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
     IF NOT FOUND OR
       ( t.diinfo != info or t.dixpixsize != xpixsize or t.diypixsize != ypixsize or t.dixsize != xsize or t.diysize != ysize or t.dibin != bin)
       THEN
