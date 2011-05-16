@@ -94,7 +94,7 @@ class PxMarServer:
     ysize = None
     xbin  = None        # current binning
     ybin  = None
-
+    updatedDetectorInfo = False # flag to indicate that we've updated the detectorinfo table
 
     def hlPush( self, d, f, expt, shotKey):
         #
@@ -739,6 +739,18 @@ class PxMarServer:
         self.query( "select px.marinit()")
 
         while runFlag:
+
+            if not self.updatedDetectorInfo and self.ybin != None and self.xsize != None and self.ysize != None:
+                #
+                # Assume that with xsize, ysize, and ybin defined that we have everything we need
+                # to update the detectorinfo table.
+                #
+                # The detector information and pixel size are read from the environment at start up.  The other numbers
+                # await the detector's response to px.marinit().
+                #
+                qs = "select px.setdetectorinfo( '%s', %f, %f, %d, %d, %d)" % (self.detector_info, self.xpixsize, self.ypixsize, self.xsize, self.ysize, self.ybin)
+                self.query( qs)
+                
             #
             # check to see if any socket needs service
             for (fd,event) in self.p.poll( 500):
