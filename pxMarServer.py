@@ -294,10 +294,10 @@ class PxMarServer:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
-                loopFlag = 1
+                loopFlag = True
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
-                while loopFlag==1:
+                while loopFlag:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
                         self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be Green, not Red.')")
                         dewarWarningGiven = True
@@ -306,7 +306,7 @@ class PxMarServer:
                     qr = self.query( "select px.isthere( 'distance') as isthere")
                     r = qr.dictresult()[0]
                     if r["isthere"] == 't':
-                        loopFlag=0
+                        loopFlag = False
         else:
             #
             # Here we have a defined and perhaps resonable distance
@@ -314,6 +314,7 @@ class PxMarServer:
             qs = "select px.isthere( 'distance', %s) as isthere" % (theDist)
             qr = self.query( qs)
             r = qr.dictresult()[0]
+
             if r["isthere"] == None:
                 # something bad happened, abort.
                 self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
@@ -321,10 +322,10 @@ class PxMarServer:
                 return False
                 
             if r["isthere"] == 'f':
-                loopFlag = 1
+                loopFlag = True
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
-                while loopFlag==1:
+                while loopFlag:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
                         self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be green, not red.')")
                         dewarWarningGiven = True
@@ -340,7 +341,7 @@ class PxMarServer:
                         return False
 
                     if r["isthere"] == 't':
-                        loopFlag=0
+                        loopFlag = False
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
             self.query( "select px.shots_set_energy( %d)" % (int(self.skey)))
@@ -521,7 +522,12 @@ class PxMarServer:
                             # Possibly this wait is too long.
                             # It should be long enough so that the diffractometer notices and aborts the exposure
                             #
-                            time.sleep( 10.0)
+                            print >>sys.stderr, " Wait for MD2 to realize what's happened"
+                            for i in range(10):
+                                print >> sys.stderr, ".",
+                                sys.stderr.flush()
+                                time.sleep( 0.2)
+                            print >>sys.stderr, " Done"
                             self.query( "select px.setDetectorOn()")
                             return
                         else:
