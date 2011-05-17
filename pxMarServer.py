@@ -299,7 +299,7 @@ class PxMarServer:
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Perhaps a Dewar is blocking the laser scanner.  Go have a look.')")
+                        self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be Green, not Red.')")
                         dewarWarningGiven = True
                         
                     time.sleep( 0.21)
@@ -326,7 +326,7 @@ class PxMarServer:
                 startLoopTime = datetime.datetime.now()
                 while loopFlag==1:
                     if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Perhaps a Dewar is blocking the laser scanner.  Go have a look.')")
+                        self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be green, not red.')")
                         dewarWarningGiven = True
                         
                     time.sleep( 0.21)
@@ -514,7 +514,10 @@ class PxMarServer:
                         # Wait for the detector movement
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
-                        if self.waitdist(r["sdist"]):
+                        if not self.waitdist(r["sdist"]):
+                            print >> sys.stderr, "Failed to move detector into position."
+                            return
+                        else:
                             if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
                                 #
                                 # get the beam center information
