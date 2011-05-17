@@ -2863,16 +2863,7 @@ CREATE OR REPLACE FUNCTION px.isthere( thestn bigint, motion text, value numeric
     IF NOT rtn THEN
       SELECT px.isstopped( thestn, motion) INTO stopped;
       IF stopped THEN
-        SELECT INTO tmp px.moveit( thestn, motion, value);
-        IF not tmp THEN
-          --
-          -- when moveit returns false something bad happened
-          -- signal this by returning null here
-          --
-          SELECT INTO errmsg emsg FROM epics.errors WHERE epvn=thepv ORDER BY ekey desc LIMIT 1;
-	  PERFORM px.pusherror( thestn, 100, errmsg);
-          RETURN NULL;
-        END IF;
+        SELECT INTO rtn px.moveit( thestn, motion, value);
       END IF;
     END IF;
     return rtn;
@@ -2921,9 +2912,21 @@ ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric) RETURNS BOOLEAN AS $$
   DECLARE
     rtn boolean;
+    errmsg text;
+    thepv text;
   BEGIN
-   SELECT INTO rtn  epics.moveit( elPV, value) FROM px.epicsLink WHERE elName=motion and elStn=theStn;
-   return rtn;
+    SELECT INTO thepv elPV FROM px.epicsLink WHERE elName=motion and elStn=theStn;
+    SELECT INTO rtn  epics.moveit( thePv, value);
+      IF not rtn THEN
+        --
+        -- when moveit returns false something bad happened
+        -- signal this by returning null here
+        --
+        SELECT INTO errmsg emsg FROM epics.errors WHERE epvn=thepv ORDER BY ekey desc LIMIT 1;
+        PERFORM px.pusherror( thestn, 100, errmsg);
+        RETURN NULL;
+      END IF;
+    return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( bigint, text, numeric) OWNER TO lsadmin;
@@ -3031,6 +3034,15 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d text) returns void A
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_set_dist( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d numeric) returns void AS $$
+  DECLARE
+  BEGIN
+    PERFORM px.moveit( theStn, 'distance', d);
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_set_dist( bigint, numeric) OWNER TO lsadmin;
 
 
 CREATE TABLE px.distSaves (
