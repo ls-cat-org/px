@@ -485,6 +485,14 @@ CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.demandDiffractometerOn() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
+  DECLARE
+  BEGIN
+  PERFORM pg_advisory_lock( px.getstation(), 5);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setDetectorOn() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
   DECLARE
   BEGIN
@@ -508,6 +516,31 @@ CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.dropDetectorOn() RETURNS void AS $$
+  DECLARE
+  BEGIN
+  PERFORM pg_advisory_unlock( px.getstation(), 5);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.dropDetectorOn() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.checkDetectorOn() RETURNS int AS $$
+  --
+  -- returns 0 if the detector is on
+  --
+  DECLARE
+    tst boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( px.getstation(), 5) INTO tst;
+    IF tst THEN
+      PERFORM pg_advisory_unlock( px.getstation(), 5);
+      RETURN 1;
+    END IF;
+    return 0;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.checkDetectorOn() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
 --

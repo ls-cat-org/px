@@ -516,6 +516,13 @@ class PxMarServer:
                         #
                         if not self.waitdist(r["sdist"]):
                             print >> sys.stderr, "Failed to move detector into position."
+                            self.query( "select px.dropDetectorOn()")
+                            #
+                            # Possiblly this wait is too long
+                            # It should be long enough so that the diffractometer notices and aborts the exposure
+                            #
+                            time.sleep( 10.0)
+                            self.query( "select px.setDetectorOn()")
                             return
                         else:
                             if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
