@@ -290,7 +290,7 @@ class PxMarServer:
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
 
-        if theDist == None or float(theDist) < 90.0 or float(theDist) > 1000.0:
+        if theDist == None:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
