@@ -290,7 +290,7 @@ class PxMarServer:
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
 
-        if theDist == None or len( theDist.__str__()) < 3 or theDist < 90 or theDist > 1000:
+        if theDist == None or float(theDist) < 90.0 or float(theDist) > 1000.0:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
             r = qr.dictresult()[0]
             if r["isthere"] != 't':
@@ -298,10 +298,6 @@ class PxMarServer:
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
                 while loopFlag:
-                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be Green, not Red.')")
-                        dewarWarningGiven = True
-                        
                     time.sleep( 0.21)
                     qr = self.query( "select px.isthere( 'distance') as isthere")
                     r = qr.dictresult()[0]
@@ -326,10 +322,6 @@ class PxMarServer:
                 dewarWarningGiven = False
                 startLoopTime = datetime.datetime.now()
                 while loopFlag:
-                    if not dewarWarningGiven and (datetime.datetime.now() - startLoopTime) > datetime.timedelta( 0, 35):
-                        self.query( "select px.pusherror( 10006, 'Is something blocking the laser scanner?  Go have a look.  Scanner should be green, not red.')")
-                        dewarWarningGiven = True
-                        
                     time.sleep( 0.21)
                     qr = self.query( qs)
                     r = qr.dictresult()[0]
