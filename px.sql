@@ -485,14 +485,6 @@ CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.demandDiffractometerOn() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
-  DECLARE
-  BEGIN
-  PERFORM pg_advisory_lock( px.getstation(), 5);
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setDetectorOn() OWNER TO lsadmin;
-
 CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
   DECLARE
   BEGIN
@@ -517,10 +509,28 @@ CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
+  DECLARE
+  BEGIN
+  --
+  -- 3 is detector not exposing
+  -- 5 is detector on
+  --
+  PERFORM pg_advisory_lock( px.getstation(), 3);
+  PERFORM pg_advisory_lock( px.getstation(), 5);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setDetectorOn() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.dropDetectorOn() RETURNS void AS $$
   DECLARE
   BEGIN
+  --
+  -- 3 is detector not exposing
+  -- 5 is detector on
+  --
   PERFORM pg_advisory_unlock( px.getstation(), 5);
+  PERFORM pg_advisory_unlock( px.getstation(), 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.dropDetectorOn() OWNER TO lsadmin;
@@ -2892,11 +2902,14 @@ CREATE OR REPLACE FUNCTION px.isthere( thestn bigint, motion text, value numeric
     thepv text;
   BEGIN
     SELECT INTO thepv elPV FROM px.epicsLink WHERE elStn=thestn and elName=motion;
-    SELECT  INTO rtn  epics.isthere( thepv, value);
+    SELECT INTO rtn  epics.isthere( thepv, value);
     IF NOT rtn THEN
       SELECT px.isstopped( thestn, motion) INTO stopped;
       IF stopped THEN
-        SELECT INTO rtn px.moveit( thestn, motion, value);
+        SELECT INTO tmp px.moveit( thestn, motion, value);
+        IF tmp is null THEN
+          RETURN NULL;
+        END IF;
       END IF;
     END IF;
     return rtn;
@@ -5288,27 +5301,24 @@ CREATE TABLE px.kvs (
 ALTER TABLE px.kvs OWNER TO lsadmin;
 CREATE INDEX kvsNameIndex ON px.kvs (kvstn,kvname);
 
-CREATE OR REPLACE FUNCTION px.kvsInsertTF() returns trigger as $$
-  DECLARE
-
-  BEGIN
-    NEW.kvstn = px.getStation();
-    PERFORM 1 FROM px.kvs WHERE kvname=NEW.kvname and kvstn=NEW.kvstn;
-    IF FOUND THEN
-      UPDATE px.kvs SET kvts=now(), kvvalue=NEW.kvvalue WHERE kvname=NEW.kvname and kvstn=NEW.kvstn;
-      return NULL;
-    END IF;
-    RETURN NEW;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvsInsertTF() OWNER TO lsadmin;
-CREATE TRIGGER kvsInsertTrigger BEFORE INSERT ON px.kvs FOR EACH ROW EXECUTE PROCEDURE px.kvsInsertTF();
 
 CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
   DECLARE
+    thestn int;
+    thekey int;
+    n text;
+    v text;
   BEGIN
+    select into thestn px.getstation();
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
-      INSERT INTO px.kvs (kvname,kvvalue) VALUES (kvps[i],kvps[i+1]);
+      n := kvps[i];
+      v := kvps[i+1];
+      SELECT INTO thekey kvkey FROM px.kvs WHERE kvname=n and kvstn=thestn;
+      IF FOUND THEN
+        UPDATE px.kvs SET kvts=now(), kvvalue=v WHERE kvkey=thekey;
+      ELSE
+        INSERT INTO px.kvs (kvts, kvstn, kvname, kvvalue) VALUES (now(),thestn, kvps[i], kvps[i+1]);
+      END IF;
     END LOOP;
     RETURN;
   END;
