@@ -3907,7 +3907,8 @@ CREATE TABLE px.transferArgs (
        taXX int,
        taYY int,
        taZZ int,
-       taEstTime numeric
+       taEstTime numeric,
+       taDist numeric default NULL
 );
 ALTER TABLE px.transferArgs OWNER TO lsadmin;
 
@@ -3916,13 +3917,16 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
     cursam int; -- the current sample
+    curdist numeric; -- the current detector distance
   BEGIN
     SELECT px.getCurrentSampleID() INTO cursam;
     IF NOT FOUND THEN
       return 0;
     END IF;
 
-    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, esttime);
+    SELECT INTO curdist px.rt_get_dist();
+
+    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime, taDist) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, esttime, curdist);
 
     IF cursam = 0 and present THEN
       -- manually mounted sample, 
@@ -3947,10 +3951,12 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       END IF;
     END IF;
     --
-    -- This anticipates a requrest for robot air rights
+    -- This anticipates a request for robot air rights
     -- starting the detector now will save some time later, perhaps
     --
-    PERFORM px.rt_set_dist( 700);
+    IF curdist < 650 THEN
+        PERFORM px.rt_set_dist( 650);
+    END IF;
     return 1;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4059,12 +4065,20 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
       PERFORM cats.panic();
     END IF;
     IF md2on THEN
+      --
+      -- the transfer request should have started moving the detector to 650
+      -- If the detector is both stopped and less that 650 then something bad
+      -- has happed to prevent the detector from moving.
+      --
       SELECT px.rt_get_dist() INTO curDist;
       SELECT px.isstopped('distance') INTO stopped;
-      IF curDist < 400 THEN
+      IF curDist < 650 THEN
         rtn := False;
         IF stopped THEN
-          PERFORM px.rt_set_dist( 651);
+          --
+          -- Something has stopped the detector.
+          --
+          PERFORM px.pusherror( 29110, 'Use epics to move detector to at least 650 mm or call beamline staff.');
         END IF;
       ELSE
         SELECT px.requestAirRights() INTO rtn;
@@ -4086,8 +4100,12 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
   BEGIN
     PERFORM px.dropAirRights();
     SELECT px.getCurrentSampleId() INTO smpl;
+
     SELECT dsdist INTO dist FROM px.nextShot();
-    IF FOUND and dist is not null THEN
+    IF NOT FOUND or dist is null THEN
+      SELECT INTO dist tadist FROM px.transferargs WHERE tastn=px.getstation() ORDER BY takey desc LIMIT 1;
+    END IF;
+    IF dist is not null THEN
       PERFORM px.rt_set_dist( dist);
     END IF;
 
