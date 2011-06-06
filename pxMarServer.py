@@ -373,7 +373,7 @@ class PxMarServer:
         # Set the lustre options for the new directory
         #
         try:
-            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "-1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
+            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
             p.wait()
             if p.returncode != 0:
                 print( "lfs returned %d" % (p.returncode))
