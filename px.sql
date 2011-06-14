@@ -4093,24 +4093,60 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.requestRobotAirRights() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
+  --
+  -- Called by CatsOk.py
+  --
   DECLARE
     ntfy text;  -- notify to send
     smpl int;   -- the mounted sample
+    rsmp int;   -- the requested sample
     dist numeric; -- next sample distance
+    spres boolean; -- sample really present
+    thestn int;		-- our station
   BEGIN
     PERFORM px.dropAirRights();
     SELECT px.getCurrentSampleId() INTO smpl;
-
-    SELECT dsdist INTO dist FROM px.nextShot();
-    IF NOT FOUND or dist is null THEN
-      SELECT INTO dist tadist FROM px.transferargs WHERE tastn=px.getstation() ORDER BY takey desc LIMIT 1;
-    END IF;
-    IF dist is not null THEN
-      PERFORM px.rt_set_dist( dist);
-    END IF;
+    SELECT INTO thestn px.getstation();
 
     IF smpl != 0 THEN
-      SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
+      --
+      -- Things do to if the sample made it
+      --
+      -- Move the detector back
+      --   to the correct distance if we can figure it out
+      --
+      SELECT dsdist INTO dist FROM px.nextShot();
+      IF NOT FOUND or dist is null THEN
+        --
+        -- to the previous distance if we do not know really where it is supposed to be
+        --
+        SELECT INTO dist tadist FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
+      END IF;
+      IF dist is not null THEN
+        PERFORM px.rt_set_dist( dist);
+      END IF;
+
+
+      --
+      -- Test centering tricks on E
+      --
+      IF thestn = 2 THEN
+        --
+        -- Start centering if we really have a sample and it is not hand mounted and it is the correct one
+        --
+        SELECT INTO rsmp taid FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
+        SELECT INTO spres px.kvget( thestn,'SamplePresent')='True';
+
+        IF rsmp is not null and rsmp != 0 and rsmp = smpl and spres is not null and spres THEN
+          PERFORM px.setcenter( thestn, NULL, '0.0.0.0'::inet, 0, 1, 0.0, 0.0, 0.0, 0.0, 0.0);
+          PERFORM px.md2pushqueue( thestn, 'rotate');
+        END IF;
+      END IF;
+
+      --
+      -- Tell everyone we're done
+      --
+      SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=thestn;
       EXECUTE 'NOTIFY ' || ntfy;
     END IF;
   END;
@@ -4483,6 +4519,7 @@ CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as $$
   DECLARE
@@ -4938,7 +4975,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       END IF;
 
       tmp5 = NULL;
-      FOR kvpname, kvpvalue IN SELECT kvname, kvvalue FROM px.kvs WHERE kvstn=theStn.stnkey LOOP
+      FOR kvpname, kvpvalue IN SELECT kvname, kvvalue FROM px.kvs WHERE kvstn=theStn.stnkey and kvname not like '%.%'LOOP
         tmp5 = xmlconcat( tmp5, xmlelement( name kvpair, xmlattributes( kvpname as name, kvpvalue as value)));
       END LOOP;
 
@@ -5309,9 +5346,10 @@ ALTER FUNCTION px.getShotsXml( text, text) OWNER TO lsadmin;
 
 
 CREATE TABLE px.kvs (
-       kvkey serial primary key,
-       kvts  timestamptz not null default now(),
-       kvstn bigint references px.stations (stnkey),
+       kvkey serial primary key,			-- our key
+       kvts  timestamptz not null default now(),	-- our timestamp
+       kvseq serial,					-- sequence number to indicate new values
+       kvstn bigint references px.stations (stnkey),	-- the station
        kvname text not null,
        kvvalue text,
        UNIQUE( kvstn, kvname)
@@ -5324,18 +5362,32 @@ CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
   DECLARE
     thestn int;
     thekey int;
+    theValue text;
+    theSeq int;
     n text;
     v text;
   BEGIN
-    select into thestn px.getstation();
+    SELECT INTO thestn px.getstation();
+    theSeq := NULL;			-- only set if there is a new value
+
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
       n := kvps[i];
       v := kvps[i+1];
-      SELECT INTO thekey kvkey FROM px.kvs WHERE kvname=n and kvstn=thestn;
+      SELECT INTO thekey, theValue  kvkey, kvvalue FROM px.kvs WHERE kvname=n and kvstn=thestn;
       IF FOUND THEN
-        UPDATE px.kvs SET kvts=now(), kvvalue=v WHERE kvkey=thekey;
+        IF theValue = v THEN
+          UPDATE px.kvs SET kvts=now() WHERE kvkey=thekey;
+        ELSE
+          IF theSeq is null THEN
+            SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
+          END IF;
+          UPDATE px.kvs SET kvts=now(), kvseq=theSeq, kvvalue=v WHERE kvkey=thekey;
+        END IF;
       ELSE
-        INSERT INTO px.kvs (kvts, kvstn, kvname, kvvalue) VALUES (now(),thestn, kvps[i], kvps[i+1]);
+        IF theSeq is null THEN
+          SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
+        END IF;
+        INSERT INTO px.kvs (kvts, kvstn, kvseq, kvname, kvvalue) VALUES (now(),thestn, theSeq, n, v);
       END IF;
     END LOOP;
     RETURN;
@@ -5902,9 +5954,14 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet,
   DECLARE
     theHash text;     -- hash value into rmt.centeringvideos
   BEGIN
-    PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
-    IF NOT FOUND THEN
-      return;
+    IF thePid is not NULL THEN
+      --
+      -- NULL PID signifies an automatic request initiation for centering
+      --
+      PERFORM 1 WHERE rmt.checkstnaccess( theStn, thePid);
+      IF NOT FOUND THEN
+        return;
+      END IF;
     END IF;
     --
     -- This initialization sets up the next centering video.
