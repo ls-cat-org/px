@@ -48,13 +48,28 @@ export LS_CAT_CCD_PIXEL_SIZE=`/usr/local/bin/MarccdConfFile.py ccd_pixelsize`
 #
 
 xrdb -merge <<EOF
-Marccd*Stop*background: grey80
-Marccd*Stop*foreground: grey80
-Marccd*Stop*Sensitive: False
 Marccd*ShutterMenuBar*background: grey80
 Marccd*ShutterMenuBar*foreground: grey80
 Marccd*ShutterMenuBar*Sensitive: False
 EOF
+
+marccd_version=`/home/marccd/bin/linux/marccd -v | awk '{print $3}'`
+
+if [[ "ZZ"$marccd_version > "ZZ0.20.8" ]]; then
+#
+# Stop button only get removed in marccd versions before 0.20.8a
+xrdb -merge <<EOF
+Marccd*Stop*background: grey80
+Marccd*Stop*foreground: grey80
+Marccd*Stop*Sensitive: False
+EOF
+fi
+
+
+#
+# Make sure the marMosaic module is loaded
+#
+modprobe marMosaic
 
 #
 # Find out who has logged into the MD2 and who we are running as

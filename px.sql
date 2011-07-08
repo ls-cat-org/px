@@ -3782,7 +3782,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns void AS $$
+CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void AS $$
   DECLARE
   BEGIN
     --
@@ -3817,7 +3817,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn bigint, theId int) returns vo
     PERFORM px.md2pushqueue( stn, 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.requestTransfer( bigint, int) OWNER TO lsadmin;
+ALTER FUNCTION px.requestTransfer( int, int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, estTime numeric) returns int AS $$
@@ -4135,7 +4135,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
         -- Start centering if we really have a sample and it is not hand mounted and it is the correct one
         --
         SELECT INTO rsmp taid FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
-        SELECT INTO spres px.kvget( thestn,'SamplePresent')='True';
+        SELECT INTO spres px.kvget( thestn, 'SamplePresent')='True';
 
         IF rsmp is not null and rsmp != 0 and rsmp = smpl and spres is not null and spres THEN
           PERFORM px.setcenter( thestn, NULL, '0.0.0.0'::inet, 0, 1, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -4479,7 +4479,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.md2pushqueue( stn bigint, cmd text) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.md2pushqueue( stn int, cmd text) RETURNS VOID AS $$
   DECLARE
     c text;     -- trimmed command
     ntfy text;  -- used to generate notify command
@@ -4502,7 +4502,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( stn bigint, cmd text) RETURNS VOID A
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2pushqueue( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.md2pushqueue( int, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
@@ -4975,11 +4975,11 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       END IF;
 
       tmp5 = NULL;
-      FOR kvpname, kvpvalue IN SELECT kvname, kvvalue FROM px.kvs WHERE kvstn=theStn.stnkey and kvname not like '%.%'LOOP
+      FOR kvpname, kvpvalue IN SELECT substring(kvname from 8), kvvalue FROM px.kvs WHERE kvname LIKE 'stns.'||thestn.stnkey::text||'.%' and kvname not like '%.%.%.%' LOOP
         tmp5 = xmlconcat( tmp5, xmlelement( name kvpair, xmlattributes( kvpname as name, kvpvalue as value)));
       END LOOP;
 
-      SELECT cats.getrobotstatekvpxml( theStn.stnkey) INTO tmp6;
+      SELECT cats.getrobotstatekvpxml( theStn.stnkey::int) INTO tmp6;
       SELECT px.uistatus_get_xml( thePid, theStn.stnkey) INTO tmp7;
 
       tmp := xmlconcat( tmp, xmlelement( name station, xmlattributes( theStn.stnkey as stnkey, theStn.stnName as stnname),
@@ -5202,6 +5202,16 @@ ALTER FUNCTION px.stnstatusUpdateTF() OWNER TO lsadmin;
 CREATE TRIGGER stnstatusUpdateTrigger BEFORE UPDATE ON px.stnstatus FOR EACH ROW EXECUTE PROCEDURE px.stnstatusUpdateTF();
 
 
+CREATE TABLE px.logins (
+       lkey serial primary key,
+       lints timestamp with time zone not null default now(),
+       louts timestamp with time zone default null,
+       lstn int not null,
+       lesaf int not null
+);
+ALTER TABLE px.logins OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as $$
   DECLARE
     rtn boolean;
@@ -5221,6 +5231,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
     PERFORM px.logout( theStn);
     SELECT esaf.checkPassword( expid, thepwd) INTO rtn;
     IF rtn = True THEN
+      INSERT INTO px.logins (lstn, lesaf) VALUES (theStn, expid);
       INSERT INTO px.stnstatus (ssstn, ssesaf) VALUES (theStn, expid);
       SELECT INTO lastInfo *
              FROM px.datasets
@@ -5253,8 +5264,9 @@ ALTER FUNCTION px.logout() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.logout( theStn bigint) returns void as $$
   DECLARE
   BEGIN
-    --UPDATE px.stnstatus SET ssesaf=NULL WHERE ssstn=theStn;
+    UPDATE px.logins set louts=now() WHERE lstn=theStn and louts is null;
     DELETE FROM px.stnstatus WHERE ssstn=theStn;
+    DELETE FROM rmt.uistreams USING px.kvs WHERE uiskv=kvkey and kvname like 'stns.'||thestn::text||'.%';
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.logout( bigint) OWNER TO lsadmin;
@@ -5349,31 +5361,80 @@ CREATE TABLE px.kvs (
        kvkey serial primary key,			-- our key
        kvts  timestamptz not null default now(),	-- our timestamp
        kvseq serial,					-- sequence number to indicate new values
-       kvstn bigint references px.stations (stnkey),	-- the station
        kvname text not null,
        kvvalue text,
-       UNIQUE( kvstn, kvname)
+       kvro boolean default true,			-- most variables are read only, write privilages implied.  Needed for PV support
+       kvpvname text default null
+          references epics._pvmonitors (pvmname) on update cascade,
+       kvpvmi int default null references epics._pvmonitors (pvmmonitorindex),	-- index of the pv name in kvvalue
+       kvmotion text default null			-- use our epics.movit routine to move this one
+          references epics._motions (mmotorpvname) on update cascade,
+       kvmd2cmd text default null,			-- use this method to send command to md2 rather than just set the kv value
+       kvstn int default null,				-- needed to send commands to md2 from epics
+       UNIQUE( kvname)
 );
 ALTER TABLE px.kvs OWNER TO lsadmin;
-CREATE INDEX kvsNameIndex ON px.kvs (kvstn,kvname);
+CREATE INDEX kvsNameIndex ON px.kvs (kvname);
+
+
+CREATE OR REPLACE FUNCTION px.kvspvupdate() returns void as $$
+  DECLARE
+    thepvname text;
+    thepvmindex int;
+    thekvkey int;
+    thekvvalue text;
+    cavalue  text;
+    theseq   int;
+  BEGIN
+    theseq := NULL;
+    FOR thekvkey, thekvvalue, thepvname, thepvmindex IN SELECT kvkey, kvvalue, kvpvname, kvpvmi FROM px.kvs WHERE kvpvname is not null LOOP
+      IF thepvmindex is null THEN
+        --
+        -- Automatically set the index
+        --
+        SELECT INTO thepvmindex pvmmonitorindex FROM epics._pvmonitors WHERE pvmname = thepvname LIMIT 1;
+        IF NOT FOUND THEN
+          CONTINUE;
+        END IF;
+        UPDATE px.kvs SET kvpvmi=thepvmindex WHERE kvkey=thekvkey;
+      END IF;
+      SELECT INTO cavalue epics._caget( thepvmindex);
+      IF thekvvalue is null or cavalue != thekvvalue THEN
+        IF theseq is null THEN
+          SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
+        END IF;
+        UPDATE px.kvs SET kvts=now(), kvseq=theSeq, kvvalue=cavalue WHERE kvkey=thekvkey;
+      ELSE
+        UPDATE px.kvs SET kvts=now() WHERE kvkey=thekvkey;
+      END IF;
+    END LOOP;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvspvupdate() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
   DECLARE
-    thestn int;
+  BEGIN
+    PERFORM px.kvupdate( px.getstation(), kvps);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as $$
+  DECLARE
     thekey int;
     theValue text;
     theSeq int;
     n text;
     v text;
   BEGIN
-    SELECT INTO thestn px.getstation();
     theSeq := NULL;			-- only set if there is a new value
 
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
-      n := kvps[i];
+      n := 'stns.' || thestn::text || '.' || kvps[i];
       v := kvps[i+1];
-      SELECT INTO thekey, theValue  kvkey, kvvalue FROM px.kvs WHERE kvname=n and kvstn=thestn;
+      SELECT INTO thekey, theValue  kvkey, kvvalue FROM px.kvs WHERE kvname=n LIMIT 1;
       IF FOUND THEN
         IF theValue = v THEN
           UPDATE px.kvs SET kvts=now() WHERE kvkey=thekey;
@@ -5387,21 +5448,21 @@ CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
         IF theSeq is null THEN
           SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
         END IF;
-        INSERT INTO px.kvs (kvts, kvstn, kvseq, kvname, kvvalue) VALUES (now(),thestn, theSeq, n, v);
+        INSERT INTO px.kvs (kvts, kvstn, kvseq, kvname, kvvalue) VALUES (now(), thestn, theSeq, n, v);
       END IF;
     END LOOP;
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
+ALTER FUNCTION px.kvupdate( int, text[]) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.kvget( theStn bigint, k text) returns text as $$
-  SELECT  kvvalue FROM px.kvs WHERE kvstn=$1 and kvname=$2 LIMIT 1;
+CREATE OR REPLACE FUNCTION px.kvget( thestn int, k text) returns text as $$
+  SELECT  kvvalue FROM px.kvs WHERE kvname='stns.'||$1::text||'.'||$2 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.kvget( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvget( int, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
-  SELECT  kvvalue FROM px.kvs WHERE kvstn=px.getStation() and kvname=$1 LIMIT 1;
+  SELECT  kvvalue FROM px.kvs WHERE kvname=$1 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
 
@@ -5938,7 +5999,7 @@ CREATE INDEX centertableStn ON px.centertable (cstn);
 CREATE INDEX centertableCv  ON px.centertable (ctcv);
 
 
-CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
+CREATE OR REPLACE FUNCTION px.setcenter( theStn int, thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   --
   -- This is called on every request for a centering video.  When the
   -- first video is requested after a sample transfer the x,y,z,b,t0
@@ -5978,7 +6039,7 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn bigint, thePid text, theIp inet,
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( bigint, text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( int, text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.setcenter( thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   BEGIN
@@ -6054,6 +6115,18 @@ CREATE OR REPLACE FUNCTION px.autologininit() returns void as $$
   SELECT px.autologininit( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.autologininit() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.autologinlisten( theStn int) returns void as $$
+  DECLARE
+    ntfy text;
+  BEGIN
+    SELECT INTO ntfy cnotifylogin FROM px._config WHERE cstnkey=theStn;
+    IF FOUND THEN
+      EXECUTE 'LISTEN ' || ntfy;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.autologinlisten( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.autologinnotify( theStn bigint) returns void as $$
   DECLARE
