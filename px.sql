@@ -813,6 +813,13 @@ CREATE OR REPLACE FUNCTION px.chkdir( theStn bigint, token text) returns void AS
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.chkdir( bigint, text) OWNER TO lsadmin;
 
+CREATE TABLE px.datasettypes (
+  dst text primary key
+);
+ALTER TABLE px.datasettypes OWNER TO lsadmin;
+INSERT INTO px.datasettypes (dst) VALUES ('Normal');
+INSERT INTO px.datasettypes (dst) VALUES ('GridSearch');
+
 
 CREATE TABLE px.datasets (
         dskey      serial primary key,                          -- table key
@@ -829,6 +836,9 @@ CREATE TABLE px.datasets (
         dsfp       text default 'default',                      -- file prfix
         dsstn      bigint                                       -- station to collect in
                 references px.stations (stnkey) ON UPDATE CASCADE,
+        dstype text NOT NULL default 'Normal'
+                references px.datasettypes (dst) ON UPDATE CASCADE,
+        dsparams   numeric[][] default NULL,			-- parameters for the centering modes
         dsoscaxis  text         default 'omega',                -- the Axis to move, presumably NULL means don't move a thing
         dsstart    numeric      default 0,                      -- starting angle of the dataset
         dsdelta    numeric      default 1,                      -- distance to next starting angle (usually owidth)
@@ -843,6 +853,7 @@ CREATE TABLE px.datasets (
                  references px.expunits (eu) ON UPDATE CASCADE,
         dsphi      numeric DEFAULT NULL,                        -- set phi (NULL means don't touch)
         dsomega    numeric DEFAULT NULL,                        -- set omega (NULL means don't touch)
+        dsomegaref numeric DEFAULT NULL,			-- reference angle to convert cetering table x and y into horizontal and vertical.
         dskappa    numeric DEFAULT NULL,                        -- set kappa (NULL means don't touch)
         dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
         dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
@@ -1737,6 +1748,11 @@ CREATE TABLE px.shots (
         skappa   numeric        DEFAULT NULL,           -- as run starting kappa
         sdist    numeric        DEFAULT NULL,           -- as run starting distance
         snrg     numeric        DEFAULT NULL,           -- as run starting energy
+        scenx    numeric        DEFAULT NULL,		-- as run centering stage x value
+        sceny    numeric        DEFAULT NULL,		-- as run centering stage y value
+        salignx  numeric        DEFAULT NULL,		-- as run alignment stage x value
+        saligny  numeric        DEFAULT NULL,		-- as run alignment stage y value
+        salignz  numeric        DEFAULT NULL,		-- as run alignment stage z value
         scmt     text           DEFAULT NULL,           -- comment
         sstate   text                                   -- current state of the shot
                  references px.shotstates (ssstate) ON UPDATE CASCADE,
@@ -2985,6 +3001,17 @@ CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS boolea
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_get_dspeed( thestn int) returns text as $$
+  SELECT epics.caget( epvmlpv) FROM px.epicspvmlink WHERE epvmlname='DSpeed' and epvmlstn=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_dspeed(int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_dspeed() returns text as $$
+  SELECT px.rt_get_dspeed(px.getStation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_dspeed() OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
   DECLARE
     rtn text;
@@ -3916,17 +3943,24 @@ ALTER TABLE px.transferArgs OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int, esttime numeric) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
-    cursam int; -- the current sample
-    curdist numeric; -- the current detector distance
+    cursam int;        -- the current sample
+    curdist numeric;   -- the current detector distance
+    desttime numeric;  -- detector estimated time
+    besttime numeric;  -- the best of md2 and detector estimated time
   BEGIN
     SELECT px.getCurrentSampleID() INTO cursam;
     IF NOT FOUND THEN
       return 0;
     END IF;
 
-    SELECT INTO curdist px.rt_get_dist();
+    SELECT INTO curdist, desttime px.rt_get_dist()::numeric, (650.0 - px.rt_get_dist()::numeric)/ px.rt_get_dspeed()::numeric + 4.0;
+    IF estTime < desttime THEN
+      besttime = desttime;
+    ELSE
+      besttime = esttime;
+    END IF;
 
-    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime, taDist) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, esttime, curdist);
+    INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime, taDist) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, besttime, curdist);
 
     IF cursam = 0 and present THEN
       -- manually mounted sample, 
@@ -3934,19 +3968,19 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       return 0;
     END IF;
     IF cursam = 0 THEN
-      --      PERFORM cats.put_bcrd( theId, xx, yy, zz, esttime);
-      PERFORM cats.put( theId, xx, yy, zz, esttime);
+      --      PERFORM cats.put_bcrd( theId, xx, yy, zz, besttime);
+      PERFORM cats.put( theId, xx, yy, zz, besttime);
     ELSE
       IF theId = 0 THEN
-        PERFORM cats.get( xx, yy, zz, esttime);
+        PERFORM cats.get( xx, yy, zz, besttime);
       ELSE
         IF theId = cursam THEN
-          PERFORM cats.get(xx, yy, zz, esttime);
-          -- PERFORM cats.put_bcrd( theId, xx, yy, zz, esttime);
-          PERFORM cats.put( theId, xx, yy, zz, esttime);
+          PERFORM cats.get(xx, yy, zz, besttime);
+          -- PERFORM cats.put_bcrd( theId, xx, yy, zz, besttime);
+          PERFORM cats.put( theId, xx, yy, zz, besttime);
         ELSE
-          -- PERFORM cats.getput_bcrd( theId, xx, yy, zz, esttime);
-          PERFORM cats.getput( theId, xx, yy, zz, esttime);
+          -- PERFORM cats.getput_bcrd( theId, xx, yy, zz, besttime);
+          PERFORM cats.getput( theId, xx, yy, zz, besttime);
         END IF;
       END IF;
     END IF;
@@ -3956,6 +3990,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
     --
     IF curdist < 650 THEN
         PERFORM px.rt_set_dist( 650);
+        PERFORM px.pusherror(30201,'Moving detector');
     END IF;
     return 1;
   END;
@@ -4822,8 +4857,11 @@ CREATE TABLE px.transferPoints (
 ALTER TABLE px.transferPoints OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, tableZ numeric, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, omega numeric, kappa numeric) returns void as $$
+  DECLARE
+    tool int;
   BEGIN
-    UPDATE cats._toolcorrection SET tcts=now(), tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation();
+    SELECT cttoolno INTO tool FROM cats.states LEFT JOIN cats._cylinder2tool ON ctToolName=csToolNumber WHERE csstn=px.getStation() ORDER BY csKey desc LIMIT 1;
+    UPDATE cats._toolcorrection SET tcts=now(), tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation() and tctool=tool;
     INSERT INTO px.transferPoints( tpStn, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
       ( px.getStation(), tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
@@ -5371,10 +5409,30 @@ CREATE TABLE px.kvs (
           references epics._motions (mmotorpvname) on update cascade,
        kvmd2cmd text default null,			-- use this method to send command to md2 rather than just set the kv value
        kvstn int default null,				-- needed to send commands to md2 from epics
+       kvdbrtype int default 0,				-- native type to report to epics
        UNIQUE( kvname)
 );
 ALTER TABLE px.kvs OWNER TO lsadmin;
 CREATE INDEX kvsNameIndex ON px.kvs (kvname);
+
+CREATE OR REPLACE FUNCTION px.kvtype( thename text, thetype int) returns void as $$
+  DECLARE
+    n text;
+  BEGIN
+    PERFORM px.kvtype( px.getstation(), thename, thetype);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvtype( text, int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvtype( thestn int, thename text, thetype int) returns void as $$
+  DECLARE
+    n text;
+  BEGIN
+    n := 'stns.' || thestn::text || '.' || thename;
+    UPDATE px.kvs SET kvdbrtype = thetype WHERE kvname=n and kvstn=thestn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvtype( int, text, int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.kvspvupdate() returns void as $$
@@ -5428,21 +5486,27 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
     theSeq int;
     n text;
     v text;
+    notify_epics boolean;
   BEGIN
     theSeq := NULL;			-- only set if there is a new value
+    notify_epics := FALSE;		-- only send notify if we've changed something that is monitored
 
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
       n := 'stns.' || thestn::text || '.' || kvps[i];
       v := kvps[i+1];
       SELECT INTO thekey, theValue  kvkey, kvvalue FROM px.kvs WHERE kvname=n LIMIT 1;
       IF FOUND THEN
-        IF theValue = v THEN
-          UPDATE px.kvs SET kvts=now() WHERE kvkey=thekey;
-        ELSE
+        IF theValue != v THEN
           IF theSeq is null THEN
             SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
           END IF;
           UPDATE px.kvs SET kvts=now(), kvseq=theSeq, kvvalue=v WHERE kvkey=thekey;
+          IF not notify_epics THEN
+            PERFORM 1 FROM e.monitors left join e.created_channels on mcc=cckey WHERE cckv=thekey;
+            IF FOUND THEN
+              notify_epics := TRUE;
+            END IF;
+          END IF;
         END IF;
       ELSE
         IF theSeq is null THEN
@@ -5451,6 +5515,9 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
         INSERT INTO px.kvs (kvts, kvstn, kvseq, kvname, kvvalue) VALUES (now(), thestn, theSeq, n, v);
       END IF;
     END LOOP;
+    IF notify_epics THEN
+      NOTIFY EPICS_MONITOR_UPDATE;
+    END IF;
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -5465,6 +5532,73 @@ CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
   SELECT  kvvalue FROM px.kvs WHERE kvname=$1 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void as $$
+  DECLARE
+    thestn int;
+    thekey int;
+    theseq int;
+    thename text;
+    thevalue text;
+    themd2cmd text;
+    md2string text;
+  BEGIN
+    --
+    -- See if this key is associated with a station, ie, thestn means something
+    --
+    PERFORM 1 FROM px.stations where stnkey=maybestn;
+    IF NOT FOUND THEN
+      thename = k;
+      SELECT INTO theStn ((regexp_matches( k, E'^stns\.([0-9]+)\..+'))[1])::int;
+    ELSE
+      thename = 'stns.'||maybestn||'.'||k;
+      thestn := maybestn;
+    END IF;
+
+    --
+    -- See if this is a new kv pair or, perhaps, a new value for an existing pair
+    --
+    SELECT INTO thekey,thevalue,themd2cmd kvkey,kvvalue,kvmd2cmd FROM px.kvs WHERE kvname=thename LIMIT 1;
+    IF NOT FOUND THEN
+      --
+      -- Add it.
+      --
+      SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
+      INSERT INTO px.kvs (kvname, kvvalue, kvseq, kvstn) VALUES (thename, v, theseq, thestn);
+    ELSE
+      --
+      -- Update only if the value is new
+      --
+      IF (v is null and thevalue is not null) or (v is not null and thevalue is null) or (v != theValue) THEN
+        SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
+        UPDATE px.kvs SET kvts=now(), kvseq=theseq, kvvalue=v WHERE kvkey=thekey;
+        IF themd2cmd is not NULL and thestn is not null and v is not null THEN
+          --
+          -- The md2 needs to perform the update
+          --
+          md2string := themd2cmd || ' ' || v;
+          PERFORM px.md2pushqueue( thestn, md2string);
+        END IF;
+        --
+        -- Notify the channel access server if someone is listening for this kv pair
+        --
+        PERFORM 1 FROM e.monitors left join e.created_channels on mcc=cckey WHERE cckv=thekey;
+        IF FOUND THEN
+          NOTIFY EPICS_MONITOR_UPDATE;
+        END IF;
+      END IF;
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvset(int, text, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvset( k text, v text) RETURNS void AS $$
+  BEGIN
+    PERFORM px.kvset( -1, k, v);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
+
 
 
 CREATE TABLE px.tunamemory (
@@ -5840,8 +5974,8 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
         PERFORM px.tunaLoad( theStn, tms || '''WaitUntilTime'', (now()+'''||wtime::text||' seconds''::interval)::text'  ||tmse);
 
         -- Wait for the robot to finish its cycle
-        -- Not in exclusion zone, path not running, Diffractometer on and has AR, cryo locked
-        PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 739) != 99 FROM cats.machinestate('|| theStn::text ||')');
+        -- Not in exclusion zone, Sample Mounted, path not running, Diffractometer on and has AR, cryo locked
+        PERFORM px.tunaLoad( theStn, 'WHILE cats.machinestate('|| theStn::text ||') & 1003 != 355');
         PERFORM px.tunaLoad( theStn,   '1');
         PERFORM px.tunaLoad( theStn, 'RETURN');
 
@@ -5871,7 +6005,7 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
     PERFORM px.tunaLoad( theStn, 'RETURN');
 
     -- Wait for the robot to finish its cycle
-    PERFORM px.tunaLoad( theStn, 'WHILE ("State" & 739) != 99 FROM cats.machinestate(' || theStn::text || ')');
+    PERFORM px.tunaLoad( theStn, 'WHILE cats.machinestate(' || theStn::text || ') & 1003 != 483');
     PERFORM px.tunaLoad( theStn,   '1');
     PERFORM px.tunaLoad( theStn, 'RETURN');
 
@@ -5896,11 +6030,13 @@ CREATE TABLE px.trigcamtable (
 );
 ALTER TABLE px.trigcamtable OWNER TO lsadmin;
 
-CREATE TYPE px.trigcamtype AS ( ip inet, port int, ts timestamptz, zoom int, startAngle float, speed float, fullpath text, esaf int, uid int, gid int);
+drop type px.trigcamtype cascade;
+CREATE TYPE px.trigcamtype AS ( ip inet, port int, ts timestamptz, zoom int, startAngle float, speed float, fullpath text, esaf int, uid int, gid int, hash text);
 
-CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype AS $$
+CREATE OR REPLACE FUNCTION px.gettrigcam( theStn int) RETURNS px.trigcamtype AS $$
   DECLARE
     rtn px.trigcamtype;
+    centers_index int;
   BEGIN
     SELECT tcip,   tcport,   to_char(tcts, 'YYYY-MM-DD HH24:MI:SS.MS'), tcZoom,   tcStartAngle,   tcSpeed
       INTO rtn.ip, rtn.port, rtn.ts,                                  rtn.zoom, rtn.startAngle, rtn.speed
@@ -5909,8 +6045,12 @@ CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype 
       ORDER BY tcts
       DESC LIMIT 1;
 
-    SELECT cvPath,       cvuid,    cvgid
-      INTO rtn.fullpath, rtn.uid, rtn.gid
+    centers_index = (coalesce(px.kvget( thestn, 'centers.editIndex'),'0'))::int;
+    PERFORM px.kvset( thestn, 'centers.'||centers_index||'.startTime', (rtn.ts - (((rtn.startAngle/rtn.speed)::numeric)::text || ' seconds')::interval)::text);
+    PERFORM px.kvset( thestn, 'centers.'||centers_index||'.videoLength', (360.0/rtn.speed)::text);
+
+    SELECT cvPath,       cvuid,   cvgid,   cvhash
+      INTO rtn.fullpath, rtn.uid, rtn.gid, rtn.hash
       FROM rmt.centeringvideos
       LEFT JOIN px.stnstatus ON cvhash = sscvhash
       WHERE ssstn = theStn;
@@ -5918,7 +6058,7 @@ CREATE OR REPLACE FUNCTION px.gettrigcam( theStn bigint) RETURNS px.trigcamtype 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.gettrigcam( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.gettrigcam( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.gettrigcam() RETURNS px.trigcamtype AS $$
   DECLARE
@@ -5933,7 +6073,7 @@ ALTER FUNCTION px.gettrigcam() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.gettrigcam( ntfy text) RETURNS px.trigcamtype AS $$
   DECLARE
     rtn px.trigcamtype;
-    theStn bigint;
+    theStn int;
   BEGIN
     SELECT INTO theStn cstn FROM rmt.cams WHERE ntfy=ccenternotify;
     rtn := NULL;
@@ -5975,6 +6115,46 @@ CREATE OR REPLACE FUNCTION px.trigcam( ts timestamptz, zoom int, startAngle floa
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.trigcam( timestamptz, int, float, float) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.trigcamdone( hash text) returns void as $$
+  DECLARE
+    centers_index int;
+    centers_length int;
+    thestn int;
+    ct record;
+  BEGIN
+    SELECT INTO ct * FROM px.centertable WHERE ctcv=hash;
+    IF NOT FOUND THEN
+      return;
+    END IF;
+    thestn := ct.cstn;
+
+    SELECT INTO centers_length px.kvget( thestn, 'centers.length')::int;
+    IF centers_length <= 0 THEN
+      centers_length := 1;
+      perform px.kvset( thestn, 'centers.length', centers_length::text);
+    END IF;
+
+    SELECT INTO centers_index px.kvget( thestn, 'centers.editIndex');
+    IF centers_index >= centers_length THEN
+      centers_index := centers_length -1;
+      PERFORM px.kvset( thestn, 'centers.editIndex', centers_index::text);
+    END IF;
+    perform px.kvset( thestn, 'centers.'||centers_index||'.hash', hash);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.cx',   ct.cabscx::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.cy',   ct.cabscy::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.ax',   ct.cabsax::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.ay',   ct.cabsay::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.az',   ct.cabsaz::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.zoom', ct.czoom::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.b',    ct.cb::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.t0',   ct.ct0::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.phi',  ct.cabsphi::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.kappa',ct.cabskappa::text);
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.trigcamdone( text) OWNER TO lsadmin;
+
 CREATE TABLE px.centertable (
        ckey serial primary key,
        cts timestamptz default now(),
@@ -5988,11 +6168,18 @@ CREATE TABLE px.centertable (
          ON DELETE SET NULL
          ON UPDATE CASCADE,
        czoom int not null default 1,
-       cx float,        -- Centering table horizontal (focus direction)
-       cy float,        -- Centering table vertical
-       cz float,        -- Alignment table y (horizontal as seen on screen)
+       cx float,        -- Centering table horizontal (focus direction) change
+       cy float,        -- Centering table vertical change
+       cz float,        -- Alignment table y (horizontal as seen on screen) change
        b  float,        -- y offset to edge of screen
        t0 float,        -- angle
+       cabscx float,	-- absolute value of centering table x after applying changes
+       cabscy float,	-- absolute value of centering table y after applying changes
+       cabsax float,	-- absolute value of alignment table x after applying changes
+       cabsay float,	-- absolute value of alignment table y after applying changes
+       cabsaz float,	-- absolute value of alignment table z after applying changes
+       cabskappa float, -- absolute value of kappa after applying changes
+       cabsphi float    -- absolute value of phi after applying changes
 );
 ALTER TABLE px.centertable OWNER TO lsadmin;
 CREATE INDEX centertableStn ON px.centertable (cstn);
@@ -6035,7 +6222,7 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn int, thePid text, theIp inet, th
       --
       -- We get here if someone, like a super user, gets permission to run centering with no one logged in to the MD2.  Probably not a good idea.
       -- 
-      INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz, cb, ct0) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z, b, t0);
+      INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz,cb, ct0) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z, b, t0);
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -6043,10 +6230,10 @@ ALTER FUNCTION px.setcenter( int, text, inet, int, int, float, float, float, flo
 
 CREATE OR REPLACE FUNCTION px.setcenter( thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   BEGIN
-    PERFORM px.setcenter( px.getStation(), thePid, theIp, thePort, zoom, x, y, z, b, t0);
+    PERFORM px.setcenter( px.getStation(), thePid, theIp, thePort, zoom, x, y, z, ax, ay, b, t0);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float, float, float) OWNER TO lsadmin;
 
 
 DROP TYPE px.centertype CASCADE;
@@ -6056,7 +6243,7 @@ CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS
   DECLARE
     rtn px.centertype;  
   BEGIN
-    SELECT cpid, cip, cport, czoom, cx, cy, cz, cb, ct0 INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom, rtn.x, rtn.y, rtn.z, rtn.b, rtn.t0 FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
+    SELECT cpid, cip, cport, czoom, round(cx::numeric,3), round(cy::numeric,3), round(cz::numeric,3), round(cb::numeric,3), round(ct0::numeric,3) INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom, rtn.x, rtn.y, rtn.z, rtn.b, rtn.t0 FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
     IF NOT FOUND THEN
       rtn.pid = '0';
       rtn.ip  = '127.0.0.1'::inet;
@@ -6097,6 +6284,26 @@ CREATE OR REPLACE FUNCTION px.getcenter( ntfy text) returns px.centertype AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.applycenter( thestn int, cx float, cy float, ax float, ay float, az float, kappa float, phi float) returns void as $$
+  DECLARE
+    ourkey int;
+  BEGIN
+    SELECT INTO ourkey ckey FROM px.centertable WHERE cstn=thestn ORDER BY ckey DESC LIMIT 1;
+    UPDATE px.centertable SET cabscx=cx, cabscy=cy, cabsax=ax, cabsay=ay, cabsaz=az, cabskappa=kappa, cabsphi=phi WHERE ckey=ourkey;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.applycenter( int, float, float, float, float, float, float, float) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.applycenter( cx float, cy float, ax float, ay float, az float, kappa float, phi float) returns void as $$
+  BEGIN
+    PERFORM px.applycenter( px.getstation(), cx, cy, ax, ay, az, kappa, phi);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.applycenter( float, float, float, float, float, float, float) OWNER TO lsadmin;
+
+
 
 
 CREATE OR REPLACE FUNCTION px.autologininit( theStn bigint) returns void as $$
