@@ -4030,18 +4030,27 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.waitCryo() OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.endTransfer() RETURNS void AS $$
+CREATE OR REPLACE FUNCTION px.endTransfer( bigstn bigint) RETURNS void AS $$
   DECLARE
     ntfy text;
+    thestn int;
+    centers_length int;
   BEGIN
-    SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=px.getstation();
+    thestn := bigstn;
+    SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=thestn;
     IF FOUND THEN
       EXECUTE 'NOTIFY ' || ntfy;
     END IF;        
-    PERFORM px.pushError( 30000, 'Mounted Sample Changed');
+    PERFORM px.pushError( thestn, 30000, 'Mounted Sample Changed');
+    centers_length = px.kvget( thestn, 'centers.length')::int;
+    FOR i IN 0 .. centers_length-1 LOOP
+      PERFORM px.kvset( thestn,'centers.'||i||'.hash','');
+    END LOOP;
+    PERFORM px.kvset( thestn,'centers.editIndex', '0');
+    PERFORM px.kvset( thestn,'centers.length', '1');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.endTransfer() OWNER TO lsadmin;
+ALTER FUNCTION px.endTransfer(bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
   DECLARE
@@ -6243,7 +6252,13 @@ CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS
   DECLARE
     rtn px.centertype;  
   BEGIN
-    SELECT cpid, cip, cport, czoom, round(cx::numeric,3), round(cy::numeric,3), round(cz::numeric,3), round(cb::numeric,3), round(ct0::numeric,3) INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom, rtn.x, rtn.y, rtn.z, rtn.b, rtn.t0 FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
+    SELECT    cpid,    cip,    cport,    czoom, round(cx::numeric,3), round(cy::numeric,3), round(cz::numeric,3), round(cb::numeric,3), round(ct0::numeric,3)
+      INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom,    rtn.x,                rtn.y,                rtn.z,                rtn.b,                rtn.t0
+      FROM px.centertable
+      WHERE cstn=theStn
+      ORDER BY ckey DESC
+      LIMIT 1;
+
     IF NOT FOUND THEN
       rtn.pid = '0';
       rtn.ip  = '127.0.0.1'::inet;
@@ -6475,3 +6490,125 @@ CREATE OR REPLACE FUNCTION px.rt_get_topres( ) returns text as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_topres( ) OWNER TO lsadmin;
+
+
+
+DROP TYPE IF EXISTS px._dstimestype CASCADE;
+CREATE TYPE px._dstimestype AS ( stn int, exptime numeric, proprietary text, nframes int, clocktime numeric, srate numeric);
+CREATE OR REPLACE FUNCTION px._dstimes() RETURNS setof px._dstimestype as $$
+  DECLARE
+    rtn px._dstimestype;
+    thedspid text;
+  BEGIN
+    FOR rtn.stn IN SELECT stnkey FROM px.stations ORDER BY stnkey LOOP
+      FOR           thedspid, rtn.exptime, rtn.proprietary,  rtn.srate
+          IN SELECT dspid,    dsexp,       eproprietaryflag, dsdelta/dsexp
+          FROM px.datasets
+          LEFT JOIN esaf.esafs ON dsesaf=eexperimentid
+          WHERE dsstn=rtn.stn and dsexp != 0
+          LOOP
+        SELECT INTO rtn.nframes count(*) FROM px.shots WHERE sdspid=thedspid and sstate='Done' and stype='normal';
+        IF rtn.nframes < 90 THEN
+          CONTINUE;
+        END IF;
+        SELECT INTO rtn.clocktime lsched.tohours(max(sts)-min(sts))*3600 FROM px.shots WHERE sdspid=thedspid and sstate='Done' and stype='normal';
+        IF rtn.clocktime > 2*3600 THEN
+          CONTINUE;
+        END IF;
+        return next rtn;
+      END LOOP;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px._dstimes() OWNER TO lsadmin;
+
+DROP TYPE IF EXISTS px.dstimestype CASCADE;
+CREATE TYPE px.dstimestype AS ( stn int, srate numeric, proprietary text, ndatasets int, avg_overhead numeric, stddev_overhead numeric);
+CREATE OR REPLACE FUNCTION px.dstimes() RETURNS setof px.dstimestype as $$
+  SELECT stn, srate, proprietary, count(*)::int, avg(clocktime/nframes-exptime), stddev(clocktime/nframes-exptime)
+  FROM px._dstimes()
+  GROUP BY stn, proprietary, srate
+  ORDER BY  stn, proprietary, count(*) desc;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.dstimes() OWNER TO lsadmin;
+
+DROP TYPE IF EXISTS px.blusagetype CASCADE;
+CREATE TYPE px.blusagetype AS (stn int, esaf int, institution text, funding text, duration numeric, shots int);
+CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype AS $$
+  DECLARE
+    rtn px.blusagetype;
+    starttime timestamp with time zone;
+    endtime timestamp with time zone;
+    nfunding int;
+  BEGIN
+    SELECT INTO starttime srnstart FROM lsched.syncrunnames WHERE srnname=therun;
+    IF NOT FOUND OR starttime is null THEN
+      RAISE EXCEPTION 'Run name "%" is not valid', therun;
+    END IF;
+    SELECT INTO endtime srnstart FROM lsched.syncrunnames WHERE srnstart>starttime ORDER BY srnstart asc LIMIT 1;
+    IF NOT FOUND OR endtime is null THEN
+      RAISE EXCEPTION 'Run name "%" does not appear to end', therun;
+    END IF;
+
+    FOR rtn.stn, rtn.esaf, rtn.shots, rtn.duration IN
+      SELECT dsstn, dsesaf, count(*), lsched.tohours(max(sts)-min(sts))
+        FROM px.datasets
+        LEFT JOIN px.shots ON sdspid=dspid
+        WHERE sstate='Done' and dscreatets >= starttime and dscreatets <= endtime and dsstn != 2
+        GROUP BY dsstn, dsesaf
+      LOOP
+      PERFORM 1 FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' AND expbadgeno=85460;
+      IF FOUND THEN
+        CONTINUE;
+      END IF;
+      SELECT INTO rtn.institution expinst FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
+      SELECT INTO nfunding count(*) FROM esaf.esaffunding WHERE efexpid=rtn.esaf;
+      IF NOT FOUND or nfunding=0 THEN
+        return next rtn;
+      ELSE
+        rtn.shots = rtn.shots/nfunding;
+        FOR rtn.funding IN SELECT effunding FROM esaf.esaffunding WHERE efexpid=rtn.esaf LOOP
+          return next rtn;
+        END LOOP;
+      END IF;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.blusage( esaf int) returns setof px.blusagetype AS $$
+  DECLARE
+    rtn px.blusagetype;
+    nfunding int;
+  BEGIN
+    FOR rtn.stn, rtn.esaf, rtn.shots, rtn.duration IN
+      SELECT dsstn, dsesaf, count(*), lsched.tohours(max(sts)-min(sts))
+        FROM px.datasets
+        LEFT JOIN px.shots ON sdspid=dspid
+        WHERE sstate='Done' and dsesaf=esaf and dsstn != 2
+        GROUP BY dsstn, dsesaf
+      LOOP
+      PERFORM 1 FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' AND expbadgeno=85460;
+      IF FOUND THEN
+        CONTINUE;
+      END IF;
+      SELECT INTO rtn.institution expinst FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
+      SELECT INTO nfunding count(*) FROM esaf.esaffunding WHERE efexpid=rtn.esaf;
+      IF NOT FOUND or nfunding=0 THEN
+        return next rtn;
+      ELSE
+        rtn.shots = rtn.shots/nfunding;
+        FOR rtn.funding IN SELECT effunding FROM esaf.esaffunding WHERE efexpid=rtn.esaf LOOP
+          return next rtn;
+        END LOOP;
+      END IF;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
+
+
