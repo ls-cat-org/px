@@ -509,6 +509,22 @@ CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.checkDiffractometerOn( thestn int) RETURNS boolean AS $$
+  --
+  -- returns false if the diffractometer is on
+  --
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT pg_try_advisory_lock( thestn, 1) INTO rtn;
+    IF rtn THEN
+      PERFORM pg_advisory_unlock( thestn, 1);
+    END IF;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
   DECLARE
   BEGIN
@@ -1890,6 +1906,7 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
+    ntfy text;
   BEGIN
     --
     -- update status variables
@@ -1897,6 +1914,9 @@ CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
     IF OLD.sstate != 'Done' and NEW.sstate = 'Done' and coalesce( NEW.sbupath,'') != '' THEN
       UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
       INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
+      IF NEW.stype='normal' and NEW.sindex % 10 = 0 THEN
+        EXECUTE 'NOTIFY roboprocess_' || NEW.sdspid;
+      END IF;
     END IF;
   RETURN NULL;
   END;
@@ -2403,6 +2423,12 @@ CREATE OR REPLACE FUNCTION px.pauseUpdateTF()  returns trigger AS $$
   DECLARE
   BEGIN
     UPDATE px.stnstatus SET sspaused = (NEW.pps != 'Not Paused') WHERE ssstn=NEW.pstn;
+    PERFORM 1 FROM px.runqueue WHERE rqstn=NEW.pstn;
+    IF FOUND and NEW.pps = 'Not Paused' THEN
+      PERFORM px.kvset( NEW.pstn,'running','1');
+    ELSE
+      PERFORM px.kvset( NEW.pstn,'running','0');
+    END IF;
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -2462,7 +2488,8 @@ CREATE OR REPLACE FUNCTION px.pauseTell() RETURNS VOID AS $$
     ELSE
       INSERT INTO px.pause (ptc,pStn,pps) VALUES (now(),px.getStation(),'I Paused');
     END IF;
-  END;
+    PERFORM px.kvset(px.getstation(),'running', '0');
+    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pauseTell() OWNER TO lsadmin;
 
@@ -2539,7 +2566,9 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
         PERFORM px.pushrunqueue( pid, stype);
       END LOOP;
     ELSE
-      PERFORM dskey FROM px.datasets WHERE dspid=token and dsdirs='Valid';
+      -- make sure it exists and has a valid directory
+      --
+      PERFORM 1 FROM px.datasets WHERE dspid=token and dsdirs='Valid';
       IF FOUND THEN
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
@@ -2803,12 +2832,27 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
     curKey    bigint; -- the key of the current dataset
     rq record;  -- records to update
     i  int;     -- welecome to the new order
+    curpid text; -- current dspid
+    curtype text; -- current type
+
   BEGIN
     --  get the current parent and the current key
-    SELECT rqKey, dsparent INTO curKey, curParent FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() ORDER BY rqOrder ASC limit 1;
+    SELECT rqKey, dsparent, rqtoken, rqtype INTO curKey, curParent, curpid, curtype FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() ORDER BY rqOrder ASC limit 1;
     IF NOT FOUND THEN
+      --
+      -- Let the UI and epics world know we are not running
+      --
+      perform px.kvset(px.getstation(),'running', '0');
       return;
     END IF;
+
+    IF curtype = 'normal' THEN
+      PERFORM 1 WHERE px.shots_count_done_normals(curpid) % 10 = 0;
+      IF NOT FOUND THEN
+        EXECUTE 'NOTIFY roboprocess_' || curpid;
+      END IF;
+    END IF;
+    
 
     DELETE FROM px.runqueue WHERE rqKey = curKey;
     i := 1;
@@ -3860,6 +3904,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     zz1 numeric;
     theStn int;                 -- our station
     angr float;                 -- rotation angle (in rads)
+    tool int;			-- our current tool
   BEGIN
     --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
     SELECT px.getStation() INTO theStn;
@@ -3867,8 +3912,10 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
       return 0;
     END IF;
 
+    SELECT INTO tool cttoolno FROM cats.states LEFT JOIN cats._cylinder2tool ON ctToolName=csToolNumber WHERE csstn=theStn ORDER BY csKey desc LIMIT 1;
+
     SELECT * FROM px.rt_get_magnetPosition() INTO mp;           -- magnet position relative to table
-    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=theStn ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
+    SELECT * INTO tp FROM px.transferPoints WHERE tpStn=theStn and (tptool is null or tptool=tool) ORDER BY tpKey DESC LIMIT 1;    -- magnet position relative to MD2
     -- MD2 uses a righthanded coordinate system with x downstream and z up
     -- LS-CAT uses a righthanded coordinate system with y up and z downstream
     -- Here we compute the CATS coordinate corrections.  Here x, y, z is in the CATS system
@@ -4179,7 +4226,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
         -- Start centering if we really have a sample and it is not hand mounted and it is the correct one
         --
         SELECT INTO rsmp taid FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
-        SELECT INTO spres px.kvget( thestn, 'SamplePresent')='True';
+        SELECT INTO spres px.kvget( thestn, 'SamplePresent')='true';
 
         IF rsmp is not null and rsmp != 0 and rsmp = smpl and spres is not null and spres THEN
           PERFORM px.setcenter( thestn, NULL, '0.0.0.0'::inet, 0, 1, 0.0, 0.0, 0.0, 0.0, 0.0);
@@ -4852,6 +4899,7 @@ CREATE TABLE px.transferPoints (
        tpKey serial primary key,
        tpStn bigint references px.Stations (stnkey),
        tpStamp timestamp with time zone default now(),
+       tpTool int default null,
        tpTableX numeric,
        tpTableY numeric,
        tpTableZ numeric,
@@ -4871,8 +4919,8 @@ CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, 
   BEGIN
     SELECT cttoolno INTO tool FROM cats.states LEFT JOIN cats._cylinder2tool ON ctToolName=csToolNumber WHERE csstn=px.getStation() ORDER BY csKey desc LIMIT 1;
     UPDATE cats._toolcorrection SET tcts=now(), tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation() and tctool=tool;
-    INSERT INTO px.transferPoints( tpStn, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
-      ( px.getStation(), tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
+    INSERT INTO px.transferPoints( tpStn, tptool, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
+      ( px.getStation(), tool, tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
