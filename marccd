@@ -69,7 +69,7 @@ fi
 #
 # Make sure the marMosaic module is loaded
 #
-modprobe marMosaic
+/sbin/modprobe marMosaic
 
 #
 # Find out who has logged into the MD2 and who we are running as

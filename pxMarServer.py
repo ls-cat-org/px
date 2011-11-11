@@ -168,7 +168,7 @@ class PxMarServer:
 
                     try:
                         print >> sys.stderr, time.asctime(), "making directory %s" % ( bud)
-                        os.makedirs( bud)
+                        os.makedirs( bud, 0770)
                     except OSError, (errno, strerr):
                         if errno != 17:
                             qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
@@ -351,7 +351,7 @@ class PxMarServer:
         #
         # Try to create directory
         try:
-            os.makedirs( theDir)
+            os.makedirs( theDir, 0770)
             #
             # No error means the directory was valid and we just created it
             theDirState = 'Valid'
@@ -474,7 +474,7 @@ class PxMarServer:
 
                         if r["dsdir"] != None and r["sfn"] != None and len(r["sfn"])>0:
                             try:
-                                os.makedirs( r["dsdir"])
+                                os.makedirs( r["dsdir"], 0770)
                             except OSError, (errno, strerror):
                                 if errno != 17:
                                     qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(r["dsdir"]), int(errno), self.es(strerror))

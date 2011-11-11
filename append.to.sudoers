@@ -4,3 +4,4 @@ ALL ALL=NOPASSWD: /usr/bin/killall -q -s KILL pxMarServer.py
 ALL ALL=NOPASSWD: /usr/local/bin/fixMarccdLog
 ALL ALL=NOPASSWD: /usr/local/bin/fixMarccdLog
 ALL ALL=NOPASSWD: /usr/local/bin/AutoDetector.py
+ALL ALL=NOPASSWD: /sbin/modprobe marMosaic

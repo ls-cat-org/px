@@ -2573,6 +2573,7 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
           INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( px.getstation(), token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=px.getStation()));
+	  
           PERFORM 1 FROM px.pause WHERE pStn=px.getstation() and pps='Not Paused';
           IF FOUND THEN
             PERFORM px.startrun();
@@ -2881,6 +2882,18 @@ CREATE OR REPLACE FUNCTION px.clearrunqueue() RETURNS void AS $$
   DELETE FROM px.runqueue WHERE rqStn = px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.clearrunqueue() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.runqueue_has( pid text) returns BOOLEAN AS $$
+  BEGIN
+    PERFORM 1 FROM px.runqueue WHERE rqtoken=pid;
+    IF FOUND THEN
+      return true;
+    END IF;
+    return false;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.runqueue_has( text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.startrun() returns void AS $$
   DECLARE
