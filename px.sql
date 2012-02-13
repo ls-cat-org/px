@@ -939,7 +939,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn bigint, expid int) RETURNS text
   BEGIN
     SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, theStn, expid, (select stndataroot from px.stations where stnkey=theStn));
-    PERFORM px.chkdir( rtn);
+    PERFORM px.chkdir( theStn, rtn);
     PERFORM px.mkshots( rtn);
     RETURN rtn;
   END;
@@ -1872,18 +1872,22 @@ CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
 
+
+
+DROP TYPE px.nextshottype CASCADE;
 CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
-        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int);
+        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int, cx numeric, cy numeric, ax numeric, ay numeric, az numeric, sindex int, stype text);
 
 CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
   DECLARE
     rtn px.nextshottype;        -- the return value
     rq  record;                 -- the runqueue record at the top of the queueu
+
   BEGIN
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition
+      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition, 0, 0, 0, 0, 0, sindex, stype
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -1896,6 +1900,13 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
           RETURN;
         END IF;
       END IF;
+
+      IF rtn.stype = 'normal' THEN
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az * from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+      ELSE
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az  * from px.center_interpolate( px.getStation(), 1, 1);
+      END IF;
+
       RETURN NEXT rtn;
     END IF;
     RETURN;
@@ -2573,7 +2584,9 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
           INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( px.getstation(), token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=px.getStation()));
-	  
+          IF stype = 'normal' THEN
+            PERFORM rmt.cmdrqstroboprocess(token);
+          END IF;
           PERFORM 1 FROM px.pause WHERE pStn=px.getstation() and pps='Not Paused';
           IF FOUND THEN
             PERFORM px.startrun();
@@ -2610,6 +2623,9 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( theStn bigint, token text, stype tex
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
           INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( theStn, token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=theStn));
+          IF stype = 'normal' THEN
+            PERFORM rmt.cmdrqstroboprocess(token);
+          END IF;
           PERFORM 1 FROM px.pause WHERE pStn=theStn and pps='Not Paused';
           IF FOUND THEN
             PERFORM px.startrun( theStn);
@@ -3729,7 +3745,7 @@ CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
     SELECT * INTO tmp FROM px.md2popqueue();
     IF length( tmp.md2cmd)>0 THEN
       rtn.action := tmp.md2Cmd;
-      rtn.key    := tmp.md2Key;
+      rtn.key    := tmp.md2Key::bigint;
     ELSE
       IF not px.ispaused() THEN
         PERFORM 1 FROM px.runqueue WHERE rqstn = px.getstation();
@@ -4083,8 +4099,8 @@ ALTER FUNCTION px.unlockCryo() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.waitCryo() RETURNS void AS $$
   DECLARE
   BEGIN
-    PERFORM pg_advisory_lock( px.getstation(), 6);
-    PERFORM pg_advisory_unlock( px.getstation(), 6);
+    PERFORM pg_advisory_lock( px.getstation()::int, 6);
+    PERFORM pg_advisory_unlock( px.getstation()::int, 6);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.waitCryo() OWNER TO lsadmin;
@@ -5375,9 +5391,40 @@ CREATE OR REPLACE FUNCTION px.logout( theStn bigint) returns void as $$
     UPDATE px.logins set louts=now() WHERE lstn=theStn and louts is null;
     DELETE FROM px.stnstatus WHERE ssstn=theStn;
     DELETE FROM rmt.uistreams USING px.kvs WHERE uiskv=kvkey and kvname like 'stns.'||thestn::text||'.%';
+    PERFORM px.autologinnotify( theStn);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.logout( bigint) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.detectorvncinit( thestn int) returns void as $$
+  DECLARE
+    ntfy text;
+  BEGIN
+    SELECT INTO ntfy cnotifylogin FROM px._config WHERE cstnkey=thestn;
+    IF NOT FOUND or ntfy is null THEN
+      return;
+    END IF;
+    EXECUTE 'LISTEN ' || ntfy;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.detectorvncinit( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.detectorvncinit() returns void as $$
+  SELECT px.detectorvncinit( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.detectorvncinit() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.currentesaf( thestn int) returns int as $$
+  SELECT ssesaf FROM px.stnstatus WHERE ssstn=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.currentesaf( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.currentesaf() RETURNS int as $$
+  SELECT px.currentesaf( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.currentesaf() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.whoami( theStn bigint) returns text AS $$
@@ -5668,6 +5715,107 @@ CREATE OR REPLACE FUNCTION px.kvset( k text, v text) RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
+
+
+CREATE TYPE px.center_interpolate_type AS ( cx float, cy float, ax float, ay float, az float);
+ALTER TYPE px.center_interpolate_type OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, nframes int) returns px.center_interpolate_type AS $$
+  DECLARE
+    mm float;                   -- slope
+    bb float;                   -- offset
+    n int;                      -- number of points 
+    s float;                    -- distance along path
+    si int;                     -- segment index: identifies segment we are on
+    total_length float;         -- length in mm of each path segment from the begining of the first segment
+    rtn px.center_interpolate_type;
+    frame_index int;            -- maybe_frame is allowed to be > nframes; frame_index wraps around
+    thedd float;
+
+  BEGIN
+    SELECT INTO  n px.kvget( thestn, 'centers.length')::int;
+
+    -- raise notice 'centers.length  (n) = %', n;
+
+    --
+    -- I suppose you could call this before any centering or with any frames.  GIGO
+    --
+    IF NOT FOUND or n < 1 THEN
+      RETURN NULL;
+    END IF;
+    
+
+    --
+    -- convert the center point kv pairs into a table of floats
+    --
+    -- DROP TABLE interpolate_table;
+    -- CREATE TABLE interpolate_table (k, cx, cy, ax, ay, az, d, dd) AS
+    CREATE TEMPORARY TABLE interpolate_table (k, cx, cy, ax, ay, az, d, dd) ON COMMIT DROP AS
+      SELECT I::int, px.kvget(thestn,'centers.'||(I-1)||'.cx')::float, px.kvget(thestn,'centers.'||(I-1)||'.cy')::float, px.kvget(thestn,'centers.'||(I-1)||'.ax')::float,
+                px.kvget(thestn,'centers.'||(I-1)||'.ay')::float, px.kvget(thestn,'centers.'||(I-1)||'.az')::float, 0.0::float, 0.0::float
+        FROM generate_series( 1, n) AS I;
+
+
+    -- raise notice 'n center points: %', (select count(*) from interpolate_table);
+    --
+    -- calculate the segment distances and the totals: probably not the most efficent but unless we start having 10's of thousands of points it probably does not matter;
+    --
+    UPDATE interpolate_table as b SET d  = sqrt( (b.cx-a.cx)^2 + (b.cy-a.cy)^2 + (b.ax-a.ax)^2 + (b.ay-a.ay)^2 + (b.az-a.az)^2) FROM interpolate_table AS a WHERE b.k=a.k+1;
+    thedd = 0.0;
+    FOR I IN 1 .. n LOOP
+      SELECT INTO thedd sum(d) FROM interpolate_table WHERE k <= i;
+      UPDATE interpolate_table SET dd = thedd WHERE k=i;
+      -- raise notice 'i: %  dd %', i, thedd;
+    END LOOP;
+
+    SELECT INTO total_length max(dd) FROM interpolate_table;
+
+    -- raise notice 'total_length: %', total_length;
+
+    --
+    -- Figure out which segment we are on
+    --
+    frame_index = maybe_frame % nframes;
+    s = maybe_frame::float / nframes::float * total_length;
+
+    SELECT INTO si max(k)+1 FROM interpolate_table WHERE  dd<s;
+    IF si > n THEN
+      si = n;
+    END IF;
+
+    -- raise notice 's = %,  si = %', s, si;
+    
+    PERFORM 1 FROM interpolate_table WHERE k=si AND (dd < 1e-8 OR d < 1e-8);
+    IF si = 1 OR (si>1 and FOUND) THEN
+      -- raise notice 'Corner case: found=%, si=%', FOUND, si;
+      --
+      -- Corner case: si = 1, ie, we only have one center point
+      -- Corner case: si > 1 but the total distance to that point is REALLY small
+      -- Corner case: si > 1 but the segment distance to that point is REALLY small
+      --
+      SELECT INTO rtn cx,cy,ax,ay,az FROM interpolate_table WHERE k=si;
+
+      DROP TABLE interpolate_table;
+      RETURN rtn;
+    END IF;
+
+    SELECT INTO rtn
+           (b.cx-a.cx)/b.d * (s - a.dd) + a.cx,
+           (b.cy-a.cy)/b.d * (s - a.dd) + a.cy,
+           (b.ax-a.ax)/b.d * (s - a.dd) + a.ax,
+           (b.ay-a.ay)/b.d * (s - a.dd) + a.ay,
+           (b.az-a.az)/b.d * (s - a.dd) + a.az
+      FROM interpolate_table AS a
+      LEFT JOIN interpolate_table AS b ON a.k = b.k-1
+      WHERE b.k=si;
+
+    DROP TABLE interpolate_table;
+    RETURN rtn;
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.center_interpolate( int, int, int) OWNER TO lsadmin;
+
 
 
 
