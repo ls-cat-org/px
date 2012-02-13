@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/local/bin/python
 #
 # Automatically run marccd as the right user in the right directory
 #
@@ -61,7 +61,8 @@ class AutoDetector:
                 # Time for a changing of the guard
                 #
                 self.currentUser = newUser
-                self.spawn()
+                if self.currentUser != None:
+                    self.spawn()
 
 
     def spawn( self):
