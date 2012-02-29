@@ -5744,6 +5744,15 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
       RETURN NULL;
     END IF;
     
+    if n = 1 then
+      select into rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
+                  px.kvget( thestn, 'centers.0.cx')::float,
+                  px.kvget( thestn, 'centers.0.cy')::float,
+                  px.kvget( thestn, 'centers.0.ax')::float,
+                  px.kvget( thestn, 'centers.0.ay')::float,
+                  px.kvget( thestn, 'centers.0.az')::float;
+      return rtn;
+    end if;
 
     --
     -- convert the center point kv pairs into a table of floats
