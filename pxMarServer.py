@@ -482,6 +482,12 @@ class PxMarServer:
                                     print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
 
                             #
+                            # set the kv pair for the directory and file name
+                            #
+                            self.query( "select px.kvset('directory', '%s')" % r["dsdir"])
+                            self.query( "select px.kvset('filename', '%s')"  % r["sfn"])
+
+                            #
                             # Delete the file first so that the hard link to the old file remains
                             # otherwise marccd will simply replace the contents of the old file and the hardlink
                             # will be to the new file, not the old one
