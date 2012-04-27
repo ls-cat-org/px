@@ -1876,7 +1876,7 @@ ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
 
 DROP TYPE px.nextshottype CASCADE;
 CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
-        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int, cx numeric, cy numeric, ax numeric, ay numeric, az numeric, sindex int, stype text);
+        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int, cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text);
 
 CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
   DECLARE
@@ -1887,7 +1887,7 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition, 0, 0, 0, 0, 0, sindex, stype
+      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition, 0, 0, 0, 0, 0, 0, sindex, stype
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -1902,9 +1902,9 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
       END IF;
 
       IF rtn.stype = 'normal' THEN
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az * from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
       ELSE
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az  * from px.center_interpolate( px.getStation(), 1, 1);
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
       END IF;
 
       RETURN NEXT rtn;
@@ -3739,7 +3739,7 @@ CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
   DECLARE
     rtn px.nextActionType;    -- return value
     tmp px._md2queue;    --
-  BEGIN
+   BEGIN
     rtn.key    := 0;
     rtn.action := 'noAction';
     SELECT * INTO tmp FROM px.md2popqueue();
@@ -5717,7 +5717,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
 
 
-CREATE TYPE px.center_interpolate_type AS ( cx float, cy float, ax float, ay float, az float);
+drop type px.center_interpolate_type cascade;
+CREATE TYPE px.center_interpolate_type AS ( cx float, cy float, ax float, ay float, az float, active int);
 ALTER TYPE px.center_interpolate_type OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, nframes int) returns px.center_interpolate_type AS $$
@@ -5745,6 +5746,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     END IF;
     
     if n = 1 then
+      rtn.active = 0;	-- Don't change activate this if there is no second point
       select into rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
                   px.kvget( thestn, 'centers.0.cx')::float,
                   px.kvget( thestn, 'centers.0.cy')::float,
@@ -5802,13 +5804,14 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
       -- Corner case: si > 1 but the total distance to that point is REALLY small
       -- Corner case: si > 1 but the segment distance to that point is REALLY small
       --
-      SELECT INTO rtn cx,cy,ax,ay,az FROM interpolate_table WHERE k=si;
+      SELECT INTO rtn cx, cy, ax, ay, az, 1 FROM interpolate_table WHERE k=si;
 
       DROP TABLE interpolate_table;
       RETURN rtn;
     END IF;
 
-    SELECT INTO rtn
+    rtn.active = 1;
+    SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
            (b.cx-a.cx)/b.d * (s - a.dd) + a.cx,
            (b.cy-a.cy)/b.d * (s - a.dd) + a.cy,
            (b.ax-a.ax)/b.d * (s - a.dd) + a.ax,
