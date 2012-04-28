@@ -1,0 +1,4 @@
+#! /bin/bash
+
+chmod 777 /home/marccd/log
+find /home/marccd/log -type f -exec chmod 666 {} \;

@@ -1,0 +1,73 @@
+The Tuna Programming Language
+
+Purpose
+
+This language is designed specifically to allow automated test of the
+CATS robots installed as LS-CAT.  It enables a remote interface to
+define and run repeditive tests.  The program state is stored entirely
+in a postgresql database server and, although the program is run by a
+database client, the interface is simple enough that a client may be
+trivially written in any convenient laguage.
+
+Note: Tuna does not stand for anything or have any special
+significance.  It's just a name.
+
+Syntax
+
+
+line: [statement | sqlExpression]
+
+statement: [ START | WHILE booleanExpression | LOOP integerExpression | RETURN ]
+
+START
+
+An implied expression, never explicitly part of any program.  This is
+automatically inserted as the first line of the program by
+px.tunaInit.
+
+WHILE booleanExpression
+
+Starts a conditional loop.  As long as expression evaluates to the
+boolean value of TRUE then execution loops between the WHILE statement
+and its corresponding RETURN statement.
+
+LOOP integerExpression
+
+Executes the code between LOOP and RETURN for expression times.  The
+expression is evaluated and converted into an integer then compared
+with the number of times the loop has already been run.
+
+
+RETURN
+
+Ends a WHILE or LOOP segment.  A RETURN statement without a corresponding WHILE or LOOP ends the program.
+
+
+expression:
+
+Any legal SQL query.  SELECT will be prepended to the expression, so
+commands such as UPDATE or INSERT or DELETE may only be accessed as
+part of a procedural call.  The return value of the expression is ignored.
+
+
+Support Procedures
+All procedures take an argument 'station', meaning that each of the LS-CAT stations lives is a separate space.
+
+
+void  px.tunaMemorySet( station::bigint, name::text, sqlExpression)
+Sets a text variable 'name' using the expression 'sqlExpression'.  Memory is persistant.
+
+text  px.tunaMemoryGet( station::bigint, name::text)
+Recalls the value of variable "name"
+
+void px.tunaLoadInit( station::bigint)
+Initializes the program space for station.  This must preceed any other tuna programming calls.
+
+void px.tunaLoad( station::bigint, line::text)
+Loads "line" as the next line of code
+
+integer px.tunaStep( station::bigint)
+Runs the program until
+   A) exactly one sqlExpression has been exectuted
+or
+   B) no sqlExpressions 
