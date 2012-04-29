@@ -1,0 +1,59 @@
+Rules:
+	Objects are owned by lsadmin
+
+	lsadmin is not allowed to login
+
+	functions are set SECURITY DEFINER allowing access to tables
+
+	user runs as lsuser and can only access tables through functions
+
+
+px._marinit	Commands to send to marccd when it initializes
+		Default values included
+
+px.stations	stnkey is used throughout to indicate which stations is being referenced
+		Defaults values not included but are required
+
+px._config	ip addreses of station computers, names of notifies specific to that station
+		Default values not included but are required
+
+px.axes		Specifies allowed scan axes for a given station (probably omega).  More than one
+		per station is allowed
+		Default values not included
+
+px.shotstates	Current state of a shote
+		Default values are included
+
+px.oscsenses	Direction of scan
+		Default values are included
+
+px.dirstates	Set by marccd script to indicate if directory access has been checked
+		Default values are included
+
+px.datasettypes	Experimental feature allows grid searching for crystal
+		Default values are included
+
+px.editDStable	matches UI fields to functions to get/set values
+		Default values are included
+
+px.stypes	Normal or snaps: Manly so that UI can handle display of related shots
+		Default values are included
+
+px.pauseStates	Used to pause data collection from UI
+		Default values are included
+
+px.epicsPVMLink Maps names to PV's by station
+		Defaults not included
+
+px.distSaves	Saved detector distances for when the door is opened
+		Defaults not included
+
+px.holderstates  State of a sample holder (pin, puck, dewar, station...)
+		Defaults included
+
+px.holdertypes  Types of holders 
+		Defaults included
+
+px.errors	list of error messages
+		Defaults included
+
