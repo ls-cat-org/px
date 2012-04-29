@@ -33,9 +33,10 @@ and its corresponding RETURN statement.
 
 LOOP integerExpression
 
-Executes the code between LOOP and RETURN for expression times.  The
-expression is evaluated and converted into an integer then compared
-with the number of times the loop has already been run.
+Executes the code between LOOP and RETURN for integerExpression times.
+Each iteration intergreExpression is evaluated and converted into an
+integer then compared with the number of times the loop has already
+been run.
 
 
 RETURN
@@ -68,6 +69,6 @@ Loads "line" as the next line of code
 
 integer px.tunaStep( station::bigint)
 Runs the program until
-   A) exactly one sqlExpression has been exectuted
+   A) exactly one sqlExpression has been executed
 or
-   B) no sqlExpressions 
+   B) no sqlExpressions are left to run
