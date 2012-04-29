@@ -2,8 +2,8 @@
 -- Support for px data collection
 --
 --
---DROP SCHEMA px CASCADE;
---CREATE SCHEMA px;
+DROP SCHEMA IF EXISTS px CASCADE;
+CREATE SCHEMA px;
 GRANT USAGE ON SCHEMA px TO PUBLIC;
 
 CREATE TABLE px._marinit (
@@ -18,8 +18,6 @@ CREATE TABLE px._marinit (
 );
 ALTER TABLE px._marinit OWNER TO lsadmin;
 
-INSERT INTO px._marinit (miorder,miitem) VALUES ( 1, 'set_thumbnail1,pgm,512,512');
-INSERT INTO px._marinit (miorder,miitem) VALUES ( 2, 'set_thumbnail2,pgm,64,64');
 INSERT INTO px._marinit (miorder,miitem) VALUES ( 3, 'readout,1');
 INSERT INTO px._marinit (miorder,miitem) VALUES ( 4, 'readout,2');
 INSERT INTO px._marinit (miorder,miitem) VALUES ( 5, 'dezinger,1');
@@ -43,36 +41,6 @@ CREATE OR REPLACE FUNCTION px.marinit() RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.marinit() OWNER TO lsadmin;
-
---
--- Detector lock tables
---
-CREATE TABLE px._id21d_detectorLock ( d int);
-ALTER TABLE px._id21d_detectorLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21e_detectorLock ( d int);
-ALTER TABLE px._id21e_detectorLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21f_detectorLock ( d int);
-ALTER TABLE px._id21f_detectorLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21g_detectorLock ( d int);
-ALTER TABLE px._id21g_detectorLock OWNER TO lsadmin;
-
-
---
--- Diffractometer lock tables
-CREATE TABLE px._id21d_diffractometerLock ( d int);
-ALTER TABLE px._id21d_diffractometerLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21e_diffractometerLock ( d int);
-ALTER TABLE px._id21e_diffractometerLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21f_diffractometerLock ( d int);
-ALTER TABLE px._id21f_diffractometerLock OWNER TO lsadmin;
-
-CREATE TABLE px._id21g_diffractometerLock ( d int);
-ALTER TABLE px._id21g_diffractometerLock OWNER TO lsadmin;
 
 CREATE TABLE px._marqueue (
 --
@@ -358,13 +326,6 @@ CREATE TABLE px.stations (
         stnid        int references px.holderpositions (hpid)
 );
 ALTER TABLE px.stations OWNER TO lsadmin;
-GRANT SELECT ON px.stations TO PUBLIC;
-
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-D', 'idd', 'd');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-E', 'ide', 'e');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-F', 'idf', 'f');
-INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-G', 'idg', 'g');
-
 
 CREATE TABLE px._config (
 --
@@ -403,22 +364,6 @@ CREATE TABLE px._config (
         clustrepool      text   not null default 'pffs.pool_slow'
 );
 ALTER TABLE px._config OWNER TO lsadmin;
-GRANT SELECT ON px._config TO PUBLIC;
-
-INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cdetectlocktable, cnotifykill, cnotifysnap, cnotifyrun, cnotifydetector, cnotifypause) VALUES (
-  inet '10.1.252.166', inet '10.1.252.18', '21-ID-F', 'px._id21f_diffractometerLock', 'px._id21f_detectorLock', 'id21f_kill', 'id21f_snap', 'id21f_run', 'id21f_det', 'id21f_pause'
-);
-
-INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cdetectlocktable, cnotifykill, cnotifysnap, cnotifyrun, cnotifydetector, cnotifypause) VALUES (
-  inet '10.1.252.140', inet '10.1.252.19', '21-ID-G', 'px._id21g_diffractometerLock', 'px._id21g_detectorLock', 'id21g_kill', 'id21g_snap', 'id21g_run', 'id21g_det', 'id21g_pause'
-);
-
---
--- Testing: Mung on contrabass test program
-INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cdetectlocktable, cnotifykill, cnotifysnap, cnotifyrun, cnotifydetector, cnotifypause) VALUES (
-  inet '10.1.0.3', inet '10.1.252.164', '21-ID-E', 'px._id21e_diffractometerLock', 'px._id21e_detectorLock', 'id21e_kill', 'id21e_snap', 'id21e_run', 'id21e_det', 'id21e_pause'
-);
-
 
 
 CREATE OR REPLACE FUNCTION px.getstation( theip inet) RETURNS int AS $$
@@ -463,18 +408,6 @@ CREATE OR REPLACE FUNCTION px.getcatsaddr( thestn text) RETURNS text AS $$
   SELECT host(ccats) FROM px._config WHERE $1=cstation;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getcatsaddr( text) OWNER TO lsadmin;
-
-
-CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
---
--- Initialize the detector
--- The intent is to create lock tables in this function if needed
--- TODO
-  DECLARE
-  BEGIN
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.inidetector() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
@@ -744,11 +677,6 @@ CREATE TABLE px.axes (
 ALTER TABLE px.axes OWNER TO lsadmin;
 GRANT SELECT ON px.axes TO PUBLIC;
 
-INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey from px.stations where stnname='21-ID-D'));
-INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey from px.stations where stnname='21-ID-E'));
-INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey from px.stations where stnname='21-ID-F'));
-INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey from px.stations where stnname='21-ID-G'));
-
 CREATE TABLE px.shotstates (
 --
 -- Allowed values for the shot state
@@ -883,14 +811,11 @@ CREATE TABLE px.datasets (
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
-GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets_dskey_seq TO PUBLIC;
-
 --
 -- kludge: we should have a Reference to esaf.esafs as that is what is intended
 -- postgres would then automatically add the index
 --
-create index esaf_idx on px.datasets (dsesaf);
+CREATE INDEX esaf_idx ON px.datasets (dsesaf);
 
 
 CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
@@ -1784,10 +1709,6 @@ CREATE TABLE px.shots (
 ALTER TABLE px.shots OWNER TO lsadmin;
 CREATE INDEX shotsTsIndex ON px.shots (sts);
 CREATE INDEX shotsFnIndex ON px.shots (sfn);
-GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
-GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
-
-
 
 CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
   UPDATE px.shots SET sphi=$2, skappa=$3, sdist=( SELECT dsdist FROM px.datasets WHERE dspid=sdspid) WHERE skey=$1;
@@ -1872,9 +1793,6 @@ CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
 
-
-
-DROP TYPE px.nextshottype CASCADE;
 CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
         dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int, cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text);
 
@@ -2967,20 +2885,6 @@ CREATE TABLE px.epicsPVMLink (
                 references epics._pvmonitors (pvmName) ON UPDATE CASCADE
 );
 ALTER TABLE px.epicsPVMLink OWNER TO lsadmin;
-
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-F'), 'Io', '21:F1:scaler1_cts3.A');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'Io', '21:G1:scaler1_cts3.A');
-
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-D'), 'Search', 'PA:21ID:OA_STA_D_VOICE_1');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-E'), 'Search', 'PA:21ID:OA_STA_DE_E_VOICE_1');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-F'), 'Search', 'PA:21ID:OA_STA_F_VOICE_1');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'Search', 'PA:21ID:OA_STA_FG_G_VOICE_1');
-
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-D'), 'Door', 'PA:21ID:IA_STA_D_DR2_CLOS');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-E'), 'Door', 'PA:21ID:IA_STA_E_DR1_CLOS');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-F'), 'Door', 'PA:21ID:IA_STA_F_DR2_CLOS');
-INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'Door', 'PA:21ID:IA_STA_G_DR1_CLOS');
-
 
 CREATE OR REPLACE FUNCTION px.isthere( thestn bigint, motion text, value numeric) RETURNS boolean AS $$
   DECLARE
