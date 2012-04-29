@@ -1,0 +1,116 @@
+#! /bin/bash
+#
+# wrapper for the marccd program
+#
+# This script takes care of some housekeeping chores to make sure that
+# when marccd is run it runs correctly.  It should refuse to run if
+# the MD2 is not running as the same user.
+#
+# Copyright (C) 2009-2011 by Keith Brister
+# All rights reserved.
+
+#
+# make sure the marccd/log file is writable
+#
+sudo /usr/local/bin/fixMarccdLog
+
+#
+# kill off any stray pxMarServer processes
+#
+sudo /usr/bin/killall -q pxMarServer.py
+
+#
+# wait for a gracefull exit
+#
+sleep 2
+
+#
+# kill off any stray pxMarServer processes, make sure they are dead
+#
+sudo /usr/bin/killall -q -s KILL pxMarServer.py
+
+#
+# set up the marccd environment
+#
+. /home/marccd/marccd_setup.sh
+
+#
+# fix up the remote mode server
+#
+grep -q -E "remote_mode_server_command.*/usr/local/bin/pxMarServer.py" /home/marccd/configuration/marccd_server_v1.conf || sed -iz1 "s#^remote_mode_server_command#remote_mode_server_command  /usr/local/bin/pxMarServer.py#g" /home/marccd/configuration/marccd_server_v1.conf
+grep -q -E "remote_mode_server_command.*/usr/local/bin/pxMarServer.py" /home/marccd/configuration/marccd_server_v1.conf || echo "remote_mode_server_command  /usr/local/bin/pxMarServer.py" >>/home/marccd/configuration/marccd_server_v1.conf
+
+#
+# add a couple of needed parameters not available elsewhere
+#
+export LS_CAT_DETECTOR_INFO=`/usr/local/bin/MarccdConfFile.py detector_info`
+export LS_CAT_CCD_PIXEL_SIZE=`/usr/local/bin/MarccdConfFile.py ccd_pixelsize`
+
+#
+# Remove the stop and shutter buttons from the marccd
+# interface.  Although this is perhaps a cheesy way of 
+# accomplishing the goal it does provide a rare example
+# of when xrdb is useful.
+#
+
+xrdb -merge <<EOF
+Marccd*ShutterMenuBar*background: grey80
+Marccd*ShutterMenuBar*foreground: grey80
+Marccd*ShutterMenuBar*Sensitive: False
+EOF
+
+marccd_version=`/home/marccd/bin/linux/marccd -v | awk '{print $3}'`
+
+if [[ "ZZ"$marccd_version < "ZZ0.20.8a" ]]; then
+#
+# Stop button only get removed in marccd versions before 0.20.8a
+xrdb -merge <<EOF
+Marccd*Stop*background: grey80
+Marccd*Stop*foreground: grey80
+Marccd*Stop*Sensitive: False
+EOF
+fi
+
+
+#
+# Make sure the marMosaic module is loaded
+#
+/sbin/modprobe marMosaic
+
+#
+# Find out who has logged into the MD2 and who we are running as
+#
+currentuser=`psql -qAn --pset tuples_only -h 10.1.0.3 -U lsuser -c "select * from px.whoami()" ls`
+iam=`whoami`
+
+#
+# Provide a dialog box for the cases where the MD2 user does not match
+# who we are.
+#
+if [[ "ZZ"$currentuser != "ZZ"$iam ]]; then    
+    if [[ "ZZ"$currentuser == "ZZ" ]]; then
+	zenity --warning --title="Marccd Startup Warning"  --text "No one is logged into the MD2.  Are you sure you want to continue?"
+	if [ $? -ne 0 ]; then
+	    exit
+	fi
+    else
+	zenity --error --title="Marccd Startup Error"  --text "$currentuser is logged in to the MD2 but you are $iam"
+	exit
+    fi
+fi
+
+
+#
+# We always assume the user is running marccd from their home directory.  Make it so.
+#  (This construct changes to the MD2 user's home directory or, in case currentuser is empty,
+#   the home directory of the user running marccd)
+#
+theHomeDirectory=`ldapsearch -x "(cn=$currentuser)" "homeDirectory" | grep 'homeDirectory:' | gawk '{print $2}'`
+cd ${theHomeDirectory}
+
+#
+# run marccd in the remote mode
+# Here /usr/local/bin/pxMarServer.py supports 
+# the remote mode services.
+#
+/home/marccd/bin/linux/marccd -rf

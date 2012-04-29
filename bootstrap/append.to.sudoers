@@ -1,0 +1,21 @@
+#! /bin/bash
+#
+# (C) Copyright 2012 by Keith Brister
+#
+
+zzs[1]="ALL ALL=NOPASSWD: /usr/bin/killall -q pxMarServer.py"
+zzs[2]="ALL ALL=NOPASSWD: /usr/bin/killall -q -s KILL pxMarServer.py"
+zzs[3]="ALL ALL=NOPASSWD: /usr/local/bin/fixMarccdLog"
+zzs[4]="ALL ALL=NOPASSWD: /usr/local/bin/AutoDetector.py"
+zzs[5]="ALL ALL=NOPASSWD: /sbin/modprobe marMosaic"
+
+ii=0;
+while [[ $ii < ${#zzs[*]} ]]; do
+    ll=${zzs[$ii]}
+
+    grep -q "^${ll}" /etc/sudoers || echo "We'd append it here: " $ll
+
+    let ii=$ii+1
+done
+
+
