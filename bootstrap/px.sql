@@ -1,3 +1,4 @@
+BEGIN;
 --
 -- Support for px data collection
 --
@@ -288,6 +289,189 @@ CREATE OR REPLACE VIEW px.mar ( mkey, mqc, mts, mtu, mtd, mstatus, maquire, mrea
 
 CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric, sphi numeric, skappa numeric);
 
+CREATE TABLE px.holderPositions (
+       -- This is a table of all the positions for sample holders
+       --
+       -- The ID is given by a 32 bit integer
+       -- Bits  0 -  7 : sample number
+       -- Bits  8 - 15 : puck number 
+       -- Bits 16 - 23 : dewar number (diffractometer and tool each are considered a type of dewar and have a location defined in this table)
+       -- Bits 24 - 31 : station number
+       --
+       -- | Station | Dewar  |  Puck  | Sample |
+       --    MSB                          LSB
+
+       -- Sample  = 0 means entry defines a puck position
+       -- Puck    = 0 means entry defines a dewar position
+       -- Dewar   = 0 means entry defines a station position
+       -- Station = 0 means location is unknown
+
+       hpKey serial primary key,                -- our key
+       hpId int unique,                         -- unique idenifier for this location
+       hpIdRes int NOT NULL,                    -- children have ids > hpId and < hpId+hpIdRes
+       hpIndex int,                             -- Parent's selection index
+       hpName text,                             -- name of this item
+       hpImageURL text default NULL,            -- Image, if any, to use for this holder position
+       hpImageMaskURL text default NULL,        -- Image, if any, to use for the selection mask for position contained herein
+       hpTempLoc int default 0                  -- current location id of sample normally stored here (0 means item not in temp storage)
+       );
+ALTER TABLE px.holderPositions OWNER TO lsadmin;
+
+
+CREATE TABLE px.dirstates (
+        dirs text primary key
+);
+
+INSERT INTO px.dirstates (dirs) VALUES ('New');
+INSERT INTO px.dirstates (dirs) VALUES ('Valid');
+INSERT INTO px.dirstates (dirs) VALUES ('Invalid');
+INSERT INTO px.dirstates (dirs) VALUES ('Wrong Permissions');
+
+CREATE TABLE px.datasettypes (
+  dst text primary key
+);
+ALTER TABLE px.datasettypes OWNER TO lsadmin;
+INSERT INTO px.datasettypes (dst) VALUES ('Normal');
+INSERT INTO px.datasettypes (dst) VALUES ('GridSearch');
+
+CREATE TABLE  px.oscsenses (
+        os text primary key
+);
+ALTER TABLE px.oscsenses OWNER TO lsadmin;
+
+INSERT INTO px.oscsenses (os) VALUES ( '+');
+INSERT INTO px.oscsenses (os) VALUES ( '-');
+INSERT INTO px.oscsenses (os) VALUES ( '+/-');
+INSERT INTO px.oscsenses (os) VALUES ( '-/+');
+
+CREATE TABLE px.expunits (
+        eu  text primary key,   -- the long version of the units
+        eus text unique         -- short version for small labels
+);
+INSERT INTO px.expunits (eu, eus) VALUES ( 'Seconds',   'secs');
+INSERT INTO px.expunits (eu, eus) VALUES ( 'Io Counts', 'cnts');
+
+CREATE TABLE px.datasets (
+        dskey      serial primary key,                          -- table key
+        dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
+        dscreatets timestamp with time zone default now(),      -- creatation time stamp
+        dsdonets   timestamp with time zone default NULL,       -- time of last done frame
+        dsesaf     int default NULL,                            -- The ESAF used for this experiment
+-- A real references is not used as we currently delete the esaf routinely (during a modification, for example)
+-- until this is thought trhough and tested completely it is better just to leave the reference hanging
+--              references esaf.esafs (eexperimentid),
+        dsdir      text NOT NULL default 'data',                -- the collection directory
+        dsdirs     text NOT NULL default 'New'                  -- the directory state
+                references px.dirstates (dirs),
+        dsfp       text default 'default',                      -- file prfix
+        dsstn      int,                                          -- station to collect in
+--                references px.stations (stnkey) ON UPDATE CASCADE, -- catch22, add reference later
+
+        dstype text NOT NULL default 'Normal'
+                references px.datasettypes (dst) ON UPDATE CASCADE,
+        dsparams   numeric[][] default NULL,			-- parameters for the centering modes
+        dsoscaxis  text         default 'omega',                -- the Axis to move, presumably NULL means don't move a thing
+        dsstart    numeric      default 0,                      -- starting angle of the dataset
+        dsdelta    numeric      default 1,                      -- distance to next starting angle (usually owidth)
+        dsowidth   numeric default 1,                           -- oscillation width
+        dsnoscs    int default 1,                               -- number of oscillations per image
+        dsoscsense text default '+'                             -- sense of oscillation relative to end-start direction
+                references px.oscsenses (os) ON UPDATE CASCADE,
+        dsnwedge   int          default 0,                      -- shots before flipping 180, 0 means don't do this
+        dsend      numeric      default 90,                     -- ending angle
+        dsexp      numeric      default 1,                      -- Exposure: how long to keep shutter open
+        dsexpunit  text         default 'Seconds'               -- units of exposure: usually secs
+                 references px.expunits (eu) ON UPDATE CASCADE,
+        dsphi      numeric DEFAULT NULL,                        -- set phi (NULL means don't touch)
+        dsomega    numeric DEFAULT NULL,                        -- set omega (NULL means don't touch)
+        dsomegaref numeric DEFAULT NULL,			-- reference angle to convert cetering table x and y into horizontal and vertical.
+        dskappa    numeric DEFAULT NULL,                        -- set kappa (NULL means don't touch)
+        dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
+        dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
+        dscomment  text DEFAULT NULL,                           -- comment
+        dsobfuscated boolean default false,                     -- fp and dir have been obfuscated
+        dsparent   text DEFAULT NULL references px.datasets (dspid),
+        dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
+        dseditts timestamp with time zone default now(),        -- time of last edit
+        dseditnum integer default 0                             -- increment each time an edit is made
+);
+ALTER TABLE px.datasets OWNER TO lsadmin;
+CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
+--
+-- kludge: we should have a Reference to esaf.esafs as that is what is intended
+-- postgres would then automatically add the index
+--
+CREATE INDEX esaf_idx ON px.datasets (dsesaf);
+
+
+--
+-- type of shots
+--
+CREATE TABLE px.stypes (
+        st text primary key
+);
+ALTER TABLE px.stypes OWNER TO lsadmin;
+GRANT SELECT ON px.stypes TO PUBLIC;
+INSERT INTO px.stypes (st) VALUES ('normal');
+INSERT INTO px.stypes (st) VALUES ('snap');
+
+
+CREATE TABLE px.shotstates (
+--
+-- Allowed values for the shot state
+        ssstate text primary key                -- the state of the shot
+);
+ALTER TABLE px.shotstates OWNER TO lsadmin;
+GRANT SELECT ON px.shotstates TO PUBLIC;
+
+INSERT INTO px.shotstates (ssstate) VALUES ( 'NotTaken');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'Preparing');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'Moving');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'Exposing');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'FinishingUp');
+INSERT INTO px.shotstates (ssstate) VALUES ( 'Done');
+
+CREATE TABLE px.shots (
+        skey     serial         primary key,            -- table key
+        sts     timestamp with time zone default now(), -- time of creation or last status change
+        sdspid   text                                   -- PID of dataset
+                references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
+        stype    text           NOT NULL                -- type of dataset this is part of (needed to uniquely identify shot)
+                references px.stypes ON UPDATE CASCADE,
+        sindex   int            NOT NULL,               -- frame number within this sequence
+        sfn      text           DEFAULT NULL,           -- the file name
+        sstart   numeric        DEFAULT NULL,           -- Starting angle:not sure what NULL would mean with soscaxis not NULL
+        saxis    text           DEFAULT NULL,           -- as run data collection axis
+        swidth   numeric        DEFAULT NULL,           -- as run width
+        sexpt    numeric        DEFAULT NULL,           -- as run exposure time
+        sexpu    text           DEFAULT NULL            -- as run exposure time
+                references px.expunits (eu) ON UPDATE CASCADE,
+        sphi     numeric        DEFAULT NULL,           -- as run starting phi
+        somega   numeric        DEFAULT NULL,           -- as run starting omega
+        skappa   numeric        DEFAULT NULL,           -- as run starting kappa
+        sdist    numeric        DEFAULT NULL,           -- as run starting distance
+        snrg     numeric        DEFAULT NULL,           -- as run starting energy
+        scenx    numeric        DEFAULT NULL,		-- as run centering stage x value
+        sceny    numeric        DEFAULT NULL,		-- as run centering stage y value
+        salignx  numeric        DEFAULT NULL,		-- as run alignment stage x value
+        saligny  numeric        DEFAULT NULL,		-- as run alignment stage y value
+        salignz  numeric        DEFAULT NULL,		-- as run alignment stage z value
+        scmt     text           DEFAULT NULL,           -- comment
+        sstate   text                                   -- current state of the shot
+                 references px.shotstates (ssstate) ON UPDATE CASCADE,
+        sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
+        spath    text           DEFAULT NULL,           -- the full file path used
+        sbupath  text           DEFAULT NULL,           -- the full path of the backup file
+        sobfuscated boolean     DEFAULT false,          -- fn, path, and bupath have been obfuscated
+        stimes   int            DEFAULT 0,              -- number of times this has been run
+        sfsize   int            DEFAULT NULL,           -- size of the file in bytes
+        stape    boolean        DEFAULT False,          -- true if file is known to be on a backup tape
+        UNIQUE (sdspid, stype, sindex)
+);
+ALTER TABLE px.shots OWNER TO lsadmin;
+CREATE INDEX shotsTsIndex ON px.shots (sts);
+CREATE INDEX shotsFnIndex ON px.shots (sfn);
+
 CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $$
   DECLARE
     rtn px.marheadertype;
@@ -315,6 +499,7 @@ ALTER FUNCTION px.marHeader( bigint) OWNER TO lsadmin;
 
 
 
+
 CREATE TABLE px.stations (
 --
 -- stations allowed
@@ -326,6 +511,9 @@ CREATE TABLE px.stations (
         stnid        int references px.holderpositions (hpid)
 );
 ALTER TABLE px.stations OWNER TO lsadmin;
+
+ALTER TABLE px.datasets DROP COLUMN dsstn;
+ALTER TABLE px.datasets ADD COLUMN dsstn int references px.stations (stnkey) ON UPDATE CASCADE;
 
 CREATE TABLE px._config (
 --
@@ -677,38 +865,6 @@ CREATE TABLE px.axes (
 ALTER TABLE px.axes OWNER TO lsadmin;
 GRANT SELECT ON px.axes TO PUBLIC;
 
-CREATE TABLE px.shotstates (
---
--- Allowed values for the shot state
-        ssstate text primary key                -- the state of the shot
-);
-ALTER TABLE px.shotstates OWNER TO lsadmin;
-GRANT SELECT ON px.shotstates TO PUBLIC;
-
-INSERT INTO px.shotstates (ssstate) VALUES ( 'NotTaken');
-INSERT INTO px.shotstates (ssstate) VALUES ( 'Preparing');
-INSERT INTO px.shotstates (ssstate) VALUES ( 'Moving');
-INSERT INTO px.shotstates (ssstate) VALUES ( 'Exposing');
-INSERT INTO px.shotstates (ssstate) VALUES ( 'FinishingUp');
-INSERT INTO px.shotstates (ssstate) VALUES ( 'Done');
-
-CREATE TABLE px.expunits (
-        eu  text primary key,   -- the long version of the units
-        eus text unique         -- short version for small labels
-);
-INSERT INTO px.expunits (eu, eus) VALUES ( 'Seconds',   'secs');
-INSERT INTO px.expunits (eu, eus) VALUES ( 'Io Counts', 'cnts');
-
-CREATE TABLE  px.oscsenses (
-        os text primary key
-);
-ALTER TABLE px.oscsenses OWNER TO lsadmin;
-GRANT SELECT ON px.oscsenses to PUBLIC;
-
-INSERT INTO px.oscsenses (os) VALUES ( '+');
-INSERT INTO px.oscsenses (os) VALUES ( '-');
-INSERT INTO px.oscsenses (os) VALUES ( '+/-');
-INSERT INTO px.oscsenses (os) VALUES ( '-/+');
 
 --
 -- fix_fn
@@ -738,14 +894,6 @@ CREATE OR REPLACE FUNCTION px.fix_dir( dir text) RETURNS text as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.fix_dir( text) OWNER TO lsadmin;
 
-CREATE TABLE px.dirstates (
-        dirs text primary key
-);
-
-INSERT INTO px.dirstates (dirs) VALUES ('New');
-INSERT INTO px.dirstates (dirs) VALUES ('Valid');
-INSERT INTO px.dirstates (dirs) VALUES ('Invalid');
-INSERT INTO px.dirstates (dirs) VALUES ('Wrong Permissions');
 
 CREATE OR REPLACE FUNCTION px.chkdir( token text) returns void AS $$
   SELECT px.pushqueue( 'checkdir,'|| $1);
@@ -756,66 +904,6 @@ CREATE OR REPLACE FUNCTION px.chkdir( theStn bigint, token text) returns void AS
   SELECT px.pushqueue( $1, 'checkdir,'|| $2);
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.chkdir( bigint, text) OWNER TO lsadmin;
-
-CREATE TABLE px.datasettypes (
-  dst text primary key
-);
-ALTER TABLE px.datasettypes OWNER TO lsadmin;
-INSERT INTO px.datasettypes (dst) VALUES ('Normal');
-INSERT INTO px.datasettypes (dst) VALUES ('GridSearch');
-
-
-CREATE TABLE px.datasets (
-        dskey      serial primary key,                          -- table key
-        dspid      text NOT NULL UNIQUE,                        -- used to find the "shots"
-        dscreatets timestamp with time zone default now(),      -- creatation time stamp
-        dsdonets   timestamp with time zone default NULL,       -- time of last done frame
-        dsesaf     int default NULL,                            -- The ESAF used for this experiment
--- A real references is not used as we currently delete the esaf routinely (during a modification, for example)
--- until this is thought trhough and tested completely it is better just to leave the reference hanging
---              references esaf.esafs (eexperimentid),
-        dsdir      text NOT NULL default 'data',                -- the collection directory
-        dsdirs     text NOT NULL default 'New'                  -- the directory state
-                references px.dirstates (dirs),
-        dsfp       text default 'default',                      -- file prfix
-        dsstn      bigint                                       -- station to collect in
-                references px.stations (stnkey) ON UPDATE CASCADE,
-        dstype text NOT NULL default 'Normal'
-                references px.datasettypes (dst) ON UPDATE CASCADE,
-        dsparams   numeric[][] default NULL,			-- parameters for the centering modes
-        dsoscaxis  text         default 'omega',                -- the Axis to move, presumably NULL means don't move a thing
-        dsstart    numeric      default 0,                      -- starting angle of the dataset
-        dsdelta    numeric      default 1,                      -- distance to next starting angle (usually owidth)
-        dsowidth   numeric default 1,                           -- oscillation width
-        dsnoscs    int default 1,                               -- number of oscillations per image
-        dsoscsense text default '+'                             -- sense of oscillation relative to end-start direction
-                references px.oscsenses (os) ON UPDATE CASCADE,
-        dsnwedge   int          default 0,                      -- shots before flipping 180, 0 means don't do this
-        dsend      numeric      default 90,                     -- ending angle
-        dsexp      numeric      default 1,                      -- Exposure: how long to keep shutter open
-        dsexpunit  text         default 'Seconds'               -- units of exposure: usually secs
-                 references px.expunits (eu) ON UPDATE CASCADE,
-        dsphi      numeric DEFAULT NULL,                        -- set phi (NULL means don't touch)
-        dsomega    numeric DEFAULT NULL,                        -- set omega (NULL means don't touch)
-        dsomegaref numeric DEFAULT NULL,			-- reference angle to convert cetering table x and y into horizontal and vertical.
-        dskappa    numeric DEFAULT NULL,                        -- set kappa (NULL means don't touch)
-        dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
-        dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
-        dscomment  text DEFAULT NULL,                           -- comment
-        dsobfuscated boolean default false,                     -- fp and dir have been obfuscated
-        dsparent   text DEFAULT NULL references px.datasets (dspid),
-        dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
-        dseditts timestamp with time zone default now(),        -- time of last edit
-        dseditnum integer default 0                             -- increment each time an edit is made
-);
-ALTER TABLE px.datasets OWNER TO lsadmin;
-CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
-
---
--- kludge: we should have a Reference to esaf.esafs as that is what is intended
--- postgres would then automatically add the index
---
-CREATE INDEX esaf_idx ON px.datasets (dsesaf);
 
 
 CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
@@ -1015,6 +1103,35 @@ INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'energy', 'px.
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'wavelength', 'px.ds_set_wavelength', false);
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'state', 'px.ds_set_state',     true);
 
+
+CREATE TABLE px.stnmodes (
+       sm text primary key
+);
+ALTER TABLE px.stnmodes OWNER TO lsadmin;
+
+INSERT INTO px.stnmodes (sm) VALUES ('CollectState');
+INSERT INTO px.stnmodes (sm) VALUES ('CenterState');
+INSERT INTO px.stnmodes (sm) VALUES ('ParamsState');
+INSERT INTO px.stnmodes (sm) VALUES ('RecoverState');
+INSERT INTO px.stnmodes (sm) VALUES ('SampleState');
+INSERT INTO px.stnmodes (sm) VALUES ('TransferState');
+
+CREATE TABLE px.stnstatus (
+        sskey serial primary key,
+        ssts timestamp with time zone default now(),
+        ssstn bigint references px.stations (stnkey) unique,
+        ssesaf int,
+        ssskey bigint references px.shots (skey) on delete set null unique,
+        sssfn  text default null,       -- copy of shots table entry
+        ssspath text default null,      -- copy of shots table entry
+        sssbupath text default null,     -- copy of shots table entry
+        ssdsedit text default null references px.datasets (dspid),
+        sspaused boolean not null default false,
+        ssmode text default null
+               references px.stnmodes (sm) on update cascade on delete set null,
+        sscvhash text default null              -- centering video hash, if any
+);
+ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, theValue text) returns XML AS $$
   DECLARE
@@ -1260,32 +1377,6 @@ CREATE OR REPLACE FUNCTION px.ds_get_samples( token text) RETURNS setof int as $
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_samples( text) OWNER TO lsadmin;
-
---
--- WHO
-CREATE OR REPLACE FUNCTION px.ds_set_who( token text, arg2 bigint) RETURNS void as $$
-  BEGIN UPDATE px.datasets set dswho=arg2 where dspid=token; end;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_who( text, bigint) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.ds_Get_who( token text) RETURNS bigint as $$
-  SELECT dswho FROM  px.datasets WHERE dspid=$1;
-$$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_Get_who( text) OWNER TO lsadmin;
-
-
-
---
--- INST
-CREATE OR REPLACE FUNCTION px.ds_set_inst( token text, arg2 bigint) RETURNS void as $$
-  BEGIN UPDATE px.datasets set dsinst=arg2 where dspid=token; end; $$
-LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_inst( text, bigint) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.ds_get_inst( token text) RETURNS bigint as $$
-  SELECT dsinst FROM px.datasets WHERE dspid=$1;
-$$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_inst( text) OWNER TO lsadmin;
 
 
 --
@@ -1657,59 +1748,6 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_comment( text) OWNER TO lsadmin;
 
 
-
---
--- type of shots
---
-CREATE TABLE px.stypes (
-        st text primary key
-);
-ALTER TABLE px.stypes OWNER TO lsadmin;
-GRANT SELECT ON px.stypes TO PUBLIC;
-INSERT INTO px.stypes (st) VALUES ('normal');
-INSERT INTO px.stypes (st) VALUES ('snap');
-
-CREATE TABLE px.shots (
-        skey     serial         primary key,            -- table key
-        sts     timestamp with time zone default now(), -- time of creation or last status change
-        sdspid   text                                   -- PID of dataset
-                references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
-        stype    text           NOT NULL                -- type of dataset this is part of (needed to uniquely identify shot)
-                references px.stypes ON UPDATE CASCADE,
-        sindex   int            NOT NULL,               -- frame number within this sequence
-        sfn      text           DEFAULT NULL,           -- the file name
-        sstart   numeric        DEFAULT NULL,           -- Starting angle:not sure what NULL would mean with soscaxis not NULL
-        saxis    text           DEFAULT NULL,           -- as run data collection axis
-        swidth   numeric        DEFAULT NULL,           -- as run width
-        sexpt    numeric        DEFAULT NULL,           -- as run exposure time
-        sexpu    text           DEFAULT NULL            -- as run exposure time
-                references px.expunits (eu) ON UPDATE CASCADE,
-        sphi     numeric        DEFAULT NULL,           -- as run starting phi
-        somega   numeric        DEFAULT NULL,           -- as run starting omega
-        skappa   numeric        DEFAULT NULL,           -- as run starting kappa
-        sdist    numeric        DEFAULT NULL,           -- as run starting distance
-        snrg     numeric        DEFAULT NULL,           -- as run starting energy
-        scenx    numeric        DEFAULT NULL,		-- as run centering stage x value
-        sceny    numeric        DEFAULT NULL,		-- as run centering stage y value
-        salignx  numeric        DEFAULT NULL,		-- as run alignment stage x value
-        saligny  numeric        DEFAULT NULL,		-- as run alignment stage y value
-        salignz  numeric        DEFAULT NULL,		-- as run alignment stage z value
-        scmt     text           DEFAULT NULL,           -- comment
-        sstate   text                                   -- current state of the shot
-                 references px.shotstates (ssstate) ON UPDATE CASCADE,
-        sposition int default 0 references px.holderpositions (hpid),   -- the location of the sample holder used (0=hand mounted),
-        spath    text           DEFAULT NULL,           -- the full file path used
-        sbupath  text           DEFAULT NULL,           -- the full path of the backup file
-        sobfuscated boolean     DEFAULT false,          -- fn, path, and bupath have been obfuscated
-        stimes   int            DEFAULT 0,              -- number of times this has been run
-        sfsize   int            DEFAULT NULL,           -- size of the file in bytes
-        stape    boolean        DEFALUT False           -- true if file is known to be on a backup tape
-        UNIQUE (sdspid, stype, sindex)
-);
-ALTER TABLE px.shots OWNER TO lsadmin;
-CREATE INDEX shotsTsIndex ON px.shots (sts);
-CREATE INDEX shotsFnIndex ON px.shots (sfn);
-
 CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
   UPDATE px.shots SET sphi=$2, skappa=$3, sdist=( SELECT dsdist FROM px.datasets WHERE dspid=sdspid) WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
@@ -1719,6 +1757,23 @@ CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) ret
   UPDATE px.shots SET sts=now(),sstate=$2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.rt_get_nenergy( stn bigint) returns numeric AS $$
+  --
+  -- Current energy returned as a numeric
+  --
+  DECLARE
+    rtn numeric;
+  BEGIN
+    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=stn and eluType='epics';
+    SELECT INTO rtn eluValue FROM px.energyLookUp WHERE eluStn=stn;
+    IF NOT FOUND THEN
+      rtn := '12.73';
+    END IF;
+    RETURN rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_nenergy( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.shots_set_energy( theKey bigint) returns void as $$
   UPDATE px.shots SET snrg = px.rt_get_nenergy( dsstn) FROM px.datasets WHERE sdspid = dspid and skey=$1
@@ -2714,7 +2769,10 @@ CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) retu
             LOOP
 
         startTime := startTime + rq.deltaTime;
-        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
+--
+-- FIXME 120429 missing text from next line
+-- 
+--        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
         tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
       END LOOP;
       rtn = xmlelement( name runqueue, xmlattributes( 'true' as success), tmp);
@@ -3269,23 +3327,6 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy( stn bigint) returns text AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_energy( bigint) OWNER TO lsadmin;
-
-CREATE OR REPLACE FUNCTION px.rt_get_nenergy( stn bigint) returns numeric AS $$
-  --
-  -- Current energy returned as a numeric
-  --
-  DECLARE
-    rtn numeric;
-  BEGIN
-    PERFORM epics.updatePvmVar( eluEpics) FROM px._energyLookUp WHERE eluStn=stn and eluType='epics';
-    SELECT INTO rtn eluValue FROM px.energyLookUp WHERE eluStn=stn;
-    IF NOT FOUND THEN
-      rtn := '12.73';
-    END IF;
-    RETURN rtn;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_nenergy( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_set_energy( e text) returns void AS $$
   DECLARE
@@ -4280,33 +4321,6 @@ INSERT INTO px.holderstates (ss) VALUES ('TempStorage');
 INSERT INTO px.holderstates (ss) VALUES ('Inactive');           -- set if this position is not currently installed
 
 
-CREATE TABLE px.holderPositions (
-       -- This is a table of all the positions for sample holders
-       --
-       -- The ID is given by a 32 bit integer
-       -- Bits  0 -  7 : sample number
-       -- Bits  8 - 15 : puck number 
-       -- Bits 16 - 23 : dewar number (diffractometer and tool each are considered a type of dewar and have a location defined in this table)
-       -- Bits 24 - 31 : station number
-       --
-       -- | Station | Dewar  |  Puck  | Sample |
-       --    MSB                          LSB
-
-       -- Sample  = 0 means entry defines a puck position
-       -- Puck    = 0 means entry defines a dewar position
-       -- Dewar   = 0 means entry defines a station position
-       -- Station = 0 means location is unknown
-
-       hpKey serial primary key,                -- our key
-       hpId int unique,                         -- unique idenifier for this location
-       hpIdRes int NOT NULL,                    -- children have ids > hpId and < hpId+hpIdRes
-       hpIndex int,                             -- Parent's selection index
-       hpName text,                             -- name of this item
-       hpImageURL text default NULL,            -- Image, if any, to use for this holder position
-       hpImageMaskURL text default NULL,        -- Image, if any, to use for the selection mask for position contained herein
-       hpTempLoc int default 0                  -- current location id of sample normally stored here (0 means item not in temp storage)
-       );
-ALTER TABLE px.holderPositions OWNER TO lsadmin;
 
 
 CREATE TABLE px.holderTypes (
@@ -5067,36 +5081,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.stnstatusxml( int) OWNER TO lsadmin;
 
 
-CREATE TABLE px.stnmodes (
-       sm text primary key
-);
-ALTER TABLE px.stnmodes OWNER TO lsadmin;
-
-INSERT INTO px.stnmodes (sm) VALUES ('CollectState');
-INSERT INTO px.stnmodes (sm) VALUES ('CenterState');
-INSERT INTO px.stnmodes (sm) VALUES ('ParamsState');
-INSERT INTO px.stnmodes (sm) VALUES ('RecoverState');
-INSERT INTO px.stnmodes (sm) VALUES ('SampleState');
-INSERT INTO px.stnmodes (sm) VALUES ('TransferState');
 
 
-
-CREATE TABLE px.stnstatus (
-        sskey serial primary key,
-        ssts timestamp with time zone default now(),
-        ssstn bigint references px.stations (stnkey) unique,
-        ssesaf int,
-        ssskey bigint references px.shots (skey) on delete set null unique,
-        sssfn  text default null,       -- copy of shots table entry
-        ssspath text default null,      -- copy of shots table entry
-        sssbupath text default null,     -- copy of shots table entry
-        ssdsedit text default null references px.datasets (dspid),
-        sspaused boolean not null default false,
-        ssmode text default null
-               references px.stnmodes (sm) on update cascade on delete set null,
-        sscvhash text default null              -- centering video hash, if any
-);
-ALTER TABLE px.stnstatus OWNER TO lsadmin;
 
 CREATE TABLE px.uistatus (
        --
@@ -6737,3 +6723,4 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
 
 
+COMMIT;
