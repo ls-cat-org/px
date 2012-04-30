@@ -1,0 +1,19 @@
+# DO NOT EDIT: This file created by mkmf.pl,v 1.5 2002/03/25 21:33:24 jba Exp $ 
+
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/registryCommon.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/iocsh.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/iocshRegisterCommon.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/dbStaticLib.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/registryRecordType.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/shareLib.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/dbFldTypes.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/dbBase.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/link.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/errMdef.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/cantProceed.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/recSup.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/epicsTypes.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/ellLib.h
+mono_registerRecordDeviceDriver.o : /pf/epics/base/include/dbDefs.h
+
+

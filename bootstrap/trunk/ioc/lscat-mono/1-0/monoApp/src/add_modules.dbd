@@ -1,0 +1,19 @@
+#ASYN
+##include "asynRecord.dbd"
+##include "drvAsynSerialPort.dbd"
+
+#SNCSEQ
+registrar(change_enRegistrar)
+registrar(fdbk_serverRegistrar)
+registrar(vfminoutRegistrar)
+
+#AUTOSAVE
+registrar(save_restoreRegister)
+registrar(dbrestoreRegister)
+registrar(asInitHooksRegister)
+variable(save_restoreDebug)
+variable(save_restoreNumSeqFiles)
+variable(save_restoreSeqPeriodInSeconds)
+variable(save_restoreIncompleteSetsOk)
+variable(save_restoreDatedBackupFiles)
+variable(save_restoreRemountThreshold)

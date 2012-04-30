@@ -1,0 +1,163 @@
+record(bo, "$(P)vfmio:StartVFMin") {
+  field(DESC, "VFM Move Controls")
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)vfmio:StartVFMout") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)vfmio:Abort") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)vfmio:Undo") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)vfmio:Clean") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)vfmio:VFMioWrkng") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Working")
+  field(OSV, "MINOR")
+}
+
+record(ao, "$(P)vfmio:AttIn") {
+  field(DESC, "Attenuation IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:AttOut") {
+  field(DESC, "Attenuation OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DShi") {
+  field(DESC, "DS height IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DSho") {
+  field(DESC, "DS height OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:VFMhi") {
+  field(DESC, "VFM height IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:VFMho") {
+  field(DESC, "VFM height OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:TBhi") {
+  field(DESC, "TB height IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:TBho") {
+  field(DESC, "TB height OUT")
+  field(PREC, "3")
+  field(EGU, "mrad")
+}
+
+record(ao, "$(P)vfmio:TBai") {
+  field(DESC, "TB angle IN")
+  field(PREC, "3")
+  field(EGU, "mrad")
+}
+
+record(ao, "$(P)vfmio:TBao") {
+  field(DESC, "TB angle OUT")
+  field(PREC, "5")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVofi") {
+  field(DESC, "DT Off IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVofo") {
+  field(DESC, "DT Off OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVani") {
+  field(DESC, "DT Ang IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVano") {
+  field(DESC, "DT Ang OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVshi") {
+  field(DESC, "DT Shft IN")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(ao, "$(P)vfmio:DTVsho") {
+  field(DESC, "DT Shft OUT")
+  field(PREC, "3")
+  field(EGU, "mm")
+}
+
+record(stringin, "$(P)vfmio:Msg0") {
+}
+
+record(stringin, "$(P)vfmio:Msg1") {
+}
+
+record(stringin, "$(P)vfmio:Msg2") {
+}
+
+record(stringin, "$(P)vfmio:Msg3") {
+}
+
+record(stringin, "$(P)vfmio:Msg4") {
+}
+
+record(stringin, "$(P)vfmio:Msg5") {
+}
+
+record(stringin, "$(P)vfmio:Msg6") {
+}
+
+record(stringin, "$(P)vfmio:Msg7") {
+}
+
+record(stringin, "$(P)vfmio:Msg8") {
+}
+
+record(stringin, "$(P)vfmio:Msg9") {
+}
+

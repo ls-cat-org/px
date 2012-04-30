@@ -1,0 +1,20 @@
+%
+% BURT Request File
+%
+$(P)vfmio:AttIn
+$(P)vfmio:AttOut
+$(P)vfmio:DShi
+$(P)vfmio:DSho
+$(P)vfmio:VFMhi
+$(P)vfmio:VFMho
+$(P)vfmio:TBhi
+$(P)vfmio:TBho
+$(P)vfmio:TBai
+$(P)vfmio:TBao
+$(P)vfmio:DTVofi
+$(P)vfmio:DTVofo
+$(P)vfmio:DTVani
+$(P)vfmio:DTVano
+$(P)vfmio:DTVshi
+$(P)vfmio:DTVsho
+
