@@ -1,0 +1,108 @@
+record(bo, "$(P)fdbk:StopStart") {
+  field(DESC, "Feedback Controls")
+  field(ZNAM, "Stop")
+  field(ONAM, "Start")
+  field(OSV, "MINOR")
+}
+
+record(mbbo, "$(P)fdbk:IntPos") {
+#   field(VAL, "0")
+   field(ZRVL, "0x0")
+   field(ONVL, "0x1")
+   field(TWVL, "0x2")
+#   field(THVL, "0x3")
+   field(ZRST, "Intensity")
+   field(ONST, "V-Position")
+   field(TWST, "H-Position")
+#   field(THST, "V-H-Position")
+}
+
+record(mbbo, "$(P)fdbk:MonoMir") {
+#   field(VAL, "0")
+   field(ZRVL, "0x0")
+   field(ONVL, "0x1")
+   field(ZRST, "Mono-piezo")
+   field(ONST, "Mirror-piezo")
+}
+
+record(mbbo, "$(P)fdbk:OffOnPID") {
+#   field(VAL, "0")
+   field(ZRVL, "0x0")
+   field(ONVL, "0x1")
+   field(ZRST, "PID off")
+   field(ONST, "PID on")
+}
+
+record(bo, "$(P)fdbk:fdbkWrkng") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Working")
+  field(OSV, "MINOR")
+}
+
+record(bo, "$(P)fdbk:Clean") {
+  field(ZNAM, "Idle")
+  field(ONAM, "Active")
+  field(OSV, "MINOR")
+}
+
+record(ao, "$(P)fdbk:PZscale") {
+  field(DESC, "Piezo scale")
+  field(PREC, "5")
+  field(EGU, "urad/V")
+}
+
+record(ao, "$(P)fdbk:FWHMstep") {
+  field(DESC, "Roc.cur. step in sigma")
+  field(PREC, "5")
+  field(EGU, "")
+}
+
+record(ao, "$(P)fdbk:StFactor1") {
+  field(DESC, "Step multiplier 1")
+  field(PREC, "0")
+  field(EGU, "")
+}
+
+record(ao, "$(P)fdbk:StFactor2") {
+  field(DESC, "Step multiplier 2")
+  field(PREC, "0")
+  field(EGU, "")
+}
+
+record(ao, "$(P)fdbk:StFactor3") {
+  field(DESC, "Step multiplier 3")
+  field(PREC, "0")
+  field(EGU, "")
+}
+
+
+record(stringin, "$(P)fdbk:Msg0") {
+}
+
+record(stringin, "$(P)fdbk:Msg1") {
+}
+
+record(stringin, "$(P)fdbk:Msg2") {
+}
+
+record(stringin, "$(P)fdbk:Msg3") {
+}
+
+record(stringin, "$(P)fdbk:Msg4") {
+}
+
+record(stringin, "$(P)fdbk:Msg5") {
+}
+
+record(stringin, "$(P)fdbk:Msg6") {
+}
+
+record(stringin, "$(P)fdbk:Msg7") {
+}
+
+record(stringin, "$(P)fdbk:Msg8") {
+}
+
+record(stringin, "$(P)fdbk:Msg9") {
+}
+

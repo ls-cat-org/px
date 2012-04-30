@@ -1,0 +1,14 @@
+# DO NOT EDIT: This file created by mkmf.pl,v 1.5 2002/03/25 21:33:24 jba Exp $ 
+
+monoMain.o : /pf/epics/base/include/epicsThread.h
+monoMain.o : /pf/epics/base/include/iocsh.h
+monoMain.o : /pf/epics/base/include/shareLib.h
+monoMain.o : /pf/epics/base/include/epicsEvent.h
+monoMain.o : /pf/epics/base/include/epicsMutex.h
+monoMain.o : /pf/epics/base/include/os/Linux/osdThread.h
+monoMain.o : /pf/epics/base/include/epicsAssert.h
+monoMain.o : /pf/epics/base/include/os/Linux/osdEvent.h
+monoMain.o : /pf/epics/base/include/compilerDependencies.h
+monoMain.o : /pf/epics/base/include/os/Linux/osdMutex.h
+
+
