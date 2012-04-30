@@ -1,6 +1,0 @@
-epicsEnvSet("ARCH","linux-x86")
-epicsEnvSet("IOC","iocMono")
-epicsEnvSet("TOP","/pf/epics/synApps/lscat-mono/1-0")
-epicsEnvSet("SNCSEQ","/pf/epics/seq")
-epicsEnvSet("AUTOSAVE","/pf/epics/synApps/autosave/4-5")
-epicsEnvSet("EPICS_BASE","/pf/epics/base")
