@@ -392,6 +392,7 @@ CREATE TABLE px._config (
         cnotifyrun       text   not null,
         cnotifydetector  text   not null,
         cnotifydiffractometer text not null,
+	cnotifypmac      text   not null,
         cnotifypause     text   not null,
         cnotifymessage   text   not null,
         cnotifywarning   text   not null,
@@ -568,10 +569,12 @@ CREATE OR REPLACE FUNCTION px.checkDetectorOn() RETURNS int AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.checkDetectorOn() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
+CREATE OR REPLACE FUNCTION px.ininotifies( the_stn int) RETURNS text AS $$
 --
 -- Used by the MD2 seqRun support code to setup notifies for the correct station
 -- We are making use in seqRun of the format 'station_notifytype' so the underscore is important
+--
+-- Returns station name, although this appears to be unused in the client code
 --
   DECLARE
     notifyrun   text;   -- notify name for run
@@ -586,9 +589,10 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
   BEGIN
     PERFORM px.demandDiffractometerOn();
     rtn := NULL;
-    SELECT  split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer, cnotifymessage, cnotifywarning, cnotifyerror
+    SELECT
        INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer,  notifymess,      notifywarn,    notifyerr
-       FROM px._config WHERE px.getstation( cstation)=px.getstation();
+            split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer, cnotifymessage, cnotifywarning, cnotifyerror
+       FROM px._config WHERE px.getstation( cstation)=the_stn;
 
     IF FOUND THEN
       EXECUTE 'LISTEN ' || notifykill;
@@ -603,7 +607,13 @@ CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ininotifies( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
+  SELECT px.ininotifies( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.ininotifies() OWNER TO lsadmin;
+
 
 
 CREATE OR REPLACE FUNCTION px.lock_detector() RETURNS void AS $$
@@ -2796,8 +2806,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) retu
             LOOP
 
         startTime := startTime + rq.deltaTime;
-        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.rqtoken as dspid, rq.rqtype as "type", rq.dsfp as dsfp, t
-        tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
+	tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
       END LOOP;
       rtn = xmlelement( name runqueue, xmlattributes( 'true' as success), tmp);
     END IF;
@@ -6755,13 +6764,16 @@ $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.dstimes() OWNER TO lsadmin;
 
 DROP TYPE IF EXISTS px.blusagetype CASCADE;
-CREATE TYPE px.blusagetype AS (stn int, esaf int, institution text, funding text, duration numeric, shots int);
+CREATE TYPE px.blusagetype AS (stn int, esaf int, piln text, pifn text, piemail text, institution text, funding text, duration numeric, shots int);
 CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype AS $$
   DECLARE
     rtn px.blusagetype;
     starttime timestamp with time zone;
     endtime timestamp with time zone;
     nfunding int;
+    thedate date;
+    thecount int;
+    thehours float;
   BEGIN
     SELECT INTO starttime srnstart FROM lsched.syncrunnames WHERE srnname=therun;
     IF NOT FOUND OR starttime is null THEN
@@ -6772,18 +6784,34 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
       RAISE EXCEPTION 'Run name "%" does not appear to end', therun;
     END IF;
 
-    FOR rtn.stn, rtn.esaf, rtn.shots, rtn.duration IN
-      SELECT dsstn, dsesaf, count(*), lsched.tohours(max(sts)-min(sts))
+    FOR rtn.stn, rtn.esaf IN
+      SELECT dsstn, dsesaf
         FROM px.datasets
-        LEFT JOIN px.shots ON sdspid=dspid
-        WHERE sstate='Done' and dscreatets >= starttime and dscreatets <= endtime and dsstn != 2
+        WHERE dscreatets >= starttime and dsdonets <= endtime and dsstn != 2
         GROUP BY dsstn, dsesaf
       LOOP
       PERFORM 1 FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' AND expbadgeno=85460;
       IF FOUND THEN
         CONTINUE;
       END IF;
-      SELECT INTO rtn.institution expinst FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
+      
+      rtn.duration = 0;
+      rtn.shots    = 0;
+      FOR thedate, thecount, thehours IN
+        SELECT sts::date, count(*), lsched.tohours(max(sts)-min(sts))
+          FROM px.datasets
+          LEFT JOIN px.shots ON dspid=sdspid
+          WHERE sstate='Done' and dsesaf=rtn.esaf and dsstn=rtn.stn
+          GROUP BY sts::date 
+        LOOP
+          rtn.duration = rtn.duration + thehours;
+          rtn.shots    = rtn.shots    + thecount;
+      END LOOP;
+
+
+
+
+      SELECT INTO rtn.institution, rtn.piln, rtn.pifn, rtn.piemail expinst, expln, expfn, expemail FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
       SELECT INTO nfunding count(*) FROM esaf.esaffunding WHERE efexpid=rtn.esaf;
       IF NOT FOUND or nfunding=0 THEN
         return next rtn;
@@ -6798,38 +6826,4 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
-
-
-CREATE OR REPLACE FUNCTION px.blusage( esaf int) returns setof px.blusagetype AS $$
-  DECLARE
-    rtn px.blusagetype;
-    nfunding int;
-  BEGIN
-    FOR rtn.stn, rtn.esaf, rtn.shots, rtn.duration IN
-      SELECT dsstn, dsesaf, count(*), lsched.tohours(max(sts)-min(sts))
-        FROM px.datasets
-        LEFT JOIN px.shots ON sdspid=dspid
-        WHERE sstate='Done' and dsesaf=esaf and dsstn != 2
-        GROUP BY dsstn, dsesaf
-      LOOP
-      PERFORM 1 FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' AND expbadgeno=85460;
-      IF FOUND THEN
-        CONTINUE;
-      END IF;
-      SELECT INTO rtn.institution expinst FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
-      SELECT INTO nfunding count(*) FROM esaf.esaffunding WHERE efexpid=rtn.esaf;
-      IF NOT FOUND or nfunding=0 THEN
-        return next rtn;
-      ELSE
-        rtn.shots = rtn.shots/nfunding;
-        FOR rtn.funding IN SELECT effunding FROM esaf.esaffunding WHERE efexpid=rtn.esaf LOOP
-          return next rtn;
-        END LOOP;
-      END IF;
-    END LOOP;
-    return;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
-
 

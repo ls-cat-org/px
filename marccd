@@ -61,17 +61,6 @@ EOF
 
 marccd_version=`/home/marccd/bin/linux/marccd -v | awk '{print $3}'`
 
-if [[ "ZZ"$marccd_version < "ZZ0.20.8a" ]]; then
-#
-# Stop button only get removed in marccd versions before 0.20.8a
-xrdb -merge <<EOF
-Marccd*Stop*background: grey80
-Marccd*Stop*foreground: grey80
-Marccd*Stop*Sensitive: False
-EOF
-fi
-
-
 #
 # Make sure the marMosaic module is loaded
 #
