@@ -3,19 +3,45 @@
 # (C) Copyright 2012 by Keith Brister
 #
 
+#
+# Lines to add to sudoers
+#
+
 zzs[1]="ALL ALL=NOPASSWD: /usr/bin/killall -q pxMarServer.py"
 zzs[2]="ALL ALL=NOPASSWD: /usr/bin/killall -q -s KILL pxMarServer.py"
 zzs[3]="ALL ALL=NOPASSWD: /usr/local/bin/fixMarccdLog"
 zzs[4]="ALL ALL=NOPASSWD: /usr/local/bin/AutoDetector.py"
 zzs[5]="ALL ALL=NOPASSWD: /sbin/modprobe marMosaic"
 
-ii=0;
-while [[ $ii < ${#zzs[*]} ]]; do
-    ll=${zzs[$ii]}
+#
+# only use these computers
+#
+vcomps=(vidalia venison vanilla vinegar)
 
-    grep -q "^${ll}" /etc/sudoers || echo "We'd append it here: " $ll
+#
+# see if our computer is allowed
+#
+for vc in ${vcomps[@]}; do
+    if [[ `hostname -a`"zz" = ${vc}"zz" ]]; then
 
-    let ii=$ii+1
+	#
+	# save the old version in case we screw up
+	#
+	cp /etc/sudoers /tmp/sudoers.copy
+
+	ii=0;
+	while [[ $ii < ${#zzs[*]} ]]; do
+
+		    ll=${zzs[$ii]}
+
+		    grep -q "^${ll}" /etc/sudoers || echo $ll >>/etc/sudoers
+
+		    let ii=$ii+1
+	done
+
+    fi
 done
+
+
 
 
