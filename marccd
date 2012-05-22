@@ -59,7 +59,7 @@ Marccd*ShutterMenuBar*foreground: grey80
 Marccd*ShutterMenuBar*Sensitive: False
 EOF
 
-marccd_version=`/home/marccd/bin/linux/marccd -v | awk '{print $3}'`
+marccd_version=`/home/marccd/bin/marccd -v | awk '{print $3}'`
 
 #
 # Make sure the marMosaic module is loaded
@@ -102,4 +102,4 @@ cd ${theHomeDirectory}
 # Here /usr/local/bin/pxMarServer.py supports 
 # the remote mode services.
 #
-/home/marccd/bin/linux/marccd -rf
+/home/marccd/bin/marccd -rf
