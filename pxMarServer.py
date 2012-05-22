@@ -484,8 +484,8 @@ class PxMarServer:
                             #
                             # set the kv pair for the directory and file name
                             #
-                            self.query( "select px.kvset('directory', '%s')" % r["dsdir"])
-                            self.query( "select px.kvset('filename', '%s')"  % r["sfn"])
+                            self.query( "select px.kvset(px.getstation(), 'directory', '%s')" % r["dsdir"])
+                            self.query( "select px.kvset(px.getstation(), 'filename', '%s')"  % r["sfn"])
 
                             #
                             # Delete the file first so that the hard link to the old file remains
