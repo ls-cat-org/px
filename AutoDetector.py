@@ -26,6 +26,7 @@ class AutoDetector:
     myuid     = None    # Our uid
     Xnest     = None    # Our Xnest home for marccd
     Xvnc      = None    # Our Xvnc home for the marccd display
+    forkList  = None    # list of our fork processes so we can wait for them later and kill the zombies
 
     def __init__( self):
         #
@@ -39,6 +40,11 @@ class AutoDetector:
         self.p = select.poll()
         self.p.register( self.db, select.POLLIN)
         print os.environ
+
+        #
+        # prepare list of potential zombies
+        #
+        self.forkList = []
 
     def dbService( self, event=None):
         #
@@ -88,6 +94,7 @@ class AutoDetector:
                 os.setreuid( self.pw[2], self.pw[2])
             except OSError:
                 print "Well, that didn't work out.  UID or GID is bad.  Very bad."
+                raise
                 os._exit(-1)
 
 
@@ -117,6 +124,10 @@ class AutoDetector:
             print "Tata for now!"
             os._exit(0)
 
+        #
+        # Still in parent
+        #
+        self.forkList.append(pid)
 
     def killX( self):
         """
@@ -222,8 +233,29 @@ class AutoDetector:
         #
         running = True
         while running:
-            for (fd, event) in self.p.poll():
+            #
+            # wait for something interesting to happen
+            # get board after a while and check up on our old processes
+            #
+            for (fd, event) in self.p.poll(10000):
                 self.dbService( event=event)
+
+            #
+            # Check that our children are still alive
+            #
+            newlist = []
+            for pid in self.forkList:
+                try:
+                    print pid, os.waitpid( pid, os.WNOHANG)
+                except OSError:
+                    #
+                    # Killed a zombie!
+                    #
+                    pass
+                else:
+                    newlist.append(pid)
+
+            self.forkList = newlist
 
             #
             # Somewhere down here should be some code to stop this program
