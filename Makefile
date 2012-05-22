@@ -21,6 +21,4 @@ install:
 	install fixMarccdLog /usr/local/bin
 	install AutoDetector.py /usr/local/bin
 	install MarccdConfFile.py /usr/local/bin
-	@grep -q AutoDetector /etc/sudoers || echo "Please append append.to.sudoers to /etc/sudoers"
-
-
+	./append.to.sudoers
