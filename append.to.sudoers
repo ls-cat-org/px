@@ -12,6 +12,8 @@ zzs[2]="ALL ALL=NOPASSWD: /usr/bin/killall -q -s KILL pxMarServer.py"
 zzs[3]="ALL ALL=NOPASSWD: /usr/local/bin/fixMarccdLog"
 zzs[4]="ALL ALL=NOPASSWD: /usr/local/bin/AutoDetector.py"
 zzs[5]="ALL ALL=NOPASSWD: /sbin/modprobe marMosaic"
+zzs[6]="ALL ALL=(elena) NOPASSWD: /usr/bin/screen -d -m /pf/epics/lscat/lscatApp/tcl/lsmono"
+zzs[7]="ALL ALL=(elena) NOPASSWD: /usr/bin/screen -d -m /pf/epics/lscat/lscatApp/tcl/pezca_wrapper2 attenuationServer.pl *"
 
 #
 # only use these computers
