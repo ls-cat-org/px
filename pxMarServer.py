@@ -15,6 +15,15 @@ import time             # error message time stamps
 import traceback        # where we were when things went wrong
 import datetime         # now...
 import subprocess       # run lfs to set the striping and pool for lustre
+import signal           # catch term signal to drop locks on exit
+
+EXIT_NOW = False
+
+def pxMarSignalHandler( signum, frame):
+    global EXIT_NOW
+
+    EXIT_NOW = True
+
 
 #
 # Program States
@@ -383,13 +392,15 @@ class PxMarServer:
 
 
     def serviceIn( self, event):
+
+        global EXIT_NOW
+
         #
         # An error on reading the input stream is probably because the marccd program has terminated
-        # We'll just close the database connections and power out
         #
         if event == select.POLLERR:
-            self.close()
-            sys.exit( 1)
+            EXIT_NOW = True
+            return
 
         #
         # Normally this is what we do: service the input from marccd
@@ -433,13 +444,15 @@ class PxMarServer:
                     self.flushStatus = False
 
     def serviceOut( self, event):
+
+        global EXIT_NOW
         #
         # An error on writing the output stream is probably because the marccd program has terminated
         # We'll just close the database connections and power out
         #
         if event == select.POLLERR:
-            self.close()
-            sys.exit( 1)
+            EXIT_NOW=True
+            return
 
         if event == select.POLLOUT:
             #
@@ -745,6 +758,8 @@ class PxMarServer:
 
 
     def run( self):
+        global EXIT_NOW
+
         runFlag = True
 
         self.flushStatus = True
@@ -754,7 +769,7 @@ class PxMarServer:
         # initialize detector
         self.query( "select px.marinit()")
 
-        while runFlag:
+        while not EXIT_NOW:
 
             if not self.updatedDetectorInfo and self.ybin != None and self.xsize != None and self.ysize != None:
                 #
@@ -770,10 +785,21 @@ class PxMarServer:
                 
             #
             # check to see if any socket needs service
-            for (fd,event) in self.p.poll( 500):
-                #
-                # call socket's service routine for the given event
-                self.fan[fd](event)
+            try:
+                for (fd,event) in self.p.poll( 500):
+                    #
+                    # call socket's service routine for the given event
+                    self.fan[fd](event)
+                
+            except select.error, (errno, strerror):
+                if errno == 4:
+                    print >>sys.stderr, "pxMarServer.py poll: ", strerror
+                else:
+                    raise
+
+
+            if EXIT_NOW:
+                break;
 
             #
             # See if it's time do do "stuff"
@@ -803,12 +829,24 @@ class PxMarServer:
                     # set the time
                     self.ltime = time.time()
 
+
+        print >> sys.stderr, time.asctime(), "pxMarServer.py: cleaning up"
+        self.query( "select px.dropDetectorOn()")
+        self.db.close()
+        print >> sys.stderr, time.asctime(), "pxMarServer.py: Exiting now."
+        
+
 #
 # Default usage
 #
 if __name__ == '__main__':
+    signal.signal( signal.SIGTERM, pxMarSignalHandler)
+    signal.signal( signal.SIGABRT, pxMarSignalHandler)
+    signal.signal( signal.SIGHUP, pxMarSignalHandler)
+    signal.signal( signal.SIGINT, pxMarSignalHandler)
+    signal.signal( signal.SIGPIPE, pxMarSignalHandler)
     z = PxMarServer()
-    while( True):
+    while not EXIT_NOW:
         try:
             z.run()
         except PxMarError:
