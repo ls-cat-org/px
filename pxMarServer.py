@@ -46,6 +46,14 @@ def pxMarSignalHandler( signum, frame):
 #              repeat
 #
 #
+#    For each of dezinger, write, correct, read, and aquire:
+#        1: Queued
+#        2: Executing
+#        4: Error
+#        8: Reserved
+#
+#
+#
 #                +------- Dezinger Status
 #                |+------ Write    Status
 #                ||+----- Correct  Status
@@ -55,7 +63,7 @@ def pxMarSignalHandler( signum, frame):
 #                ||||||
 
 zingMask     = 0x300000
-readMask     = 0x000300
+readMask     = 0x000700
 aquireMask   = 0x000030
 aquiringMask = 0x000020
 busyMask     = 0x000008
