@@ -103,7 +103,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.pushqueue( text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.pushqueue( theStn bigint, cmd text) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.pushqueue( theStn int, cmd text) RETURNS VOID AS $$
 --
 -- Function to push command onto the queue
 --
@@ -119,9 +119,9 @@ CREATE OR REPLACE FUNCTION px.pushqueue( theStn bigint, cmd text) RETURNS VOID A
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushqueue( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushqueue( int, text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.setbin( theStn bigint, binsize int) RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION px.setbin( theStn int, binsize int) RETURNS VOID AS $$
   DECLARE
     cmd text;
   BEGIN
@@ -136,7 +136,7 @@ CREATE OR REPLACE FUNCTION px.setbin( theStn bigint, binsize int) RETURNS VOID A
 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-ALTER FUNCTION px.setbin( bigint, int) OWNER TO lsadmin;
+ALTER FUNCTION px.setbin( int, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.setbin( binsize int) RETURNS VOID AS $$
   BEGIN
@@ -668,6 +668,43 @@ CREATE OR REPLACE FUNCTION px.lock_detector_test( stn int) RETURNS int AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector_test( int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.lock_detector_test_block( stn int) RETURNS void AS $$
+  -- 
+  -- wait for detector to grab its lock then return
+  -- we never return with the detector lock
+  --
+  DECLARE
+    tmp boolean;
+  BEGIN
+
+    LOOP
+      -- Check the detector 'ready' lock
+      SELECT pg_try_advisory_lock( stn, 3) INTO tmp;
+      IF tmp THEN
+        PERFORM pg_advisory_unlock( stn, 3);
+      ELSE
+        RETURN;
+      END IF;
+
+      -- Check the detector 'is on' lock
+      SELECT pg_try_advisory_lock( stn, 5) INTO tmp;
+      IF tmp THEN
+        PERFORM pg_advisory_unlock( stn, 5);
+        RAISE EXCEPTION 'Detector sofware is not running for station %', stn;
+      END IF;
+
+      -- Pause a moment to keep the cpu usage under control
+      PERFORM pg_sleep(0.02);
+    END LOOP;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_detector_test_block( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_detector_test_block() RETURNS void AS $$
+  SELECT px.lock_detector_test_block( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.lock_detector_test_block() OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
 -- indicate the start of integration
   BEGIN
@@ -736,6 +773,53 @@ CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.unlock_diffractometer() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
+  DECLARE
+    the_stn int;
+  BEGIN
+    the_stn := px.getstation();
+    IF the_stn is null THEN
+      RAISE EXCEPTION 'Cannot determine station number';
+    END IF;
+
+    --
+    -- set the "as run" positions
+    --
+    UPDATE px.shots SET skappa=kappa, sphi=phi, scenx=cx, sceny=cy, salignx=ax, saligny=ay, salignz=az WHERE skey=shot_key;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Cannot update px.shots for skey=%', shot_key;
+    END IF;
+
+    -- Check that the detector is running
+    PERFORM 1 WHERE px.checkDetectorOn() = 0;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'The detector software does not appear to be running';
+    END IF;
+    
+    -- wait for the detector to grab its lock indicating that
+    -- it is ready and willing to start integrating
+    --
+    PERFORM px.lock_detector_test_block( the_stn);
+
+    --
+    -- Get the diffractometer lock
+    --
+    PERFORM pg_advisory_lock( the_stn, 4);
+
+    -- set status
+    PERFORM px.shots_set_params( shot_key, kappa::numeric, phi::numeric);
+
+    -- tell the detector to get to work
+    PERFORM px.pushqueue( 'collect,' || shot_key::text);
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.seq_run_prep( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
+
+
+
 
 
 CREATE TABLE px.axes (
@@ -834,10 +918,10 @@ CREATE OR REPLACE FUNCTION px.chkdir( token text) returns void AS $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.chkdir( text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.chkdir( theStn bigint, token text) returns void AS $$
+CREATE OR REPLACE FUNCTION px.chkdir( theStn int, token text) returns void AS $$
   SELECT px.pushqueue( $1, 'checkdir,'|| $2);
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.chkdir( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.chkdir( int, text) OWNER TO lsadmin;
 
 CREATE TABLE px.datasettypes (
   dst text primary key
@@ -938,7 +1022,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.next_prefix( text, int) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.newdataset( theStn bigint, expid int) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS $$
 --
 -- used by px.login
 -- called indirectly by BLUMax through px.newdataset( expid)
@@ -955,7 +1039,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn bigint, expid int) RETURNS text
   END;
 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.newdataset( bigint, int) OWNER TO lsadmin;
+ALTER FUNCTION px.newdataset( int, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
 --
@@ -972,7 +1056,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.newdataset( int ) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir text, newPrefix text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION px.copydataset( theStn int, token text, newDir text, newPrefix text) RETURNS text AS $$
   --
   -- Called from px.editDS
   -- and indirectly from BLUMax via px.copydataset( token, newDir, newPrefix)
@@ -1003,7 +1087,7 @@ CREATE OR REPLACE FUNCTION px.copydataset( theStn bigint, token text, newDir tex
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( bigint, text, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.copydataset( int, text, text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
   SELECT px.copydataset( px.getstation(), $1, $2, $3);
@@ -1121,12 +1205,12 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
     SELECT dsdir, dsfp, dspid INTO cDir, cFp, thedspid FROM px.datasets LEFT JOIN px.stnstatus ON ssdsedit=dspid where ssstn=theStn LIMIT 1;
 
     IF theKey='dir' and theValue != cDir THEN
-      SELECT px.copydataset( theStn, thedspid, theValue, cFp) INTO thedspid;
+      SELECT px.copydataset( theStn::int, thedspid, theValue, cFp) INTO thedspid;
       PERFORM px.setCurrentToken( theStn, thedspid);
     END IF;
 
     IF theKey='fp' and theValue != cFp THEN
-      SELECT px.copydataset( theStn, thedspid, cDir, theValue) INTO thedspid;
+      SELECT px.copydataset( theStn::int, thedspid, cDir, theValue) INTO thedspid;
       PERFORM px.setCurrentToken( theStn, thedspid);
     END IF;
 
@@ -1897,7 +1981,7 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition, 0, 0, 0, 0, 0, 0, sindex, stype
+      SELECT INTO rtn dsdir, dspid, dsowidth, dsoscaxis, dsexp, skey, sstart, sfn, dsphi, dsomega, dskappa, dsdist, dsnrg, sposition, scenx, sceny, salignx, saligny, salignz, case when dstype='GridSearch' then 1 else 0 end, sindex, stype
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -1911,10 +1995,15 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
         END IF;
       END IF;
 
-      IF rtn.stype = 'normal' THEN
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
-      ELSE
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+      --
+      -- If the center point is not already active (because we are doing a grid search) then check center_interpolate to see if it should become active
+      --
+      IF rtn.active = 0 THEN
+        IF rtn.stype = 'normal' THEN
+          SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+        ELSE
+          SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+        END IF;
       END IF;
 
       RETURN NEXT rtn;
@@ -1923,6 +2012,69 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
+
+CREATE TYPE px.nextshot2type AS (
+       dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text, 
+       dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int,
+       cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text,
+       dsowidth2 numeric, dsoscaxis2 text, dsexp2 numeric, sstart2 numeric, dsphi2 numeric, dsomega2 numeric, dskappa2 numeric, dsdist2 numeric, dsnrg2 numeric,
+       cx2 numeric, cy2 numeric, ax2 numeric, ay2 numeric, az2 numeric, active2 int, sindex2 int, stype2 text);
+
+CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
+  DECLARE
+    rtn px.nextshot2type;        -- the return value
+    rq  record;                 -- the runqueue record at the top of the queueu
+
+  BEGIN
+
+   SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
+    IF FOUND THEN
+      SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype
+                      dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,     dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype
+        FROM px.datasets
+        LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
+        WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
+        ORDER BY sindex ASC
+        LIMIT 1;
+      IF NOT FOUND THEN
+        PERFORM px.poprunqueue();
+        SELECT INTO rtn * from px.nextshot2();
+        IF NOT FOUND THEN
+          RETURN;
+        END IF;
+      END IF;
+
+      IF rtn.stype = 'normal' THEN
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+      ELSE
+        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+      END IF;
+
+
+
+      SELECT INTO rtn.dsowidth2, rtn.dsoscaxis2, rtn.dsexp2, rtn.sstart2, rtn.dsphi2, rtn.dsomega2, rtn.dskappa2, rtn.dsdist2, rtn.dsnrg2, rtn.sindex2, rtn.stype2
+                      dsowidth,      dsoscaxis,      dsexp,      sstart,      dsphi,      dsomega,      dskappa,      dsdist,      dsnrg,      sindex,      stype
+        FROM px.datasets
+        LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
+        WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
+        ORDER BY sindex ASC
+        LIMIT 1 OFFSET 1;
+
+      IF FOUND THEN
+        IF rtn.stype2 = 'normal' THEN
+          SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex2, px.ds_get_nframes( rtn.dspid));
+        ELSE
+          SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+        END IF;
+      END IF;
+
+
+      RETURN NEXT rtn;
+    END IF;
+    RETURN;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.nextshot2() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
@@ -1935,9 +2087,9 @@ CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
     IF OLD.sstate != 'Done' and NEW.sstate = 'Done' and coalesce( NEW.sbupath,'') != '' THEN
       UPDATE px.stnstatus SET ssskey = NEW.skey, sssfn = NEW.sfn, ssspath=NEW.spath, sssbupath=NEW.sbupath WHERE ssstn = px.getStation();
       INSERT INTO px.esafstatus (esskey, essfn, esspath, essbupath) VALUES (NEW.skey, NEW.sfn, NEW.spath, NEW.sbupath);
-      IF NEW.stype='normal' and NEW.sindex % 10 = 0 THEN
-        EXECUTE 'NOTIFY roboprocess_' || NEW.sdspid;
-      END IF;
+      -- IF NEW.stype='normal' and NEW.sindex % 10 = 0 THEN
+      --  EXECUTE 'NOTIFY roboprocess_' || NEW.sdspid;
+      -- END IF;
     END IF;
   RETURN NULL;
   END;
@@ -2873,10 +3025,7 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
     END IF;
 
     IF curtype = 'normal' THEN
-      PERFORM 1 WHERE px.shots_count_done_normals(curpid) % 10 = 0;
-      IF NOT FOUND THEN
-        EXECUTE 'NOTIFY roboprocess_' || curpid;
-      END IF;
+      EXECUTE 'NOTIFY roboprocess_' || curpid;
     END IF;
     
 
@@ -5355,7 +5504,7 @@ CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.login( int, text) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) returns boolean as $$
+CREATE OR REPLACE FUNCTION px.login( theStn int, expid int, thepwd text) returns boolean as $$
   DECLARE
     rtn boolean;
     lastInfo record;
@@ -5384,7 +5533,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn bigint, expid int, thepwd text) retu
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.login( bigint, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.login( int, int, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.logout() returns void as $$
   DECLARE
@@ -5741,8 +5890,10 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     rtn px.center_interpolate_type;
     frame_index int;            -- maybe_frame is allowed to be > nframes; frame_index wraps around
     thedd float;
+    the_dstype text;
 
   BEGIN
+    
     SELECT INTO  n px.kvget( thestn, 'centers.length')::int;
 
     -- raise notice 'centers.length  (n) = %', n;
@@ -6610,6 +6761,18 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lnnames( pid text, the_type text) returns setof px.lnnamestype AS $$
+  DECLARE
+    rtn px.lnnamestype;
+  BEGIN
+    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and stype=the_type and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lnnames( text, text) OWNER TO lsadmin;
 
 
 
