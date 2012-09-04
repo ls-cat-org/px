@@ -47,7 +47,7 @@ export LS_CAT_DETECTOR_INFO=`/usr/local/bin/MarccdConfFile.py detector_info`
 export LS_CAT_CCD_PIXEL_SIZE=`/usr/local/bin/MarccdConfFile.py ccd_pixelsize`
 
 #
-# Remove the stop and shutter buttons from the marccd
+# Remove the shutter button from the marccd
 # interface.  Although this is perhaps a cheesy way of 
 # accomplishing the goal it does provide a rare example
 # of when xrdb is useful.
