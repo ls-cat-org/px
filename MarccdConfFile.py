@@ -53,11 +53,11 @@ import shlex            # parse the line respecting quotes
 class MarccdConfFile:
     """
     Parse the marccd config file with includes:
-    MarccdConfFile()    => start at /home/marccd/configuration/marccd.conf
+    MarccdConfFile()    => start at /opt/marccd/configuration/marccd.conf
     MarccdConfFile(fn)  => start at named file
     """
 
-    def __init__( self, fn="/home/marccd/configuration/marccd.conf"):
+    def __init__( self, fn="/opt/marccd/configuration/marccd.conf"):
         self._fn = fn                           # our file name
 
         self._dir = os.path.dirname( fn)        # we need this to process include statements

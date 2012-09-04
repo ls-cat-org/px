@@ -32,13 +32,8 @@ sudo /usr/bin/killall -q -s KILL pxMarServer.py
 #
 # set up the marccd environment
 #
-. /home/marccd/marccd_setup.sh
+. /opt/marccd/marccd_setup.sh
 
-#
-# fix up the remote mode server
-#
-grep -q -E "remote_mode_server_command.*/usr/local/bin/pxMarServer.py" /home/marccd/configuration/marccd_server_v1.conf || sed -iz1 "s#^remote_mode_server_command#remote_mode_server_command  /usr/local/bin/pxMarServer.py#g" /home/marccd/configuration/marccd_server_v1.conf
-grep -q -E "remote_mode_server_command.*/usr/local/bin/pxMarServer.py" /home/marccd/configuration/marccd_server_v1.conf || echo "remote_mode_server_command  /usr/local/bin/pxMarServer.py" >>/home/marccd/configuration/marccd_server_v1.conf
 
 #
 # add a couple of needed parameters not available elsewhere
@@ -59,7 +54,7 @@ Marccd*ShutterMenuBar*foreground: grey80
 Marccd*ShutterMenuBar*Sensitive: False
 EOF
 
-marccd_version=`/home/marccd/bin/marccd -v | awk '{print $3}'`
+marccd_version=`/opt/marccd/bin/marccd -v | awk '{print $3}'`
 
 #
 # Make sure the marMosaic module is loaded
@@ -102,4 +97,4 @@ cd ${theHomeDirectory}
 # Here /usr/local/bin/pxMarServer.py supports 
 # the remote mode services.
 #
-/home/marccd/bin/marccd -rf
+/opt/marccd/bin/marccd -rf
