@@ -401,6 +401,8 @@ CREATE TABLE px._config (
         cnotifyrobot     text   not null,
         cnotifycenter    text   not null,
         cnotifylogin     text   not null,
+	cnotifykvs       text   not null,
+	cnotifysample    text   not null,
         clustrepool      text   not null default 'pffs.pool_slow'
 );
 ALTER TABLE px._config OWNER TO lsadmin;
@@ -585,13 +587,14 @@ CREATE OR REPLACE FUNCTION px.ininotifies( the_stn int) RETURNS text AS $$
     notifymess  text;   -- notify name for messages
     notifywarn  text;   -- notify name for warnings
     notifyerr   text;   -- notify name for errors
+    notifysample text;   -- notify name for sample changes
     rtn         text;   -- prefix for all the notify names: SEE KLUDGE ABOVE
   BEGIN
     PERFORM px.demandDiffractometerOn();
     rtn := NULL;
     SELECT
-       INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer,  notifymess,      notifywarn,    notifyerr
-            split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer, cnotifymessage, cnotifywarning, cnotifyerror
+       INTO rtn,                           notifykill,  notifysnap,  notifyrun,  notifypause,  notifyxfer,  notifymess,      notifywarn,    notifyerr, notifysample
+            split_part(cnotifykill,'_',1), cnotifykill, cnotifysnap, cnotifyrun, cnotifypause, cnotifyxfer, cnotifymessage, cnotifywarning, cnotifyerror, cnotifysample
        FROM px._config WHERE px.getstation( cstation)=the_stn;
 
     IF FOUND THEN
@@ -603,6 +606,7 @@ CREATE OR REPLACE FUNCTION px.ininotifies( the_stn int) RETURNS text AS $$
       EXECUTE 'LISTEN ' || notifymess;
       EXECUTE 'LISTEN ' || notifywarn;
       EXECUTE 'LISTEN ' || notifyerr;
+      EXECUTE 'LISTEN ' || notifysample;
     END IF;
     return rtn;
   END;
@@ -4799,6 +4803,18 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
 
 
+CREATE OR REPLACE FUNCTION px.md2clearqueue( the_stn int) returns VOID AS $$
+ DELETE FROM px._md2queue WHERE md2addr = (SELECT cdiffractometer FROM px._config WHERE cstnkey=$1);
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.md2clearqueue( int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.md2clearqueue() returns VOID AS $$
+ DELETE FROM px._md2queue WHERE md2addr=inet_client_addr();
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.md2clearqueue() OWNER TO lsadmin;
+
+
+
 CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as $$
   DECLARE
     rtn text;
@@ -5685,10 +5701,12 @@ CREATE TABLE px.kvs (
        kvmd2cmd text default null,			-- use this method to send command to md2 rather than just set the kv value
        kvstn int default null,				-- needed to send commands to md2 from epics
        kvdbrtype int default 0,				-- native type to report to epics
+       kvnotify text[] default null			-- list of notifies to send on change
        UNIQUE( kvname)
 );
 ALTER TABLE px.kvs OWNER TO lsadmin;
 CREATE INDEX kvsNameIndex ON px.kvs (kvname);
+CREATE INDEX kvsStnIndex ON px.kvs (kvstn);
 
 CREATE OR REPLACE FUNCTION px.kvtype( thename text, thetype int) returns void as $$
   DECLARE
@@ -5762,9 +5780,11 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
     n text;
     v text;
     notify_epics boolean;
+    notify_redis boolean;
   BEGIN
     theSeq := NULL;			-- only set if there is a new value
     notify_epics := FALSE;		-- only send notify if we've changed something that is monitored
+    notify_redis := FALSE;              -- make sure the value changes before telling redis aboutit
 
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
       n := 'stns.' || thestn::text || '.' || kvps[i];
@@ -5776,6 +5796,8 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
             SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
           END IF;
           UPDATE px.kvs SET kvts=now(), kvseq=theSeq, kvvalue=v WHERE kvkey=thekey;
+          notify_redis := TRUE;
+
           IF not notify_epics THEN
             PERFORM 1 FROM e.monitors left join e.created_channels on mcc=cckey WHERE cckv=thekey;
             IF FOUND THEN
@@ -5788,10 +5810,14 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
           SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
         END IF;
         INSERT INTO px.kvs (kvts, kvstn, kvseq, kvname, kvvalue) VALUES (now(), thestn, theSeq, n, v);
+        notify_redis := TRUE;
       END IF;
     END LOOP;
     IF notify_epics THEN
       NOTIFY EPICS_MONITOR_UPDATE;
+    END IF;
+    IF notify_redis THEN
+      NOTIFY REDIS_KV_CONNECTOR;
     END IF;
     RETURN;
   END;
@@ -5808,7 +5834,13 @@ CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
 
+
 CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void as $$
+  --
+  -- Use this version
+  --
+  --  Includes notify mechanism for new MD2 code
+  --
   DECLARE
     thestn int;
     thekey int;
@@ -5817,6 +5849,7 @@ CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void 
     thevalue text;
     themd2cmd text;
     md2string text;
+    ntfya text[];
   BEGIN
     --
     -- See if this key is associated with a station, ie, thestn means something
@@ -5833,13 +5866,18 @@ CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void 
     --
     -- See if this is a new kv pair or, perhaps, a new value for an existing pair
     --
-    SELECT INTO thekey,thevalue,themd2cmd kvkey,kvvalue,kvmd2cmd FROM px.kvs WHERE kvname=thename LIMIT 1;
+    SELECT INTO thekey,thevalue,themd2cmd,ntfya kvkey,kvvalue,kvmd2cmd, kvnotify FROM px.kvs WHERE kvname=thename LIMIT 1;
     IF NOT FOUND THEN
       --
       -- Add it.
       --
       SELECT INTO theSeq nextval( 'px.kvs_kvseq_seq');
       INSERT INTO px.kvs (kvname, kvvalue, kvseq, kvstn) VALUES (thename, v, theseq, thestn);
+
+        --
+        -- Notify the redis connector who will happily just add the new variable
+        --
+        NOTIFY REDIS_KV_CONNECTOR;
     ELSE
       --
       -- Update only if the value is new
@@ -5855,11 +5893,21 @@ CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void 
           PERFORM px.md2pushqueue( thestn, md2string);
         END IF;
         --
+        -- Notify the redis connector
+        --
+        NOTIFY REDIS_KV_CONNECTOR;
+
+        --
         -- Notify the channel access server if someone is listening for this kv pair
         --
         PERFORM 1 FROM e.monitors left join e.created_channels on mcc=cckey WHERE cckv=thekey;
         IF FOUND THEN
           NOTIFY EPICS_MONITOR_UPDATE;
+        END IF;
+        IF ntfya is not NULL THEN
+          FOR I IN array_lower(ntfya,1) .. array_upper( ntfya,1) LOOP
+            EXECUTE 'NOTIFY ' || ntfya[I];
+          END LOOP;
         END IF;
       END IF;
     END IF;
@@ -5873,6 +5921,32 @@ CREATE OR REPLACE FUNCTION px.kvset( k text, v text) RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
+
+
+CREATE TYPE px.redis_kv_type AS ( rname text, rvalue text, rseq int, rdbrtype int);
+CREATE OR REPLACE FUNCTION px.redis_kv_init() returns setof px.redis_kv_type AS $$
+  DECLARE
+    rtn px.redis_kv_type;
+  BEGIN
+    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs ORDER BY kvname LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.redis_kv_init() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.redis_kv_update( oldseq int) returns setof px.redis_kv_type AS $$
+  DECLARE
+    rtn px.redis_kv_type;
+  BEGIN
+    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs WHERE kvseq > oldseq ORDER BY kvname LOOP
+      return next rtn;
+    END LOOP;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.redis_kv_update(int) OWNER TO lsadmin;
+
 
 
 drop type px.center_interpolate_type cascade;
@@ -6626,6 +6700,119 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float, float, float) OWNER TO lsadmin;
 
 
+drop type px.centertype2 cascade;
+
+CREATE TYPE px.centertype2 AS ( zoom int, dcx float, dcy float, dax float, day float, daz float);
+
+CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS $$
+  --
+  -- In the UI the user selects three points ad differnet angles and reports the pixel locations
+  --
+  --  r  is the distance from the axis of rotation to the crystal
+  --  b  is the distance from the edge of the screen to the rotation axis
+  --  ø0 is the angle of the crystal about the spindle when the spindle is at zero
+  --  ø1, ø2, ø3 are the reported spindle angles for the measurements
+  --  y1, y2, y3 are the measure pixel locations of the crystal
+  --
+  --  We seek to determine the amount we need to change the alignment and centering table
+  --  by to put the crystal at the center of rotation and the center of rotation into the beam
+  --  using the three observed positions of the crystal as seen by the user.
+  --
+  --  First determine r, b, and ø0: from the observed ø's and y's.
+  --
+  --  Use the three measurements
+  --  y1 = r * cos( ø1 - ø0) + b
+  --  y2 = r * cos( ø2 - ø0) + b
+  --  y3 = r * cos( ø3 - ø0) + b
+  --
+  --  or with a simple trig identity:
+  --
+  --  y  = r * cos ø * cos ø0 + r * sin ø * sin ø0 + b
+  --
+  --  In matrix form this is
+  --
+  --  ⎛y1⎞   ⎛cos ø1  sin ø1  1⎞ ⎛r cos ø0⎞
+  --  ⎜y2⎟ = ⎜cos ø2  sin ø2  1⎟ ⎜r sin ø0⎟
+  --  ⎝y3⎠   ⎝cos ø3  sin ø3  1⎠ ⎝   b    ⎠
+  --
+  --  The UI inverts the 3X3 matrix (handy that modern UIs have simple linear algebra functions to handle common transformations)
+  --  and calculates r, ø0, and b.
+  --
+  -- The UI then calculates the distance along the focus x and the vertical distance y that the centering stage must be moved
+  -- to center the crystal.  The distance to be moved along the spindle axis is calculated by taking an average of the three 
+  -- horizontal measurements of the crystal position.
+  --
+  -- x = r sin ø0
+  -- y = r cos ø0
+  -- z = (average of three horizontal crystal positions)
+  --
+  -- As returned by the UI x and y are fractional screen positions (0,0 is upper left, 1,1 is lower right)
+  -- 
+  -- We need to find the amount to move the x,y centering stage and the y (horizontal perpendicular to the beam) and z (vertical) alginment
+  -- stage motions in real units (mm) to postiiont the crystal and rotation axis.  At this point the alignment stage x is a gimmie and
+  -- should be set so the sample is in focus.  It's not completely a free parameter since we want the sample to remain in the cold stream.
+  --
+
+  DECLARE
+    rtn px.centertype2;
+    scaleH float;         -- centering stage x & y and alignment stage z use the vertical scale
+    scaleW float;         -- alignment stage y uses the horizontal scale
+    vwidth float;         -- picture width in pixels
+    vheight float;        -- picture height in pixels
+    omegaReference float; -- the centering stage is rotated this much relative to omega = 0
+    cor float;            -- cos of omega reference
+    sor float;            -- sin of omega reference
+
+  BEGIN
+    scaleH = px.kvget( theStn, 'cam.xScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
+    scaleW = px.kvget( theStn, 'cam.yScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
+
+    vwidth = px.kvget( theStn, 'cam.videoWidth')::float;        -- pixels
+    vheight= px.kvget( theStn, 'cam.videoHeight')::float;       -- pixels
+
+    omegaReference = px.kvget( theStn, 'omega.reference')::float;
+    cor = cos( omegaReference * PI() / 180.);
+    sor = sin( omegaReference * PI() / 180.);
+
+    IF scaleH is null OR scaleW is null OR vwidth is null OR vheight is null OR omegaReference is null THEN
+      raise exception 'Null values for station %.  Check omega.referenece, cam.videoHeight, cam.videoWidth, cam.yScale, and cam.xScale', theStn;
+    end if;
+
+    --
+    -- dcx and dcy put the crystal at the center of rotation
+    --
+    SELECT INTO rtn.zoom, rtn.dcx, rtn.dcy, rtn.dax, rtn.day, rtn.daz
+                czoom,
+                 ( cx * vheight * scaleH * cor + cy * vheight * scaleH * sor),
+                 (-cx * vheight * scaleH * sor + cy * vheight * scaleH * cor),
+                0.0,
+                (CASE cz WHEN 0 THEN 0 ELSE (0.5 - cz) * vwidth  * scaleW END),
+                (CASE cb WHEN 0 THEN 0 ELSE (cb - 0.5) * vheight * scaleH END)
+                FROM px.centertable
+                WHERE cstn=theStn
+                ORDER BY ckey DESC
+                LIMIT 1;
+
+    IF NOT FOUND THEN
+      rtn.dcx = 0.;
+      rtn.dcy = 0.;
+      rtn.dax = 0.;
+      rtn.day = 0.;
+      rtn.daz = 0.;
+    END IF;
+
+    return rtn;
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.getcenter2(int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.getcenter2() returns px.centertype2 AS $$
+  SELECT * from px.getcenter2( px.getstation());
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getcenter2() OWNER TO lsadmin;
+
+
 DROP TYPE px.centertype CASCADE;
 CREATE TYPE px.centertype AS (pid text, ip inet, port int, zoom int, x float, y float, z float, b float, t0 float);
 
@@ -6989,4 +7176,3 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
-
