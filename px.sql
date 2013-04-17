@@ -81,6 +81,7 @@ CREATE TABLE px._marqueue (
         mqkey serial primary key,                       -- table key
         mqs timestamp with time zone default now(),     -- create time stamp
         mqc inet NOT NULL,                              -- client address (address of marccd)
+	mqstn int NOT NULL,				-- our station
         mqcmd text NOT NULL                             -- queued command
 );
 ALTER TABLE px._marqueue OWNER TO lsadmin;
@@ -96,7 +97,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
     SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=px.getstation();
     c = trim( cmd);
     IF length( c) > 0 THEN
-      INSERT INTO px._marqueue (mqcmd,mqc) SELECT c, cdetector from px._config where cdiffractometer=inet_client_addr() or cdetector=inet_client_addr() limit 1;
+      INSERT INTO px._marqueue (mqcmd, mqstn) VALUES (c, px.getstation());
       EXECUTE 'NOTIFY ' || ntfy;
     END IF;
   END;
@@ -114,7 +115,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( theStn int, cmd text) RETURNS VOID AS $
     SELECT INTO ntfy cnotifydetector FROM px._config LEFT JOIN px.stations ON cstation=stnname WHERE stnkey=theStn;
     c = trim( cmd);
     IF length( c) > 0 THEN
-      INSERT INTO px._marqueue (mqcmd,mqc) SELECT c, cdetector from px._config where cstnkey=theStn limit 1;
+      INSERT INTO px._marqueue (mqcmd, mqstn) VALUES ( c, theStn);
       EXECUTE 'NOTIFY ' || ntfy;
     END IF;
   END;
@@ -172,7 +173,7 @@ CREATE OR REPLACE FUNCTION px.popqueue() RETURNS text AS $$
     rtn text;   -- return value
     mqk int;    -- serial number of returned value
   BEGIN
-    SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue where mqc=inet_client_addr() ORDER BY mqkey ASC LIMIT 1;
+    SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue where mqstn=px.getstation() ORDER BY mqkey ASC LIMIT 1;
     IF NOT FOUND THEN
       RETURN '';
     END IF;
@@ -191,7 +192,7 @@ CREATE OR REPLACE FUNCTION px.popqueue( cmd text) RETURNS text AS $$
     rtn text;   -- return value
     mqk int;    -- serial number of returned value
   BEGIN
-    SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue WHERE mqcmd=cmd and mqc=inet_client_addr() ORDER BY mqkey ASC LIMIT 1;
+    SELECT INTO rtn, mqk mqcmd, mqkey FROM px._marqueue WHERE mqcmd=cmd and mqstn=px.getstation() ORDER BY mqkey ASC LIMIT 1;
     IF NOT FOUND THEN
       RETURN '';
     END IF;
@@ -207,7 +208,7 @@ CREATE OR REPLACE FUNCTION px.flushqueue() RETURNS VOID AS $$
 -- Function to flush the queue
 --
   BEGIN
-    DELETE FROM px._marqueue where mqc=inet_client_addr();
+    DELETE FROM px._marqueue where mqstn=px.getstation();
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -313,8 +314,8 @@ ALTER FUNCTION px.martaskstatus( int, int) OWNER TO lsadmin;
 --
 -- allows the marccd status timing to be printed out nicely
 --
-CREATE OR REPLACE VIEW px.mar ( mkey, mqc, mts, mtu, mtd, mstatus, maquire, mread, mcorrect, mwrite, mdezinger) AS
-        SELECT mkey, host(mc),mts, mtu, mtu-mts, px.marstatus( mrawstate), px.martaskstatus( mrawstate,0),px.martaskstatus( mrawstate,1),px.martaskstatus( mrawstate,2),px.martaskstatus( mrawstate,3),px.martaskstatus( mrawstate,4)
+CREATE OR REPLACE VIEW px.mar ( mkey, mqstn, mts, mtu, mtd, mstatus, maquire, mread, mcorrect, mwrite, mdezinger) AS
+        SELECT mkey, px.getstation(),mts, mtu, mtu-mts, px.marstatus( mrawstate), px.martaskstatus( mrawstate,0),px.martaskstatus( mrawstate,1),px.martaskstatus( mrawstate,2),px.martaskstatus( mrawstate,3),px.martaskstatus( mrawstate,4)
            FROM px._mar;
 
 
@@ -4731,7 +4732,7 @@ ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO lsad
 CREATE TABLE px._md2queue (
        md2Key serial primary key,       -- our key
        md2ts timestamp with time zone not null default now(),
-       md2Addr inet not null,           -- IP Address of the MD2
+       md2Stn int not null,		-- station number
        md2Cmd text not null             -- the Command
 );
 ALTER TABLE px._md2queue OWNER TO lsadmin;
@@ -4747,11 +4748,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
     END IF;
     c := trim( cmd);
     IF length( c) > 0 THEN
-      INSERT INTO px._md2queue (md2Cmd, md2Addr)
-        SELECT c, cdiffractometer::inet
-          FROM px._config
-          WHERE cstnkey=px.getstation()
-          LIMIT 1;
+      INSERT INTO px._md2queue (md2Cmd, md2Stn) VALUES (cmd, px.getstation());
       IF FOUND THEN
         EXECUTE 'NOTIFY ' || ntfy;
       END IF;
@@ -4772,11 +4769,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( stn int, cmd text) RETURNS VOID AS $
     END IF;
     c := trim( cmd);
     IF length( c) > 0 THEN
-      INSERT INTO px._md2queue (md2Cmd, md2Addr)
-        SELECT c, cdiffractometer::inet
-          FROM px._config
-          WHERE cstnkey=stn
-          LIMIT 1;
+      INSERT INTO px._md2queue (md2Cmd, md2Stn) VALUES (cmd, stn);
       IF FOUND THEN
         EXECUTE 'NOTIFY ' || ntfy;
       END IF;
@@ -4791,8 +4784,7 @@ CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
   DECLARE
     rtn px._md2queue;           -- return value
   BEGIN
---    rtn := NULL;
-    SELECT md2key, md2cmd INTO rtn.md2key, rtn.md2cmd FROM px._md2queue WHERE md2Addr=inet_client_addr() ORDER BY md2Key ASC LIMIT 1;
+    SELECT md2key, md2cmd INTO rtn.md2key, rtn.md2cmd FROM px._md2queue WHERE md2Stn=px.getstation() ORDER BY md2Key ASC LIMIT 1;
     IF NOT FOUND THEN
       return NULL;
     END IF;
@@ -4804,12 +4796,12 @@ ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.md2clearqueue( the_stn int) returns VOID AS $$
- DELETE FROM px._md2queue WHERE md2addr = (SELECT cdiffractometer FROM px._config WHERE cstnkey=$1);
+ DELETE FROM px._md2queue WHERE md2stn = $1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.md2clearqueue( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.md2clearqueue() returns VOID AS $$
- DELETE FROM px._md2queue WHERE md2addr=inet_client_addr();
+ DELETE FROM px._md2queue WHERE md2stn=px.getstation();
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.md2clearqueue() OWNER TO lsadmin;
 
