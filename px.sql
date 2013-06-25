@@ -5581,6 +5581,18 @@ CREATE OR REPLACE FUNCTION px.logout( theStn bigint) returns void as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.logout( bigint) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.who( thestn int) RETURNS INT AS $$
+  DECLARE
+    rtn int;
+  BEGIN
+    SELECT INTO rtn lesaf FROM px.logins WHERE lstn=thestn and louts is null ORDER BY lkey desc limit 1;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.who( int) OWNER TO lsadmin;
+
+
+
 CREATE OR REPLACE FUNCTION px.detectorvncinit( thestn int) returns void as $$
   DECLARE
     ntfy text;
@@ -6880,12 +6892,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.applycenter( thestn int, cx float, cy float, ax float, ay float, az float, kappa float, phi float) returns void as $$
+CREATE OR REPLACE FUNCTION px.applycenter( thestn int, acx float, acy float, aax float, aay float, aaz float, akappa float, aphi float) returns void as $$
   DECLARE
     ourkey int;
   BEGIN
     SELECT INTO ourkey ckey FROM px.centertable WHERE cstn=thestn ORDER BY ckey DESC LIMIT 1;
-    UPDATE px.centertable SET cabscx=cx, cabscy=cy, cabsax=ax, cabsay=ay, cabsaz=az, cabskappa=kappa, cabsphi=phi WHERE ckey=ourkey;
+    UPDATE px.centertable SET cabscx=acx, cabscy=acy, cabsax=aax, cabsay=aay, cabsaz=aaz, cabskappa=akappa, cabsphi=aphi WHERE ckey=ourkey;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.applycenter( int, float, float, float, float, float, float, float) OWNER TO lsadmin;
