@@ -443,6 +443,12 @@ INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cd
 );
 
 
+CREATE TYPE px.getstationstype AS (skey int, sname text, sshortname text, sdataroot text, sid int);
+CREATE OR REPLACE FUNCTION px.getstations() RETURNS setof px.getstationstype AS $$
+  SELECT stnkey, stnname, stnshortname, stndataroot, stnid FROM px.stations order by stnkey;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getstations() OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.getstation( theip inet) RETURNS int AS $$
 --
@@ -3875,6 +3881,9 @@ CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( stn int) returns xml as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getAllPuckPositionsxml( int) OWNER TO lsadmin;
 
+
+
+
 CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
   DECLARE
     rtn int;
@@ -6682,7 +6691,7 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn int, thePid text, theIp inet, th
   -- these values to the video.
   --
   -- If you want to show the user the point they selected you'll have
-  -- to look at the LAST entry (if any) in centertable for that video.
+  -- to look at the _previous_ entry (if any) in centertable for that video.
   -- Note that the first video after a transfer has no point selected.
   --
 
@@ -6725,7 +6734,7 @@ ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, f
 
 drop type px.centertype2 cascade;
 
-CREATE TYPE px.centertype2 AS ( zoom int, dcx float, dcy float, dax float, day float, daz float);
+CREATE TYPE px.centertype2 AS ( zoom int, dcx float, dcy float, dax float, day float, daz float, hash text);
 
 CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS $$
   --
@@ -6787,8 +6796,8 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     sor float;            -- sin of omega reference
 
   BEGIN
-    scaleH = px.kvget( theStn, 'cam.xScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
-    scaleW = px.kvget( theStn, 'cam.yScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
+    scaleW = px.kvget( theStn, 'cam.xScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
+    scaleH = px.kvget( theStn, 'cam.yScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
 
     vwidth = px.kvget( theStn, 'cam.videoWidth')::float;        -- pixels
     vheight= px.kvget( theStn, 'cam.videoHeight')::float;       -- pixels
@@ -6807,7 +6816,7 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     SELECT INTO rtn.zoom, rtn.dcx, rtn.dcy, rtn.dax, rtn.day, rtn.daz
                 czoom,
                  ( cx * vheight * scaleH * cor + cy * vheight * scaleH * sor),
-                 (-cx * vheight * scaleH * sor + cy * vheight * scaleH * cor),
+                 ( cx * vheight * scaleH * sor + cy * vheight * scaleH * cor),
                 0.0,
                 (CASE cz WHEN 0 THEN 0 ELSE (0.5 - cz) * vwidth  * scaleW END),
                 (CASE cb WHEN 0 THEN 0 ELSE (cb - 0.5) * vheight * scaleH END)
@@ -6824,11 +6833,14 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
       rtn.daz = 0.;
     END IF;
 
+    select into rtn.hash  rmt.centeringvideoinit( theStn);
+
     return rtn;
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.getcenter2(int) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.getcenter2() returns px.centertype2 AS $$
   SELECT * from px.getcenter2( px.getstation());
