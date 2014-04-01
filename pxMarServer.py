@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/local/bin/python
 #
 # pxMarServer.py
 #
@@ -16,6 +16,8 @@ import traceback        # where we were when things went wrong
 import datetime         # now...
 import subprocess       # run lfs to set the striping and pool for lustre
 import signal           # catch term signal to drop locks on exit
+import socket           # needed for get hostname for the correct redis configuration
+import redis            # new database model
 
 EXIT_NOW = False
 
@@ -81,6 +83,59 @@ class PxMarError( Exception):
 
     def __str__( self):
         return repr( self.value)
+
+
+class _R:
+    r       = None      # our connection
+    rdy     = False     # true when it looks like our connection is ok and redis is configured
+    head    = None      # the start of all our keys in the redis database
+    robopub = None      # our pen name
+    ourKVs  = {}        # a list of our KV pairs
+
+    def getconfig( self):
+        hn = socket.gethostname()
+        try:
+            self.head = self.r.hget( 'config.%s' % (hn), 'HEAD')
+            if self.head == None or self.head == '':
+                print >> sys.stderr, 'Redis is not configured for this host "%s"' % (hn)
+                self.rdy = False
+                self.head = None
+                return
+
+            self.robopub = self.r.hget( 'config.%s' % (hn), 'ROBOPUB')
+
+        except redis.exceptions.ConnectionError:
+            print >> sys.stderr, 'Redis connection error.  Is it running?'
+            self.rdy = False
+            self.head = None
+            return
+
+
+    def __init__( self):
+        self.r = redis.Redis()          # should all be defaults
+        self.getconfig()
+
+    def set( self, k, v):
+        if self.ourKVs.has_key( k) and self.ourKVs[k] == v:
+            return
+
+        try:
+            if self.r.ping():
+                if self.head == None:
+                    self.getconfig()
+                if self.head == None:
+                    return
+                
+                bigk = "%s.%s" % (self.head, k)
+
+                self.r.hmset( bigk, {'KEY': bigk, 'VALUE':v})
+
+                if self.robopub:
+                    self.r.publish( self.robopub, bigk)
+
+                self.ourKVs[k] = v
+        except:
+            print >> sys.stderr, "Redis error setting key '%s' to value '%s'" % (k, v)
 
 
 class PxMarServer:
@@ -224,11 +279,14 @@ class PxMarServer:
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s"}' % (int(shotKey), bfd, d+'/'+f));
+
                     else:
                         qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
                         self.query( qs);
                         qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                         self.query( qs)
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": ""}' % (int(shotKey)));
                     
                     self.hlList.pop( self.hlList.index(hl))
 
@@ -306,6 +364,7 @@ class PxMarServer:
         print >> sys.stderr, time.asctime(), theDist
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
+            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Moving", "msg": ""}' % (int(self.skey)));
 
         if theDist == None:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
@@ -332,6 +391,7 @@ class PxMarServer:
                 # something bad happened, abort.
                 self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                 self.query( "select px.pauserequest()");
+                self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed"}' % (int(self.skey)));
                 return False
                 
             if r["isthere"] == 'f':
@@ -347,6 +407,7 @@ class PxMarServer:
                         # something bad happened, abort.
                         self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                         self.query( "select px.pauserequest()");
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed."}' % (int(self.skey)));
                         return False
 
                     if r["isthere"] == 't':
@@ -354,6 +415,7 @@ class PxMarServer:
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
             self.query( "select px.shots_set_energy( %d)" % (int(self.skey)))
+            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Exposing", "msg": ""}' % (int(self.skey)));
         return True;
             
 
@@ -372,6 +434,7 @@ class PxMarServer:
             #
             # No error means the directory was valid and we just created it
             theDirState = 'Valid'
+            self.redis.set( 'detector.checkdir', '{ "dir": "%s", "valid": true}' % (theDir));
         except OSError, (errno, strerror):
             if errno == 17:
                 #
@@ -384,6 +447,7 @@ class PxMarServer:
                 self.query( qs);
                 print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
+                self.redis.set( 'detector.checkdir', '{ "dir": "%s", "valid": false}' % (theDir));
 
         self.query( "select px.ds_set_dirs( '%s', '%s')" % (token, theDirState))
         #
@@ -494,6 +558,7 @@ class PxMarServer:
 
 
                         if r["dsdir"] != None and r["sfn"] != None and len(r["sfn"])>0:
+                            self.redis.set( 'detector.path', '{ "directory": "%s", "filename": "%s"}' % (r["dsdir"], r["sfn"]));
                             try:
                                 os.makedirs( r["dsdir"], 0770)
                             except OSError, (errno, strerror):
@@ -549,42 +614,46 @@ class PxMarServer:
                             print >>sys.stderr, " Done"
                             self.query( "select px.setDetectorOn()")
                             return
+
+
+                        if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
+                            #
+                            # get the beam center information
+                            #
+                            qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
+                            qr2 = self.query( qs2)
+                            r2 = qr2.dictresult()[0]
+                            beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
+                            beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
+                            dist = r2["dist"]
+                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
                         else:
-                            if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
-                                #
-                                # get the beam center information
-                                #
-                                qs2 = "select px.rt_get_bcx() as bcx, px.rt_get_bcy() as bcy, px.rt_get_dist() as dist"
-                                qr2 = self.query( qs2)
-                                r2 = qr2.dictresult()[0]
-                                beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
-                                beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
-                                dist = r2["dist"]
-                                print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
-                            else:
-                                beam_x = 2048
-                                beam_y = 2048
-                                qs2 = "select px.rt_get_dist() as dist"
-                                qr2 = self.query( qs2)
-                                r2 = qr2.dictresult()[0]
-                                dist = r2["dist"]
+                            beam_x = 2048
+                            beam_y = 2048
+                            qs2 = "select px.rt_get_dist() as dist"
+                            qr2 = self.query( qs2)
+                            r2 = qr2.dictresult()[0]
+                            dist = r2["dist"]
                             
+                        self.redis.set( 'detector.beam_x', beam_x);
+                        self.redis.set( 'detector.beam_y', beam_y);
+                        self.redis.set( 'detector.dist',   dist);
+                                
         
-        
-                            self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
-                            hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
-                                dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
-                                )
-                            print >> sys.stderr, time.asctime(), hs
-                            self.queue.insert( 0, hs)
-        
-                            self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
-        
-        
-                            cmd = "start"
-                            self.collectingFlag = True
-                            self.flushStatus    = True
-                            print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
+                        self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
+                        hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
+                            dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
+                            )
+                        print >> sys.stderr, time.asctime(), hs
+                        self.queue.insert( 0, hs)
+                        
+                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
+                        
+                        
+                        cmd = "start"
+                        self.collectingFlag = True
+                        self.flushStatus    = True
+                        print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
 
                         
                     #
@@ -726,6 +795,12 @@ class PxMarServer:
         """
 
         #
+        # Use redis to communicate state info to UI
+        #
+        self.redis = _R()
+
+
+        #
         # we use the environment to get our filedescriptors from marccd
         #
         self.fdin = int(os.getenv( "IN_FD"))
@@ -777,6 +852,8 @@ class PxMarServer:
         # initialize detector
         self.query( "select px.marinit()")
 
+        self.redis.set( 'detector.running', True);
+
         while not EXIT_NOW:
 
             if not self.updatedDetectorInfo and self.ybin != None and self.xsize != None and self.ysize != None:
@@ -790,6 +867,8 @@ class PxMarServer:
                 qs = "select px.setdetectorinfo( '%s', %f, %f, %d, %d, %d)" % (self.detector_info, self.xpixsize, self.ypixsize, self.xsize, self.ysize, self.ybin)
                 self.query( qs)
                 self.updatedDetectorInfo = True
+
+                self.redis.set( "detector.info", '{ "info": "%s",  "xpixsize": %f, "ypixsize": %f, "xsize": %d, "ysize": %d, "bin": %d}' % (self.detector_info,self.xpixsize, self.ypixsize, self.xsize, self.ysize, self.ybin));
                 
             #
             # check to see if any socket needs service
@@ -842,7 +921,7 @@ class PxMarServer:
         self.query( "select px.dropDetectorOn()")
         self.db.close()
         print >> sys.stderr, time.asctime(), "pxMarServer.py: Exiting now."
-        
+        self.redis.set( 'detector.running', False);
 
 #
 # Default usage
