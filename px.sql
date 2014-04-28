@@ -2166,7 +2166,7 @@ CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
         -- None in queue, find first with shots not taken
         SELECT dspid INTO childPid FROM px.datasets LEFT JOIN px.shots ON dspid=sdspid WHERE dsparent=pid and sstate='Not Taken' ORDER BY dskey LIMIT 1;
         IF NOT FOUND THEN
-          -- OK, they are all taken, get get the last one and move on
+          -- OK, they are all taken, get the last one and move on
           SELECT dspid INTO childPid FROM px.datasets WHERE dsparent=pid ORDER BY dskey DESC LIMIT 1;
         END IF;
       END IF;
