@@ -5194,7 +5194,7 @@ CREATE TABLE px.lockstates  (
 ALTER TABLE px.lockstates OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.locks( theStn bigint) returns int AS $$
-  SELECT bit_or((2^(objid::int-1))::int) FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=$1;
+  SELECT bit_or((2^(objid::int-1))::int) FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.locks( bigint) OWNER TO lsadmin;
 
@@ -5211,7 +5211,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
     stt text;
   BEGIN
     FOR theStn IN SELECT * FROM px.stations ORDER BY stnkey LOOP
-      SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=theStn.stnkey;
       SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
       SELECT * INTO shts
           FROM px.stnstatus
@@ -5256,7 +5256,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     running boolean;  -- when all the current images have been taken
   BEGIN
     FOR theStn IN SELECT * FROM px.stations WHERE rmt.checkstnaccess( stnkey, thePid) ORDER BY stnkey LOOP
-      -- SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+      -- SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=theStn.stnkey;
       SELECT INTO st cats.machinestate( theStn.stnkey);
       SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
       SELECT INTO esaf ssesaf FROM px.stnstatus WHERE ssstn=theStn.stnkey;
@@ -5335,7 +5335,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( theExpNo int) returns xml AS $$
       stt := NULL;
       st  := NULL;
       IF FOUND THEN
-        SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks LEFT JOIN pg_stat_activity ON procpid=pid WHERE locktype='advisory' and classid=theStn.stnkey;
+	SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=theStn.stnkey;
         SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
       END IF;
       SELECT skey, coalesce(sfn,'') as sfn, coalesce(spath,'') as spath, coalesce(sbupath,'') as sbupath INTO shts
