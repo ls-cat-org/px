@@ -3984,6 +3984,8 @@ ALTER TABLE px.nextSamplesState OWNER TO lsadmin;
 INSERT INTO px.nextSamplesState (nss) VALUES ('NEW');
 INSERT INTO px.nextSamplesState (nss) VALUES ('WORKING');
 INSERT INTO px.nextSamplesState (nss) VALUES ('DONE');
+INSERT INTO px.nextSamplesState (nss) VALUES ('GETPUT1');
+INSERT INTO px.nextSamplesState (nss) VALUES ('GETPUT2');
 
 CREATE TABLE px.nextSamples ( 
        nsKey serial primary key,
@@ -4045,13 +4047,21 @@ CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
     k  bigint;
   BEGIN
     rtn = 0;
-    SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() and nsstate='NEW'  ORDER BY nsKey DESC LIMIT 1;
+    --
+    -- before the introduction of getput1 the order was nskey desc.  We want getput1 to happen first so the nsstate has been added.
+    -- The nskey desc is the second sort key to retain the previous behaviour, ie, mount the most recent request first and delete the others.
+    --
+    SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() and (nsstate='NEW' or nsstate = 'GETPUT1')  ORDER BY nsstate, nsKey desc LIMIT 1;
     IF FOUND THEN
       --
       -- Mark current one 
       -- get rid of others (if any)
       --
       UPDATE px.nextSamples set nsstate='WORKING' WHERE nsKey=k;
+      --
+      -- This should save the second half of a getput1.  The insert trigger function should prevent any extra 'new's from being added
+      --
+      --      DELETE FROM px.nextSamples WHERE nsKey != k and nsStn=px.getstation() and nsstate != 'NEW';
       DELETE FROM px.nextSamples WHERE nsKey != k and nsStn=px.getstation();
     ELSE
       DELETE FROM px.nextSamples WHERE nsStn=px.getstation();
@@ -4075,6 +4085,8 @@ ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void AS $$
   DECLARE
+    tool1 int;
+    tool2 int;
   BEGIN
     --
     -- Don't do anything if there is a request still in nextSamples for this station
@@ -4099,6 +4111,19 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void 
     -- Remove reference in stnstatus to the centering video
     --
     UPDATE px.stnstatus SET sscvhash = NULL WHERE ssstn = stn;
+
+    --
+    -- See if we need two separate requests: required when the grippers are different
+    --
+    --SELECT cttoolno INTO tool1 FROM cats._cylinder2tool WHERE ctcyl = (px.getCurrentSampleID(stn) & x'0000ff00'::int) >> 8;
+    --IF FOUND THEN
+    --  SELECT cttoolno INTO tool2 FROM cats._cylinder2tool WHERE ctcyl = (theId                    & x'0000ff00'::int) >> 8;
+    --  IF FOUND and tool1 != tool2 THEN
+    --    INSERT INTO px.nextSamples (nsStn, nsId, nsState) VALUES (stn, 0, 'GETPUT1');
+    --    INSERT INTO px.lastSamples (lsStn, lsId) VALUES (stn, theId);
+    --    PERFORM px.md2pushqueue( stn, 'transfer');
+    --  END IF;
+    --END IF;
 
     --
     -- queue up the next sample and record the last one
@@ -4221,6 +4246,12 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
     END IF;
 
     SELECT INTO curdist, desttime px.rt_get_dist()::numeric, (650.0 - px.rt_get_dist()::numeric)/ px.rt_get_dspeed()::numeric + 4.0;
+    IF desttime < 4.0 THEN
+      --
+      -- This is the case where the detector is already far enough back
+      --
+      desttime = 0;
+    END IF;
     IF estTime < desttime THEN
       besttime = desttime;
     ELSE
