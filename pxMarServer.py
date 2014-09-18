@@ -637,8 +637,6 @@ class PxMarServer:
                             
                         self.redis.set( 'detector.beam_x', beam_x);
                         self.redis.set( 'detector.beam_y', beam_y);
-                        self.redis.set( 'detector.dist',   dist);
-                                
         
                         self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                         hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
