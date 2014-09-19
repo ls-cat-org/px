@@ -2081,7 +2081,6 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
       END IF;
 
 
-
       SELECT INTO rtn.dsowidth2, rtn.dsoscaxis2, rtn.dsexp2, rtn.sstart2, rtn.dsphi2, rtn.dsomega2, rtn.dskappa2, rtn.dsdist2, rtn.dsnrg2, rtn.sindex2, rtn.stype2
                       dsowidth,      dsoscaxis,      dsexp,      sstart,      dsphi,      dsomega,      dskappa,      dsdist,      dsnrg,      sindex,      stype
         FROM px.datasets
@@ -4151,9 +4150,10 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     angr float;                 -- rotation angle (in rads)
     tool int;			-- our current tool
   BEGIN
-    --    RAISE exception 'Here I am: theId=%  present=%  phiX=%  phiY=%  phiZ=% cenX=%  cenY=%', to_hex(theId), present, phiX, phiY, phiZ, cenX, cenY;
+
     SELECT px.getStation() INTO theStn;
     IF NOT FOUND or theStn < 1 or theStn > 4 THEN
+      raise notice 'px.startTransfer bad station %', theStn;
       return 0;
     END IF;
 
@@ -4242,6 +4242,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
   BEGIN
     SELECT px.getCurrentSampleID() INTO cursam;
     IF NOT FOUND THEN
+      raise notice 'Could not find current sample id';
       return 0;
     END IF;
 
@@ -6844,13 +6845,14 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     --
     -- dcx and dcy put the crystal at the center of rotation
     --
-    SELECT INTO rtn.zoom, rtn.dcx, rtn.dcy, rtn.dax, rtn.day, rtn.daz
+    SELECT INTO rtn.zoom, rtn.dcx, rtn.dcy, rtn.dax, rtn.day, rtn.daz, rtn.hash
                 czoom,
                  ( cx * vheight * scaleH * cor + cy * vheight * scaleH * sor),
                  ( cx * vheight * scaleH * sor + cy * vheight * scaleH * cor),
                 0.0,
                 (CASE cz WHEN 0 THEN 0 ELSE (0.5 - cz) * vwidth  * scaleW END),
-                (CASE cb WHEN 0 THEN 0 ELSE (cb - 0.5) * vheight * scaleH END)
+                (CASE cb WHEN 0 THEN 0 ELSE (cb - 0.5) * vheight * scaleH END),
+		ctcv
                 FROM px.centertable
                 WHERE cstn=theStn
                 ORDER BY ckey DESC
@@ -6864,7 +6866,7 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
       rtn.daz = 0.;
     END IF;
 
-    select into rtn.hash  rmt.centeringvideoinit( theStn);
+    --    select into rtn.hash  rmt.centeringvideoinit( theStn);
 
     return rtn;
 
