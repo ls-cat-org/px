@@ -2057,6 +2057,12 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
 
   BEGIN
 
+   PERFORM 1 FROM px.pause where pstn = px.getStation() and pps = 'Not Paused';
+   IF NOT FOUND THEN
+     PERFORM px.pauseTell();
+     RETURN;
+   END IF;
+
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
       SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype
@@ -6770,7 +6776,7 @@ CREATE TYPE px.centertype2 AS ( zoom int, dcx float, dcy float, dax float, day f
 
 CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS $$
   --
-  -- In the UI the user selects three points ad differnet angles and reports the pixel locations
+  -- In the UI the user selects three points at differnt angles and reports the pixel locations
   --
   --  r  is the distance from the axis of rotation to the crystal
   --  b  is the distance from the edge of the screen to the rotation axis
@@ -6865,8 +6871,6 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
       rtn.day = 0.;
       rtn.daz = 0.;
     END IF;
-
-    --    select into rtn.hash  rmt.centeringvideoinit( theStn);
 
     return rtn;
 
