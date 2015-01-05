@@ -2053,7 +2053,7 @@ CREATE TYPE px.nextshot2type AS (
 CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
   DECLARE
     rtn px.nextshot2type;        -- the return value
-    rq  record;                 -- the runqueue record at the top of the queueu
+    rq  record;                  -- the runqueue record at the top of the queueu
 
   BEGIN
 
@@ -3308,7 +3308,15 @@ CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns numeric as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_nbcy(bigint) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_get_capdetected( thestn int) returns int as $$
+  SELECT epics.caget( epvmlpv)::int FROM px.epicspvmlink WHERE epvmlname='capDetected' and epvmlstn=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_capdetected( int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.rt_get_capdetected() returns int as $$
+  SELECT epics.caget( epvmlpv)::int FROM px.epicspvmlink WHERE epvmlname='capDetected' and epvmlstn=px.getStation();
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.rt_get_capdetected() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
   DECLARE
@@ -5213,12 +5221,14 @@ $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.logmagnetstate( boolean) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getmagnetstate() returns boolean AS $$
-  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
+--  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
+  SELECT px.rt_get_capdetected(px.getStation()::int)=1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getmagnetstate() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.getmagnetstate( bigint) returns boolean AS $$
-  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=$1 ORDER BY msKey DESC LIMIT 1;
+--  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=$1 ORDER BY msKey DESC LIMIT 1;
+  SELECT px.rt_get_capdetected($1::int)=1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.getmagnetstate( bigint) OWNER TO lsadmin;
 
