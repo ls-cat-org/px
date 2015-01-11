@@ -6837,6 +6837,8 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     rtn px.centertype2;
     scaleH float;         -- centering stage x & y and alignment stage z use the vertical scale
     scaleW float;         -- alignment stage y uses the horizontal scale
+    CenterX float;	  -- pixel position of optical center
+    CenterY float;	  -- pixel position of optical center
     vwidth float;         -- picture width in pixels
     vheight float;        -- picture height in pixels
     omegaReference float; -- the centering stage is rotated this much relative to omega = 0
@@ -6846,6 +6848,9 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
   BEGIN
     scaleW = px.kvget( theStn, 'cam.xScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
     scaleH = px.kvget( theStn, 'cam.yScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
+
+    CenterX = px.kvget( theStn, 'cam.CenterX')::float;		-- pixel position of optical center
+    CenterY = px.kvget( theStn, 'cam.CenterY')::float;		-- pixel position of optical center
 
     vwidth = px.kvget( theStn, 'cam.videoWidth')::float;        -- pixels
     vheight= px.kvget( theStn, 'cam.videoHeight')::float;       -- pixels
@@ -6863,11 +6868,11 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     --
     SELECT INTO rtn.zoom, rtn.dcx, rtn.dcy, rtn.dax, rtn.day, rtn.daz, rtn.hash
                 czoom,
-                 ( cx * vheight * scaleH * cor + cy * vheight * scaleH * sor),
+                 (-cx * vheight * scaleH * cor + cy * vheight * scaleH * sor),
                  ( cx * vheight * scaleH * sor + cy * vheight * scaleH * cor),
                 0.0,
-                (CASE cz WHEN 0 THEN 0 ELSE (0.5 - cz) * vwidth  * scaleW END),
-                (CASE cb WHEN 0 THEN 0 ELSE (cb - 0.5) * vheight * scaleH END),
+                (CASE cz WHEN 0 THEN 0 ELSE (CenterX - cz * vwidth) * scaleW END),
+                (CASE cb WHEN 0 THEN 0 ELSE (cb *vheight - CenterY) * scaleH END),
 		ctcv
                 FROM px.centertable
                 WHERE cstn=theStn
