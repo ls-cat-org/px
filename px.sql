@@ -2261,7 +2261,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.startsnap( text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION px.retake( theKey bigint) RETURNS void AS $$
   DECLARE
     token text;         -- the token (for adding to queue)
     typ   text;         -- need the type to startup snaps (not normal)
@@ -2280,7 +2280,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey int) RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.retake( int) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.retakerest( theKey int) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
   DECLARE
     ndx int;    -- starting index
     typ text;   -- type of shot
