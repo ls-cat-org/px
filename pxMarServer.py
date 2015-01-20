@@ -116,7 +116,7 @@ class _R:
             'vidalia.ls-cat.org' : 'mung-2.ls-cat.org',
             'venison.ls-cat.org' : 'orange-2.ls-cat.org',
             'vanilla.ls-cat.org' : 'kiwi-2.ls-cat.org',
-            'vinegar.ls-cat.org' : 'mango-2.ls-cat.org
+            'vinegar.ls-cat.org' : 'mango-2.ls-cat.org'
         }
                        
         
