@@ -112,7 +112,15 @@ class _R:
 
 
     def __init__( self):
-        self.r = redis.Redis()          # should all be defaults
+        whichRedis = {
+            'vidalia.ls-cat.org' : 'mung-2.ls-cat.org',
+            'venison.ls-cat.org' : 'orange-2.ls-cat.org',
+            'vanilla.ls-cat.org' : 'kiwi-2.ls-cat.org',
+            'vinegar.ls-cat.org' : 'mango-2.ls-cat.org
+        }
+                       
+        
+        self.r = redis.Redis( whichRedis[socket.gethostname()]);
         self.getconfig()
 
     def set( self, k, v):
