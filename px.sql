@@ -2278,7 +2278,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey bigint) RETURNS void AS $$
 --    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retake( int) OWNER TO lsadmin;
+ALTER FUNCTION px.retake( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
   DECLARE
@@ -2295,7 +2295,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retakerest( int) OWNER TO lsadmin;
+ALTER FUNCTION px.retakerest( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.delshots( pid text, type text, starti int, endi int) RETURNS void AS $$
   DECLARE
@@ -4012,10 +4012,9 @@ ALTER TABLE px.nextSamples OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
   DECLARE
   BEGIN
-    PERFORM 1 FROM px.nextsamples WHERE nsstn = NEW.nsstn and (nsState = 'NEW' or nsState = 'WORKING');
-    IF FOUND THEN
-      return NULL;
-    END IF;
+    -- Kill off sibings...
+    --
+    DELETE FROM px.nextsamples WHERE nsstn = NEW.nsstn and (nsState = 'NEW' or nsState = 'WORKING');
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
