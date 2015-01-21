@@ -11,6 +11,7 @@ import pwd              # get UID from username
 import subprocess       # how we run marccd
 import tempfile         # stderr and stdout create for now
 import signal           # defines signal names to kill off X process(es)
+import platform         # uname like properties: used to find our computer's name to make up the window title
 
 class AutoDetector:
     """
@@ -25,6 +26,7 @@ class AutoDetector:
     pw  = None          # password file entry for current user
     myuid     = None    # Our uid
     Xnest     = None    # Our Xnest home for marccd
+    Xephyr    = None    # Our Xephyr home for marccd
     Xvnc      = None    # Our Xvnc home for the marccd display
     forkList  = None    # list of our fork processes so we can wait for them later and kill the zombies
 
@@ -160,6 +162,21 @@ class AutoDetector:
                     itsDead = True
 
                     
+    def startXephyr( self):
+        """
+        Fork off a Xephyr process to handle the marccd display
+        """
+        pid = os.fork()
+        if pid == 0:
+            #
+            # Hey there kid.
+            #
+            ourName = platform.node()
+            self.Xephyr = subprocess.Popen( ["/usr/bin/Xephyr", "-screen", "1600x1200", "-resizeable", ":2"], shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
+            os.waitpid( pid, 0)
+            os._exit( 0)
+
+
     def startXnest( self):
         """
         Fork off an Xnest process to handle the marccd display.
@@ -169,7 +186,9 @@ class AutoDetector:
             #
             # Child's play
             #
-            self.Xnest = subprocess.Popen( [ "/usr/bin/Xnest", "-geometry", "1600x1200", "-class", "TrueColor", "-depth", "24", "-name", "LS-CAT Detector", ":2" ],
+            ourName = platform.node()
+
+            self.Xnest = subprocess.Popen( [ "/usr/bin/Xnest", "-geometry", "1600x1200", "-class", "TrueColor", "-depth", "24", "-name", ourName+" Detector", ":2" ],
                                            shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
             #
             # Wait for the process to finish (We are killing zombies!)
@@ -186,7 +205,9 @@ class AutoDetector:
             #
             # we are in the child
             #
-            self.Xvnc = subprocess.Popen( [ "/usr/bin/Xvnc", "-geometry", "1600x1200", "-desktop", "LS-CAT Detector", "-AlwaysShared", "-SecurityTypes", "None", "-depth", "24", "-localhost", ":2" ],
+            ourName = platform.node()
+
+            self.Xvnc = subprocess.Popen( [ "/usr/bin/Xvnc", "-geometry", "1600x1200", "-desktop", ourName+" Detector", "-AlwaysShared", "-SecurityTypes", "None", "-depth", "24", ":2" ],
                                           shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
 
             #
