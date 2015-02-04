@@ -3141,7 +3141,6 @@ CREATE TABLE px.epicsLink (
                 references px.stations (stnkey),        
         elName text NOT NULL,                   -- our name for this variable
         elPV   text NOT NULL
-                references epics._motions (mMotorPvName) ON UPDATE CASCADE
 );
 ALTER TABLE px.epicsLink OWNER TO lsadmin;
 
@@ -3243,17 +3242,24 @@ CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric)
     errmsg text;
     thepv text;
   BEGIN
+
     SELECT INTO thepv elPV FROM px.epicsLink WHERE elName=motion and elStn=theStn;
+    PERFORM 1 FROM epics._motions WHERE mmotorpvname=thepv;
+    IF NOT FOUND THEN
+      -- perhaps this is a DAC motor: set and forget
+      PERFORM epics.caput( thepv, value::text);
+      return true;
+    END IF;
     SELECT INTO rtn  epics.moveit( thePv, value);
-      IF not rtn THEN
-        --
-        -- when moveit returns false something bad happened
-        -- signal this by returning null here
-        --
-        SELECT INTO errmsg emsg FROM epics.errors WHERE epvn=thepv ORDER BY ekey desc LIMIT 1;
-        PERFORM px.pusherror( thestn, 100, errmsg);
-        RETURN NULL;
-      END IF;
+    IF not rtn THEN
+      --
+      -- when moveit returns false something bad happened
+      -- signal this by returning null here
+      --
+      SELECT INTO errmsg emsg FROM epics.errors WHERE epvn=thepv ORDER BY ekey desc LIMIT 1;
+      PERFORM px.pusherror( thestn, 100, errmsg);
+      RETURN NULL;
+    END IF;
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
