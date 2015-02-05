@@ -6964,7 +6964,26 @@ ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.applycenter( thestn int, acx float, acy float, aax float, aay float, aaz float, akappa float, aphi float) returns void as $$
   DECLARE
     ourkey int;
+    centers_index int;
+    centers_length int;
   BEGIN
+    SELECT INTO centers_length px.kvget( thestn, 'centers.length')::int;
+    IF centers_length <= 0 THEN
+      centers_length := 1;
+      perform px.kvset( thestn, 'centers.length', centers_length::text);
+    END IF;
+
+    SELECT INTO centers_index px.kvget( thestn, 'centers.editIndex');
+    IF centers_index >= centers_length THEN
+      centers_index := centers_length - 1;
+      PERFORM px.kvset( thestn, 'centers.editIndex', centers_index::text);
+    END IF;
+    perform px.kvset( thestn, 'centers.'||centers_index||'.cx',   acx::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.cy',   acy::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.ax',   aax::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.ay',   aay::text);
+    perform px.kvset( thestn, 'centers.'||centers_index||'.az',   aaz::text);
+
     SELECT INTO ourkey ckey FROM px.centertable WHERE cstn=thestn ORDER BY ckey DESC LIMIT 1;
     UPDATE px.centertable SET cabscx=acx, cabscy=acy, cabsax=aax, cabsay=aay, cabsaz=aaz, cabskappa=akappa, cabsphi=aphi WHERE ckey=ourkey;
   END;
