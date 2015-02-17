@@ -2280,6 +2280,26 @@ CREATE OR REPLACE FUNCTION px.retake( theKey bigint) RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.retake( bigint) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.retake( thestn int, theKey bigint) RETURNS void AS $$
+  DECLARE
+    token text;         -- the token (for adding to queue)
+    typ   text;         -- need the type to startup snaps (not normal)
+  BEGIN
+    SELECT INTO token,typ sdspid,stype FROM px.shots WHERE skey=theKey;
+    UPDATE px.shots SET sstate='NotTaken' WHERE skey=theKey;
+    PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
+    IF NOT FOUND THEN
+      PERFORM px.pushrunqueue( thestn, token, typ);
+      PERFORM px.unpause( thestn);
+    END IF;
+--    IF typ = 'snap' THEN
+--      PERFORM px.startrun();
+--    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.retake( int, bigint) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
   DECLARE
     ndx int;    -- starting index
@@ -2296,6 +2316,22 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.retakerest( bigint) OWNER TO lsadmin;
+CREATE OR REPLACE FUNCTION px.retakerest( thestn int, theKey bigint) RETURNS void AS $$
+  DECLARE
+    ndx int;    -- starting index
+    typ text;   -- type of shot
+    token text; -- the pid
+  BEGIN
+    SELECT INTO ndx,typ,token sindex,stype,sdspid FROM px.shots WHERE skey=theKey;
+    UPDATE px.shots SET sstate='NotTaken' WHERE sdspid=token and sindex >= ndx and stype=typ;
+    PERFORM 1 from px.runqueue where rqToken=token and rqType=typ;
+    IF NOT FOUND THEN
+      PERFORM px.pushrunqueue( thestn, token, typ);
+      PERFORM px.unpause( thestn);
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.retakerest( int, bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.delshots( pid text, type text, starti int, endi int) RETURNS void AS $$
   DECLARE
