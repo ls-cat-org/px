@@ -2316,6 +2316,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.retakerest( bigint) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.retakerest( thestn int, theKey bigint) RETURNS void AS $$
   DECLARE
     ndx int;    -- starting index
@@ -4503,8 +4504,8 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
     thestn int;		-- our station
   BEGIN
     PERFORM px.dropAirRights();
-    SELECT px.getCurrentSampleId() INTO smpl;
     SELECT INTO thestn px.getstation();
+    SELECT px.getCurrentSampleId( thestn) INTO smpl;
 
     IF smpl != 0 THEN
       --
@@ -4526,18 +4527,19 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
 
 
       --
-      -- Test centering tricks on E
+      -- Goto Centering Mode
       --
-      IF thestn = 2 THEN
+      IF true THEN
         --
         -- Start centering if we really have a sample and it is not hand mounted and it is the correct one
         --
         SELECT INTO rsmp taid FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
-        SELECT INTO spres px.kvget( thestn, 'SamplePresent')='true';
+        SELECT INTO spres px.rt_get_capdetected( thestn) != 0;
+
+	raise notice 'dropRobotAirRights station: %,  requested sample: %,  current sample: %, dist: %,  cap detected: %', thestn, rsmp, smpl, dist, spres;
 
         IF rsmp is not null and rsmp != 0 and rsmp = smpl and spres is not null and spres THEN
-          PERFORM px.setcenter( thestn, NULL, '0.0.0.0'::inet, 0, 1, 0.0, 0.0, 0.0, 0.0, 0.0);
-          PERFORM px.md2pushqueue( thestn, 'rotate');
+          PERFORM px.md2pushqueue( thestn, 'changeMode fastCentering');
         END IF;
       END IF;
 
