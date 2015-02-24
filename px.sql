@@ -7089,8 +7089,16 @@ CREATE TYPE px.lnnamestype AS (src text, dest text);
 CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS $$
   DECLARE
     rtn px.lnnamestype;
+    esaf int;
+    fp   text;
+    dir  text;
   BEGIN
-    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+    SELECT INTO esaf, dir, fp dsesaf,dsdir,dsfp FROM px.datasets WHERE dspid = pid;
+    IF NOT FOUND THEN
+      return;
+    END IF;
+    --    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE dsesaf=esaf and dsdir = dir and dsfp = fp and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sbupath LOOP
       return next rtn;
     END LOOP;
     return;
