@@ -4150,9 +4150,6 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void 
     --
     PERFORM 1 FROM px.nextSamples WHERE nsstn = stn;
     IF FOUND THEN
-      --
-      -- This does not quite protect us since another process could be running at the same time and also see that
-      -- there is nothing yet in the queue.
       return;
     END IF;
 
@@ -4288,6 +4285,14 @@ CREATE TABLE px.transferArgs (
 ALTER TABLE px.transferArgs OWNER TO lsadmin;
 
 
+CREATE TABLE px.previoussample (
+  psKey serial primary key,
+  psts  timestamp with time zone not null default now(),
+  psstn int references px.stations (stnKey),
+  psId  int
+);
+ALTER TABLE px.previoussample OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int, esttime numeric) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
   DECLARE
@@ -4301,6 +4306,9 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       raise notice 'Could not find current sample id';
       return 0;
     END IF;
+
+    DELETE FROM px.previoussample where psstn=px.getStation();
+    INSERT INTO px.previousSample (psstn, psId) VALUES (px.getStation(), cursam);
 
     SELECT INTO curdist, desttime px.rt_get_dist()::numeric, (650.0 - px.rt_get_dist()::numeric)/ px.rt_get_dspeed()::numeric + 4.0;
     IF desttime < 4.0 THEN
@@ -5384,9 +5392,9 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
       END IF;
 
       tmp5 = NULL;
-      FOR kvpname, kvpvalue IN SELECT substring(kvname from 8), kvvalue FROM px.kvs WHERE kvname LIKE 'stns.'||thestn.stnkey::text||'.%' and kvname not like '%.%.%.%' LOOP
-        tmp5 = xmlconcat( tmp5, xmlelement( name kvpair, xmlattributes( kvpname as name, kvpvalue as value)));
-      END LOOP;
+      --FOR kvpname, kvpvalue IN SELECT substring(kvname from 8), kvvalue FROM px.kvs WHERE kvname LIKE 'stns.'||thestn.stnkey::text||'.%' and kvname not like '%.%.%.%' LOOP
+      --  tmp5 = xmlconcat( tmp5, xmlelement( name kvpair, xmlattributes( kvpname as name, kvpvalue as value)));
+      --END LOOP;
 
       SELECT cats.getrobotstatekvpxml( theStn.stnkey::int) INTO tmp6;
       SELECT px.uistatus_get_xml( thePid, theStn.stnkey) INTO tmp7;
@@ -5655,6 +5663,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn int, expid int, thepwd text) returns
         SELECT INTO token px.newdataset( theStn, expid);
         UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
       END IF;
+      PERFORM px.kvset( theStn, 'esaf', expid::text);
       PERFORM px.autologinnotify( theStn);
     END IF;
     return rtn;
@@ -5670,16 +5679,18 @@ CREATE OR REPLACE FUNCTION px.logout() returns void as $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.logout() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.logout( theStn bigint) returns void as $$
+CREATE OR REPLACE FUNCTION px.logout( theStn int) returns void as $$
   DECLARE
   BEGIN
     UPDATE px.logins set louts=now() WHERE lstn=theStn and louts is null;
     DELETE FROM px.stnstatus WHERE ssstn=theStn;
-    DELETE FROM rmt.uistreams USING px.kvs WHERE uiskv=kvkey and kvname like 'stns.'||thestn::text||'.%';
+    PERFORM px.kvset( theStn, 'esaf', 'false');
+    -- DELETE FROM rmt.uistreams USING px.kvs WHERE uiskv=kvkey and kvname like 'stns.'||thestn::text||'.%';
+    PERFORM px.kvset( theStn, 'esaf', 'false');
     PERFORM px.autologinnotify( theStn);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.logout( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.logout( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.who( thestn int) RETURNS INT AS $$
   DECLARE
@@ -5832,6 +5843,9 @@ CREATE INDEX kvsNameIndex ON px.kvs (kvname);
 CREATE INDEX kvsStnIndex ON px.kvs (kvstn);
 
 CREATE OR REPLACE FUNCTION px.kvtype( thename text, thetype int) returns void as $$
+  --
+  -- Who calls this routine?
+  --
   DECLARE
     n text;
   BEGIN
@@ -5841,6 +5855,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvtype( text, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.kvtype( thestn int, thename text, thetype int) returns void as $$
+  --
+  -- Who calls this routine?
+  --
   DECLARE
     n text;
   BEGIN
@@ -5852,6 +5869,9 @@ ALTER FUNCTION px.kvtype( int, text, int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.kvspvupdate() returns void as $$
+  --
+  -- who calls this routine?
+  --
   DECLARE
     thepvname text;
     thepvmindex int;
@@ -5896,6 +5916,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as $$
+  --
+  -- OBSOLETE: do not use
+  --
   DECLARE
     thekey int;
     theValue text;
@@ -5905,6 +5928,8 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
     notify_epics boolean;
     notify_redis boolean;
   BEGIN
+    raise exception 'px.kvupdate is obsolete  station %   variables %', thestn, kvps;
+    
     theSeq := NULL;			-- only set if there is a new value
     notify_epics := FALSE;		-- only send notify if we've changed something that is monitored
     notify_redis := FALSE;              -- make sure the value changes before telling redis aboutit
@@ -5947,20 +5972,153 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvupdate( int, text[]) OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
+  if not SD.has_key( "redis"):
+    import redis
+    SD["redis"] = redis
+
+  redis = SD["redis"]
+  if not SD.has_key( "r"):
+    SD["r"]    = [ None, None, None, None, None]
+    SD["r"][1] = redis.StrictRedis(host="localhost",port=6381,db=0)
+    SD["r"][2] = redis.StrictRedis(host="localhost",port=6382,db=0)
+    SD["r"][3] = redis.StrictRedis(host="localhost",port=6383,db=0)
+    SD["r"][4] = redis.StrictRedis(host="localhost",port=6384,db=0)
+
+  lwc   = wc
+  lstn = stn
+  if wc.find('stns.') != 0:
+    if stn < 1 or stn > 4:
+      return []
+    lwc = 'stns.%d.%s' % (stn, wc)
+  else:
+    lstn = int( wc[5])
+    if lstn < 1 or lstn > 4:
+      return []
+
+  r    = SD["r"]
+  return r[lstn].keys( lwc)
+  
+$$ language plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.kvkeys( int, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.kvgetpy( stn int, k text) returns text as $$
+  if not SD.has_key( "redis"):
+    import redis
+    SD["redis"] = redis
+
+  redis = SD["redis"]
+  if not SD.has_key( "r"):
+    SD["r"]    = [ None, None, None, None, None]
+    SD["r"][1] = redis.StrictRedis(host="localhost",port=6381,db=0)
+    SD["r"][2] = redis.StrictRedis(host="localhost",port=6382,db=0)
+    SD["r"][3] = redis.StrictRedis(host="localhost",port=6383,db=0)
+    SD["r"][4] = redis.StrictRedis(host="localhost",port=6384,db=0)
+
+  lk   = k
+  lstn = stn
+  if k.find('stns.') != 0:
+    if stn < 1 or stn > 4:
+      return None
+    lk = 'stns.%d.%s' % (stn, k)
+  else:
+    lstn = int( k[5])
+    if lstn < 1 or lstn > 4:
+      return None
+
+  r = SD["r"]
+  rtn = r[lstn].hget( lk, "VALUE")
+  return rtn
+$$ LANGUAGE plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.kvgetpy( int, text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.kvsetpy( stn int, k text, v text) returns void as $$
+  if not SD.has_key( "redis"):
+    import redis
+    SD["redis"] = redis
+
+  redis = SD["redis"]
+
+  if not SD.has_key( "w"):
+    SD["w"]    = [ None, None, None, None, None]
+    SD["w"][1] = redis.StrictRedis(host="mung-2.ls-cat.org",  port=6379,db=0)
+    SD["w"][2] = redis.StrictRedis(host="orange-2.ls-cat.org",port=6379,db=0)
+    SD["w"][3] = redis.StrictRedis(host="kiwi-2.ls-cat.org",  port=6379,db=0)
+    SD["w"][4] = redis.StrictRedis(host="mango-2.ls-cat.org", port=6379,db=0)
+
+  lk   = k
+  lstn = stn
+  if k.find('stns.') != 0:
+    if stn < 1 or stn > 4:
+      return
+    lk = 'stns.%d.%s' % (stn, k)
+  else:
+    lstn = int( k[5])
+    if lstn < 1 or lstn > 4:
+      return
+
+  w = SD["w"]
+  pipe = w[lstn].pipeline()
+  pipe.hset( lk, "VALUE", v)
+  pipe.publish( "REDIS_PG_CONNECTOR", lk)
+  pipe.execute()
+
+$$ LANGUAGE plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.kvsetpy( int, text, text) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.kvget( thestn int, k text) returns text as $$
-  SELECT  kvvalue FROM px.kvs WHERE kvname='stns.'||$1::text||'.'||$2 LIMIT 1;
+  SELECT px.kvgetpy( $1, $2);
+ --  SELECT  kvvalue FROM px.kvs WHERE kvname='stns.'||$1::text||'.'||$2 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.kvget( int, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
-  SELECT  kvvalue FROM px.kvs WHERE kvname=$1 LIMIT 1;
+  SELECT px.kvgetpy( -1, k);
+  --SELECT  kvvalue FROM px.kvs WHERE kvname=$1 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.kvsetioc( k text, v text) returns void as $$
+  --
+  --  Support for our ioc
+  --  Includes notify mechanism for new MD2 code
+  --
+  DECLARE
+    thestn int;
+    thename text;
+    themd2cmd text;
+    md2string text;
+  BEGIN
+    --
+    -- See if this key is associated with a station, ie, thestn means something
+    --
+    thename = k;
+    SELECT INTO theStn ((regexp_matches( k, E'^stns\.([0-9]+)\..+'))[1])::int;
+
+    IF theStn < 1 or theStn > 4 THEN
+      raise exception 'Illegal station specified: k = "%",  v = "%"', k, v;
+      return;
+    END IF;
+
+    SELECT INTO themd2cmd kvmd2cmd FROM px.kvs WHERE kvname=thename LIMIT 1;
+    IF NOT FOUND THEN
+      raise notice 'md2 command not found for key %', thename;
+      return;
+    END IF; 
+
+    md2string := themd2cmd || ' ' || v;
+    PERFORM px.md2pushqueue( thestn, md2string);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvsetioc(text, text) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void as $$
   --
-  -- Use this version
+  -- OBSOLETE: DO NOT USE THIS VERSION
   --
   --  Includes notify mechanism for new MD2 code
   --
@@ -6038,37 +6196,44 @@ CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvset(int, text, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) RETURNS void AS $$
+  BEGIN
+    PERFORM px.kvsetpy( maybestn, k, v);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.kvset( int, text, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.kvset( k text, v text) RETURNS void AS $$
   BEGIN
-    PERFORM px.kvset( -1, k, v);
+    PERFORM px.kvsetpy( -1, k, v);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
 
 
-CREATE TYPE px.redis_kv_type AS ( rname text, rvalue text, rseq int, rdbrtype int);
-CREATE OR REPLACE FUNCTION px.redis_kv_init() returns setof px.redis_kv_type AS $$
-  DECLARE
-    rtn px.redis_kv_type;
-  BEGIN
-    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs ORDER BY kvname LOOP
-      return next rtn;
-    END LOOP;
-    return;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.redis_kv_init() OWNER TO lsadmin;
+--CREATE TYPE px.redis_kv_type AS ( rname text, rvalue text, rseq int, rdbrtype int);
+--CREATE OR REPLACE FUNCTION px.redis_kv_init() returns setof px.redis_kv_type AS $$
+--  DECLARE
+--    rtn px.redis_kv_type;
+--  BEGIN
+--    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs ORDER BY kvname LOOP
+--      return next rtn;
+--    END LOOP;
+--    return;
+--  END;
+--$$ LANGUAGE plpgsql SECURITY DEFINER;
+--ALTER FUNCTION px.redis_kv_init() OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.redis_kv_update( oldseq int) returns setof px.redis_kv_type AS $$
-  DECLARE
-    rtn px.redis_kv_type;
-  BEGIN
-    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs WHERE kvseq > oldseq ORDER BY kvname LOOP
-      return next rtn;
-    END LOOP;
-  END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.redis_kv_update(int) OWNER TO lsadmin;
+--CREATE OR REPLACE FUNCTION px.redis_kv_update( oldseq int) returns setof px.redis_kv_type AS $$
+--  DECLARE
+--    rtn px.redis_kv_type;
+--  BEGIN
+--    FOR rtn.rname, rtn.rvalue, rtn.rseq, rtn.rdbrtype IN SELECT kvname, kvvalue, kvseq, kvdbrtype FROM px.kvs WHERE kvseq > oldseq ORDER BY kvname LOOP
+--      return next rtn;
+--    END LOOP;
+--  END;
+--$$ LANGUAGE plpgsql SECURITY DEFINER;
+--ALTER FUNCTION px.redis_kv_update(int) OWNER TO lsadmin;
 
 
 
@@ -6508,8 +6673,6 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.tunaStep( bigint) OWNER TO lsadmin;
-
-
 
 
 CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int, wtime int) returns void AS $$
