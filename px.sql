@@ -1002,13 +1002,14 @@ CREATE TABLE px.datasets (
         dsparent   text DEFAULT NULL references px.datasets (dspid),
         dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
         dseditts timestamp with time zone default now(),        -- time of last edit
-        dseditnum integer default 0                             -- increment each time an edit is made
+        dseditnum integer default 0                            -- increment each time an edit is made
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets_dskey_seq TO PUBLIC;
+
 
 --
 -- kludge: we should have a Reference to esaf.esafs as that is what is intended
@@ -1902,7 +1903,8 @@ CREATE TABLE px.shots (
         sobfuscated boolean     DEFAULT false,          -- fn, path, and bupath have been obfuscated
         stimes   int            DEFAULT 0,              -- number of times this has been run
         sfsize   int            DEFAULT NULL,           -- size of the file in bytes
-        stape    boolean        DEFALUT False           -- true if file is known to be on a backup tape
+        stape    boolean        DEFALUT False,          -- true if file is known to be on a backup tape
+	sstats   json default NULL	                -- results of a statistical look at the frame (in JSON)
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1911,6 +1913,50 @@ CREATE INDEX shotsFnIndex ON px.shots (sfn);
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
 
+
+CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns void as $$
+  DECLARE
+    prev json;    
+    nxt  text;
+    pk   text;
+    pv   text;
+    needcomma boolean;
+    sk   int;
+  BEGIN
+
+  prev = null;
+  SELECT INTO sk, prev skey,sstats FROM px.shots WHERE sbupath=bup order by skey desc limit 1;
+  IF NOT FOUND THEN
+    raise exception 'frame not fount for path %', bup;
+  END IF;
+
+  needcomma = false;
+  IF v is not null THEN
+    nxt = '{"'||k||'":'||to_json(v);
+    needcomma = true;
+  ELSE
+    nxt = '{';
+  END IF;
+
+  FOR pk, pv IN SELECT * from json_each_text( prev) LOOP
+    IF pk = k THEN
+      CONTINUE;
+    END IF;
+    
+    IF needcomma THEN
+      nxt = nxt || ',';
+    ELSE
+      needcomma = true;
+    END IF;
+
+    nxt = nxt || '"' || pk || '":' || to_json( pv) ;
+  END LOOP;
+  nxt = nxt || '}';
+
+  UPDATE px.shots SET sstats = nxt::json WHERE skey=sk;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
