@@ -812,6 +812,8 @@ class PxMarServer:
         self.fdin = int(os.getenv( "IN_FD"))
         self.fdout = int(os.getenv("OUT_FD"))
             
+        # Fix our umask
+        os.umask( 0007);
 
         #
         # return from select when fdout has a problem 
