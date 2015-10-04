@@ -1032,6 +1032,11 @@ ALTER FUNCTION px.datasetsupdatetf() OWNER TO lsadmin;
 CREATE TRIGGER datasetsUpdateTrigger BEFORE UPDATE ON px.datasets FOR EACH ROW EXECUTE PROCEDURE px.datasetsUpdateTF();
 
 
+CREATE OR REPLACE FUNCTION px.getDSType( token text) returns text as $$
+  select dstype from px.datasets WHERE dspid=$;
+$$ LANGUAGE SQL ZZZ
+
+
 CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text AS $$
   DECLARE
     rtn   text;
@@ -1927,7 +1932,7 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
   prev = null;
   SELECT INTO sk, prev skey,sstats FROM px.shots WHERE sbupath=bup order by skey desc limit 1;
   IF NOT FOUND THEN
-    raise exception 'frame not fount for path %', bup;
+    raise exception 'frame not found for path %', bup;
   END IF;
 
   needcomma = false;
@@ -2100,6 +2105,7 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
   DECLARE
     rtn px.nextshot2type;        -- the return value
     rq  record;                  -- the runqueue record at the top of the queueu
+    thedstype text;
 
   BEGIN
 
@@ -2111,8 +2117,10 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype
-                      dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,     dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype
+      SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype, thedstype,
+                  rtn.cx,    rtn.cy,    rtn.ax,       rtn.ay,        rtn.az
+                      dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,     dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype,  dstype,
+                  scenx,     sceny,     salignx,      saligny,       salignz
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -2126,15 +2134,20 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
         END IF;
       END IF;
 
-      IF rtn.stype = 'normal' THEN
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+      IF thedstype = 'GridSearch' THEN
+        rtn.active = 1;
       ELSE
-        SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+        IF rtn.stype = 'normal' THEN
+          SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex, px.ds_get_nframes( rtn.dspid));
+        ELSE
+          SELECT INTO rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az, rtn.active cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+        END IF;
       END IF;
 
-
-      SELECT INTO rtn.dsowidth2, rtn.dsoscaxis2, rtn.dsexp2, rtn.sstart2, rtn.dsphi2, rtn.dsomega2, rtn.dskappa2, rtn.dsdist2, rtn.dsnrg2, rtn.sindex2, rtn.stype2
-                      dsowidth,      dsoscaxis,      dsexp,      sstart,      dsphi,      dsomega,      dskappa,      dsdist,      dsnrg,      sindex,      stype
+      SELECT INTO rtn.dsowidth2, rtn.dsoscaxis2, rtn.dsexp2, rtn.sstart2, rtn.dsphi2, rtn.dsomega2, rtn.dskappa2, rtn.dsdist2, rtn.dsnrg2, rtn.sindex2, rtn.stype2,
+                  rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2
+                      dsowidth,      dsoscaxis,      dsexp,      sstart,      dsphi,      dsomega,      dskappa,      dsdist,      dsnrg,      sindex,      stype,
+                  scenx,   sceny,   salignx, saligny, salignz
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -2142,10 +2155,14 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
         LIMIT 1 OFFSET 1;
 
       IF FOUND THEN
-        IF rtn.stype2 = 'normal' THEN
-          SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex2, px.ds_get_nframes( rtn.dspid));
-        ELSE
-          SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+        IF thedstype = 'GridSearch' THEN
+          rtn.active2 = 1;
+      ELSE
+          IF rtn.stype2 = 'normal' THEN
+            SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), rtn.sindex2, px.ds_get_nframes( rtn.dspid));
+          ELSE
+            SELECT INTO rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.active2 cx, cy, ax, ay, az, active from px.center_interpolate( px.getStation(), 1, 1);
+          END IF;
         END IF;
       END IF;
 
@@ -6049,6 +6066,30 @@ CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
 $$ language plpythonu SECURITY DEFINER;
 ALTER FUNCTION px.kvkeys( int, text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.kvpv_inp( pv text) RETURNS text as $$
+  if not SD.has_key( "redis"):
+    import redis
+    SD["redis"] = redis
+
+  redis = SD["redis"]
+  if not SD.has_key( "r"):
+    SD["r"]    = [ None, None, None, None, None]
+    SD["r"][1] = redis.StrictRedis(host="localhost",port=6381,db=0)
+    SD["r"][2] = redis.StrictRedis(host="localhost",port=6382,db=0)
+    SD["r"][3] = redis.StrictRedis(host="localhost",port=6383,db=0)
+    SD["r"][4] = redis.StrictRedis(host="localhost",port=6384,db=0)
+
+  r = SD["r"]
+
+  for stn in range( 1, 5):
+    for k in r[stn].keys('*'):
+      if r[stn].hget(k,'INP') == pv:
+        return k
+
+  return None
+$$ language plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.kvpv_inp( text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.kvgetpy( stn int, k text) returns text as $$
   if not SD.has_key( "redis"):
@@ -7294,7 +7335,8 @@ $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.autologinnotify() OWNER TO lsadmin;
 
 
-CREATE TYPE px.lnnamestype AS (src text, dest text);
+drop type px.lnnamestype cascade;
+CREATE TYPE px.lnnamestype AS (src text, dest text, stats json);
 CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS $$
   DECLARE
     rtn px.lnnamestype;
@@ -7307,7 +7349,7 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
       return;
     END IF;
     --    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
-    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE dsesaf=esaf and dsdir = dir and dsfp = fp and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sbupath LOOP
+    FOR rtn.src, rtn.dest, rtn.stats IN SELECT sbupath, sfn, sstats FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE dsesaf=esaf and dsdir = dir and dsfp = fp and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sbupath LOOP
       return next rtn;
     END LOOP;
     return;
