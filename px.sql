@@ -1909,7 +1909,8 @@ CREATE TABLE px.shots (
         stimes   int            DEFAULT 0,              -- number of times this has been run
         sfsize   int            DEFAULT NULL,           -- size of the file in bytes
         stape    boolean        DEFALUT False,          -- true if file is known to be on a backup tape
-	sstats   json default NULL	                -- results of a statistical look at the frame (in JSON)
+	sstats   json default NULL,	                -- results of a statistical look at the frame (in JSON)
+	sstatsts timestamp with time zone default null 
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1927,10 +1928,11 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
     pv   text;
     needcomma boolean;
     sk   int;
+    stn  int;
   BEGIN
 
   prev = null;
-  SELECT INTO sk, prev skey,sstats FROM px.shots WHERE sbupath=bup order by skey desc limit 1;
+  SELECT INTO sk, prev, stn skey, sstats, dsstn FROM px.shots left join px.datasets on sdspid=dspid  WHERE sbupath=bup order by skey desc limit 1;
   IF NOT FOUND THEN
     raise exception 'frame not found for path %', bup;
   END IF;
@@ -1958,7 +1960,10 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
   END LOOP;
   nxt = nxt || '}';
 
-  UPDATE px.shots SET sstats = nxt::json WHERE skey=sk;
+  UPDATE px.shots SET sstats = nxt::json, sstatsts = now() WHERE skey=sk;
+  
+  PERFORM px.kvset( stn, 'detector.stats', '{ "skey": '|| sk || ', "sstats":' || nxt || '}');
+  
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO lsadmin;
@@ -2748,6 +2753,11 @@ CREATE OR REPLACE FUNCTION px.ispaused() RETURNS boolean AS $$
   SELECT pps != 'Not Paused' FROM px.pause WHERE pStn = px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ispaused() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ispaused( thestn int) RETURNS boolean AS $$
+  SELECT pps != 'Not Paused' FROM px.pause WHERE pStn = $1;
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.ispaused(int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ispausedi() RETURNS int AS $$
   SELECT case when pps != 'Not Paused' then 1 else 0 end FROM px.pause WHERE pStn = px.getstation();
@@ -5748,8 +5758,6 @@ CREATE OR REPLACE FUNCTION px.logout( theStn int) returns void as $$
     UPDATE px.logins set louts=now() WHERE lstn=theStn and louts is null;
     DELETE FROM px.stnstatus WHERE ssstn=theStn;
     PERFORM px.kvset( theStn, 'esaf', 'false');
-    -- DELETE FROM rmt.uistreams USING px.kvs WHERE uiskv=kvkey and kvname like 'stns.'||thestn::text||'.%';
-    PERFORM px.kvset( theStn, 'esaf', 'false');
     PERFORM px.autologinnotify( theStn);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -6345,10 +6353,10 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     
     SELECT INTO  n px.kvget( thestn, 'centers.length')::int;
 
-    -- raise notice 'centers.length  (n) = %', n;
+    --   raise notice 'stns.%.centers.length  (n) = %', thestn, n;
 
     --
-    -- I suppose you could call this before any centering or with any frames.  GIGO
+    -- I suppose you could call this before any centering or without any frames.  GIGO
     --
     IF NOT FOUND or n < 1 THEN
       RETURN NULL;
@@ -6436,8 +6444,6 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.center_interpolate( int, int, int) OWNER TO lsadmin;
-
-
 
 
 CREATE TABLE px.tunamemory (
