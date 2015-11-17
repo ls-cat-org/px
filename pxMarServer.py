@@ -287,14 +287,14 @@ class PxMarServer:
                         qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                         self.query( qs);
                         print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
-                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s"}' % (int(shotKey), bfd, d+'/'+f));
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s", "sdspid": "%s"}' % (int(shotKey), bfd, d+'/'+f), self.sdspid);
 
                     else:
                         qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
                         self.query( qs);
                         qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                         self.query( qs)
-                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s"}' % (int(shotKey), d, f, bud, bfn));
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid));
                     
                     self.hlList.pop( self.hlList.index(hl))
 
@@ -372,7 +372,7 @@ class PxMarServer:
         print >> sys.stderr, time.asctime(), theDist
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
-            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Moving", "msg": ""}' % (int(self.skey)));
+            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Moving", "msg": "", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
 
         if theDist == None:
             qr = self.query( "select px.isthere( 'distance') as isthere" )
@@ -399,7 +399,7 @@ class PxMarServer:
                 # something bad happened, abort.
                 self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                 self.query( "select px.pauserequest()");
-                self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed"}' % (int(self.skey)));
+                self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
                 return False
                 
             if r["isthere"] == 'f':
@@ -415,7 +415,7 @@ class PxMarServer:
                         # something bad happened, abort.
                         self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                         self.query( "select px.pauserequest()");
-                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed."}' % (int(self.skey)));
+                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed.", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
                         return False
 
                     if r["isthere"] == 't':
@@ -423,7 +423,7 @@ class PxMarServer:
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
             self.query( "select px.shots_set_energy( %d)" % (int(self.skey)))
-            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Exposing", "msg": ""}' % (int(self.skey)));
+            self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Exposing", "msg": "", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
         return True;
             
 
@@ -566,6 +566,7 @@ class PxMarServer:
 
 
                         if r["dsdir"] != None and r["sfn"] != None and len(r["sfn"])>0:
+                            self.sdspid = r["sdspid"]
                             self.redis.set( 'detector.path', '{ "directory": "%s", "filename": "%s"}' % (r["dsdir"], r["sfn"]));
                             try:
                                 os.makedirs( r["dsdir"], 0770)
@@ -846,6 +847,7 @@ class PxMarServer:
         r = qr.dictresult()[0]
         self.beamline   = r["sn"]
         self.lustrePool = r["lp"]
+        self.sdspid = "noShotInformation"
 
 
     def run( self):
