@@ -1,24 +1,21 @@
 #! /usr/local/bin/python
 #
-# Copyright 2016 by Northwestern University
+# Copyright 2010, 2012, 2015, 2016 by Northwestern University
 #
 # Automatically run marccd as the right user in the right directory
 #
 
-ourSentinels = [('10.1.0.3', 26379), ('10.1.253.10', 26379)]  # TODO: put this in the coniguration database
-
 import json             # decode sentinels
-import sys              # for it's normal exit routing
-import os               # setuid
-import platform         # uname like properties: used to find our computer's name to make up the window title
+import os               # process management (fork, uid/gid, kill, etc)
 import pwd              # get UID from username
-import select           # poll for database notifies
-import signal           # defines signal names to kill off X process(es)
+import redis            # our no-sql database
+import signal           # send/receive signals to/from child processes
 import socket           # get our hostname
 import subprocess       # how we run marccd
+import sys              # for it's normal exit routing
 import tempfile         # stderr and stdout create for now
 import time             # Log message timestamps and sleep function
-import redis            # our no-sql database
+
 from redis.sentinel import Sentinel
 
 class AutoDetector:
@@ -227,7 +224,7 @@ class AutoDetector:
             #
             # we are in the child
             #
-            ourName = platform.node()
+            ourName = socket.gethostname()
 
             self.Xvnc = subprocess.Popen( [ "/usr/bin/Xvnc", "-geometry", "1600x1200", "-desktop", ourName+" Detector", "-AlwaysShared", "-SecurityTypes", "None", "-depth", "24", ":2" ],
                                           shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
