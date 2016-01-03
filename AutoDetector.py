@@ -1,17 +1,25 @@
 #! /usr/local/bin/python
 #
+# Copyright 2016 by Northwestern University
+#
 # Automatically run marccd as the right user in the right directory
 #
 
-import pg               # Postgresql Database
-import time             # Log message timestamps and sleep function
-import select           # poll for database notifies
+ourSentinels = [('10.1.0.3', 26379), ('10.1.253.10', 26379)]  # TODO: put this in the coniguration database
+
+import json             # decode sentinels
+import sys              # for it's normal exit routing
 import os               # setuid
+import platform         # uname like properties: used to find our computer's name to make up the window title
 import pwd              # get UID from username
+import select           # poll for database notifies
+import signal           # defines signal names to kill off X process(es)
+import socket           # get our hostname
 import subprocess       # how we run marccd
 import tempfile         # stderr and stdout create for now
-import signal           # defines signal names to kill off X process(es)
-import platform         # uname like properties: used to find our computer's name to make up the window title
+import time             # Log message timestamps and sleep function
+import redis            # our no-sql database
+from redis.sentinel import Sentinel
 
 class AutoDetector:
     """
@@ -20,65 +28,94 @@ class AutoDetector:
     accordingly.
     """
     
-    db  = None          # Database connection
-    currentUser = None  # user currently logged into MD2
-    p   = None          # poll object
-    pw  = None          # password file entry for current user
-    myuid     = None    # Our uid
-    Xnest     = None    # Our Xnest home for marccd
-    Xephyr    = None    # Our Xephyr home for marccd
-    Xvnc      = None    # Our Xvnc home for the marccd display
-    forkList  = None    # list of our fork processes so we can wait for them later and kill the zombies
+    currentEsafUser = None  # user currently logged into MD2
+    db            = None         # Database connection
+    p             = None         # poll object
+    pw            = None         # password file entry for current user
+    myuid         = None         # Our uid
+    Xvnc          = None         # Our Xvnc home for the marccd display
+    forkedPID     = None         # Our forked process
 
-    def __init__( self):
-        #
-        # Make connection to the database
-        #
-        self.db       = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
-
-        #
-        # Set up the poll object
-        #
-        self.p = select.poll()
-        self.p.register( self.db, select.POLLIN)
-        print os.environ
-
-        #
-        # prepare list of potential zombies
-        #
-        self.forkList = []
-
-    def dbService( self, event=None):
-        #
-        # The database sent us something asynchronously
-        #
-        # First, eat up the notifies
-        #
-        while self.db.getnotify() != None:
+    def getCurrentEsaf(self):
+        esaf = None
+        stmp = self.rClient.hget(self.esaf_key, 'VALUE')
+        try:
+            esaf = int(stmp)
+        except:
             pass
 
-        #
-        # See who is logged into the diffractometer
-        #
-        qs = "select px.whoami() as wai"
-        qr = self.db.query(qs)
-        if qr.ntuples() == 1:
-            newUser = qr.dictresult()[0]["wai"]
-            if self.currentUser == None or newUser != self.currentUser:
-                #
-                # Time for a changing of the guard
-                #
-                self.currentUser = newUser
-                if self.currentUser != None:
-                    self.spawn()
+        if esaf == None:
+            return
+
+        self.esaf = esaf
+        if self.esaf > 0:
+            self.currentEsafUser = 'e%d' % (self.esaf)
 
 
-    def spawn( self):
+    def messageHandler(self, msg):
+        if msg['data']==self.esaf_key:
+            print msg
+            self.getCurrentEsaf()
+
+
+    def __init__( self):
+
+        #
+        # We only need this configRedis for a short time to read
+        # 'head' and find the redis sentinels
+        #
+        # This is a chicken and egg problem: we need to find the
+        # master's name before we can attach to the correct redis
+        # server.  TODO: configure a single "station configuration
+        # redis".
+        #
+        configRedis = redis.StrictRedis();
+        configKey = 'config.%s' % (socket.gethostname())
+        self.config = configRedis.hgetall(configKey)
+        if not self.config.has_key('HEAD'):
+            print 'Could not discover configuration for "%s"' % (configKey)
+            sys.exit(-1)
+
+        self.head = self.config['HEAD']
+        self.masterName = self.head+'.master'
+        self.esaf_key   = self.head+'.esaf'
+
+        ss = json.loads(configRedis.get('sentinels'))
+        sentinels = []
+        for s in ss:
+            sentinels.append((s['host'],s['port']))
+
+        # We would close the configRedis connection if we knew
+        # how... TODO: learn how to close the connection and do so.
+
+        self.sentinel = Sentinel(sentinels, socket_timeout=0.1);
+
+        self.rClient = self.sentinel.slave_for( self.masterName, socket_timeout=0.1)
+
+        self.rSub = self.rClient.pubsub(ignore_subscribe_messages=True)
+        self.rSub.subscribe( **{ 'REDIS_PG_CONNECTOR': self.messageHandler} )
+
+        self.forkedPID = None
+        self.esaf      = None
+        self.lastEsaf  = None
+        self.childShouldKillProcess = False
+
+        self.getCurrentEsaf();
+
+    def spawnedSignalHandler(self, signum, stack_frame):
+        print 'spawnedSignalHandler', signum
+        if signum == signal.SIGHUP:
+            self.childShouldKillProcess = True
+
+    def spawn(self):
         #
         # Learn about this new user
         #
-        self.pw = pwd.getpwnam( self.currentUser)
+        self.pw = pwd.getpwnam( self.currentEsafUser)
 
+        print 'spawning new detector process for %s' % (self.currentEsafUser), self.pw
+
+        self.childShouldKillProcess = False
         #
         # time to fork in preparation of changing the effective user and spawning the marccd process
         #
@@ -99,7 +136,8 @@ class AutoDetector:
                 raise
                 os._exit(-1)
 
-
+            signal.signal(signal.SIGHUP, self.spawnedSignalHandler)
+            
             #
             # Save stdout and stderr
             #
@@ -119,17 +157,35 @@ class AutoDetector:
             marccd = subprocess.Popen( "/usr/local/bin/marccd", env=marccdEnv,
                                        shell=True, stdout=cstdout, stderr=cstderr, stdin=None, bufsize=-1,
                                        cwd=self.pw[5])
-                    
-            print os.waitpid( marccd.pid, 0)
-            os.close( cstdout)
-            os.close( cstderr)
-            print "Tata for now!"
-            os._exit(0)
+            #
+            # Wait for process to end
+            #
+            while True:
+                time.sleep(1)
+                waitpidResult = os.waitpid(marccd.pid, os.WNOHANG)
+                if waitpidResult[0] != 0:
+                    os.close( cstdout)
+                    os.close( cstderr)
+                    print "Tata for now!"
+                    os._exit(0)
+
+                if self.childShouldKillProcess:
+                    print 'Trying to terminate marccd process'
+                    marccd.terminate()
+                    time.sleep(4)
+                    try:
+                        print 'trying to kill  marccd process'
+                        marccd.kill()
+                    except:
+                        print 'that didn\'t work, perhaps it was already dead'
+                        pass
+                    self.childShouldKillProcess = False
+                    os._exit(0)
 
         #
         # Still in parent
         #
-        self.forkList.append(pid)
+        self.forkedPID = pid
 
     def killX( self):
         """
@@ -162,40 +218,6 @@ class AutoDetector:
                     itsDead = True
 
                     
-    def startXephyr( self):
-        """
-        Fork off a Xephyr process to handle the marccd display
-        """
-        pid = os.fork()
-        if pid == 0:
-            #
-            # Hey there kid.
-            #
-            ourName = platform.node()
-            self.Xephyr = subprocess.Popen( ["/usr/bin/Xephyr", "-screen", "1600x1200", "-resizeable", ":2"], shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
-            os.waitpid( pid, 0)
-            os._exit( 0)
-
-
-    def startXnest( self):
-        """
-        Fork off an Xnest process to handle the marccd display.
-        """
-        pid = os.fork()
-        if pid == 0:
-            #
-            # Child's play
-            #
-            ourName = platform.node()
-
-            self.Xnest = subprocess.Popen( [ "/usr/bin/Xnest", "-geometry", "1600x1200", "-class", "TrueColor", "-depth", "24", "-name", ourName+" Detector", ":2" ],
-                                           shell=False, stdin=None, stdout=None, stderr=None, close_fds=True)
-            #
-            # Wait for the process to finish (We are killing zombies!)
-            #
-            os.waitpid( pid, 0)
-            os._exit( 0)
-
     def startXvnc( self):
         """
         Fork off an Xvnc process to handle the marccd display.  To keep things simple, we'll let anyone display whatever they like in this window.
@@ -230,53 +252,62 @@ class AutoDetector:
         #
         # Clean up old servers, hopefully
         #
+        # TODO: make this a non-default command line option since most
+        # of the time this is not what we want to happen.
+        #
         self.killX()
         
         # Get the server running
         #
-        # self.startXnest()
         self.startXvnc()
         
-        #
-        # Tell the database to let us know when a login event occurs
-        #
-        self.db.query( "select px.autologininit()")
-
-        #
-        # Call up the db service routine to get
-        # the ball rolling.  Should end up with
-        # new marccd process running
-        #
-        self.dbService()
-
         #
         # Wait around for log in information to change
         #
         running = True
         while running:
             #
-            # wait for something interesting to happen
-            # get board after a while and check up on our old processes
+            # Our lazy event loop
             #
-            for (fd, event) in self.p.poll(10000):
-                self.dbService( event=event)
+            time.sleep( 0.1)
+
+            msg = self.rSub.get_message()
+            if msg:
+                self.messageHandler(msg)
 
             #
-            # Check that our children are still alive
+            # Perhaps Collect zoombie
             #
             newlist = []
-            for pid in self.forkList:
+            if self.forkedPID:
                 try:
-                    print pid, os.waitpid( pid, os.WNOHANG)
+                    os.waitpid(self.forkedPID, os.WNOHANG)
                 except OSError:
                     #
                     # Killed a zombie!
                     #
-                    pass
-                else:
-                    newlist.append(pid)
+                    self.forkedPID = None
 
-            self.forkList = newlist
+            #
+            # Perhaps start new detector process
+            #
+            if self.lastEsaf != self.esaf and self.esaf > 0:
+                self.lastEsaf = self.esaf
+                if self.forkedPID:
+                    print 'Sending sighup to child process'
+                    os.kill(self.forkedPID, signal.SIGHUP)
+                    time.sleep(6)
+                    try:
+                        print 'Sending sigkill to child process'
+                        os.kill(self.forkedPID, signal.SIGKILL)
+                    except:
+                        print 'Sigkill raised exception, perhaps child quit already'
+                        pass
+
+                    os.waitpid(self.forkedPID, 0)       # Cleanup the zombie
+                    self.forkedPID = None
+
+                self.spawn()
 
             #
             # Somewhere down here should be some code to stop this program
