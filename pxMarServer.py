@@ -294,6 +294,8 @@ class PxMarServer:
                         self.query( qs);
                         qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                         self.query( qs)
+                        qs = "select px.shots_set_stats( '%s', '%s', px.getstation(), NULL, NULL)" % (bfn, self.sdspid)
+                        self.query( qs)
                         self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid));
                     
                     self.hlList.pop( self.hlList.index(hl))
