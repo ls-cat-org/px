@@ -1,7 +1,7 @@
 --
 -- Support for data collection at LS-CAT
 --
--- Copyright 2008-2013 by Keith Brister, Northwestern University
+-- Copyright 2008-2015 by Northwestern University
 --
 --   This file is part of the LS-CAT Beamline Control Package which is
 --   free software: you can redistribute it and/or modify it under the
@@ -338,7 +338,8 @@ CREATE OR REPLACE VIEW px.mar ( mkey, mqstn, mts, mtu, mtd, mstatus, maquire, mr
            FROM px._mar;
 
 
-CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric, sphi numeric, skappa numeric);
+drop type px.marheadertype cascade;
+CREATE TYPE px.marheadertype AS ( sdist numeric, sexpt numeric, sstart numeric, saxis text, swidth numeric, dsdir text, sfn text, thelambda numeric, sphi numeric, skappa numeric, sdspid text);
 
 CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $$
   DECLARE
@@ -346,14 +347,15 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
   BEGIN
     SELECT INTO rtn coalesce(sdist,  dsdist)::numeric      as sdist,
                     coalesce(sexpt,  coalesce( dsexp,'1.0'))::numeric       as sexpt,
-                    coalesce(sstart, coalesce( dsstart, '0'))::numeric        as sstart,
+                    coalesce(sstart, coalesce( dsstart, '0'))::numeric      as sstart,
                     coalesce(saxis,  coalesce( dsoscaxis,'omega'))          as saxis,
                     coalesce(swidth, coalesce( dsowidth, '1.0'))::numeric   as swidth,
-                    coalesce(dsdir, '/data/public')                         as dsdir,
-                    coalesce(sfn, 'default')                                as sfn,
+                    coalesce(dsdir,  '/data/public')                        as dsdir,
+                    coalesce(sfn,    'default')                             as sfn,
                     px.rt_get_wavelength()::numeric                         as thelambda,
                     coalesce( sphi, coalesce( dsphi, '0'))::numeric         as sphi,
-                    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa
+                    coalesce( skappa, coalesce( dskappa, '0'))::numeric     as skappa,
+                    sdspid                                                  as sdspid
                     from px.shots
                     left join px.datasets on sdspid=dspid
                     where skey=k;
@@ -567,6 +569,18 @@ CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.setDetectorOn() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.setDetectorOn(stn int) RETURNS void AS $$
+  DECLARE
+  BEGIN
+  --
+  -- 5 is detector on lock.  Note we are not grabbing the ready lock
+  -- (3) unlike the other version of this function.
+  --
+  PERFORM pg_advisory_lock( stn, 5);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.setDetectorOn(int) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.dropDetectorOn() RETURNS void AS $$
   DECLARE
   BEGIN
@@ -653,6 +667,14 @@ CREATE OR REPLACE FUNCTION px.lock_detector() RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_detector(stn int) RETURNS void AS $$
+-- indicate that the detector is ready for action but isn't doing anything right now
+  BEGIN
+    PERFORM pg_advisory_lock( stn, 3);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_detector(int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS int AS $$
 -- test to see if the detector is integrating (1 means no but we are running)
@@ -743,6 +765,14 @@ CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.unlock_detector() OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.unlock_detector(stn int) RETURNS void AS $$
+-- indicate the start of integration
+  BEGIN
+    PERFORM pg_advisory_unlock( stn, 3);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.unlock_detector(int) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
 -- indicate we are either exposing or are ready to start exposing
@@ -751,6 +781,14 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_diffractometer() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.lock_diffractometer(stn int) RETURNS void AS $$
+-- indicate we are either exposing or are ready to start exposing
+  BEGIN
+    PERFORM pg_advisory_lock( stn, 4);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.lock_diffractometer(int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS int AS $$
 -- test to see if the MD2 is ready to start exposing
@@ -803,6 +841,14 @@ CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.unlock_diffractometer() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.unlock_diffractometer(stn int) RETURNS void AS $$
+  -- grabs the diffractometer lock indicating ready to start exposure
+  BEGIN
+    PERFORM pg_advisory_unlock( stn, 4);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.unlock_diffractometer(int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
@@ -943,6 +989,11 @@ INSERT INTO px.dirstates (dirs) VALUES ('Valid');
 INSERT INTO px.dirstates (dirs) VALUES ('Invalid');
 INSERT INTO px.dirstates (dirs) VALUES ('Wrong Permissions');
 
+CREATE OR REPLACE FUNCTION px.getdsdir(token text) returns text AS $$
+  SELECT dsdir FROM px.datasets WHERE dspid=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.getdsdir(text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.chkdir( token text) returns void AS $$
   SELECT px.pushqueue( 'checkdir,'|| $1);
 $$ LANGUAGE sql SECURITY DEFINER;
@@ -1002,7 +1053,9 @@ CREATE TABLE px.datasets (
         dsparent   text DEFAULT NULL references px.datasets (dspid),
         dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
         dseditts timestamp with time zone default now(),        -- time of last edit
-        dseditnum integer default 0                            -- increment each time an edit is made
+        dseditnum integer default 0,                            -- increment each time an edit is made
+        dsrobopid text    default NULL,				-- id of remote robo process
+        dsjparams json DEFAULT NULL                              -- This allows us to add paramters without adding columns.  Hopefully not a terrible idea.
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
@@ -1070,6 +1123,13 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS
     SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, theStn, expid, (select stndataroot from px.stations where stnkey=theStn));
     PERFORM px.chkdir( theStn, rtn);
+    IF theStn = 1 THEN 
+      PERFORM px.ds_set_jparams( rtn, '{"srate":1,"frate":1}'::json);
+      PERFORM px.ds_set_delta( rtn, 360);
+      PERFORM px.ds_set_start( rtn, 0);
+      PERFORM px.ds_set_end( rtn, 360);
+    END IF;
+
     PERFORM px.mkshots( rtn);
     RETURN rtn;
   END;
@@ -1196,6 +1256,7 @@ ALTER FUNCTION px.getdatasets( int, int) OWNER TO lsadmin;
 
 CREATE TABLE px.editDStable (
        edsKey serial primary key,       -- our key
+       Edsorder int unique,    -- what comes first
        edsName text not null,           -- the name of the item to change
        edsFunc text not null,           -- the function to call
        edsQuotes boolean not null       -- need quotes?
@@ -1559,7 +1620,7 @@ ALTER FUNCTION px.ds_get_oscaxis( text) OWNER TO lsadmin;
 --
 CREATE OR REPLACE FUNCTION px.ds_set_start( token text, arg2 numeric) RETURNS void as $$
   BEGIN
-    UPDATE px.datasets set dsstart=arg2 where dspid=token;
+    UPDATE px.datasets set dsstart=coalesce(arg2,0) where dspid=token;
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1592,7 +1653,7 @@ ALTER FUNCTION px.ds_get_owidth( text) OWNER TO lsadmin;
 --
 CREATE OR REPLACE FUNCTION px.ds_set_delta( token text, arg2 numeric) RETURNS void as $$
   BEGIN
-    UPDATE px.datasets set dsdelta=arg2  where dspid=token;
+    UPDATE px.datasets set dsdelta=coalesce(arg2,1.0)  where dspid=token;
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1862,6 +1923,21 @@ $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_comment( text) OWNER TO lsadmin;
 
 
+--
+-- json parameters (to support new features without adding to columns
+--
+CREATE OR REPLACE FUNCTION px.ds_set_jparams( token text, arg2 json) RETURNS VOID AS $$
+  UPDATE px.datasets SET dsjparams=$2 WHERE dspid=$1;
+$$ LANGUAGE sql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_jparams( text, json) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.ds_get_jparams( token text) RETURNS json AS $$
+  SELECT dsjparams FROM px.datasets WHERE dspid=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.ds_get_jparams( text) OWNER TO lsadmin;
+
+
+
 
 --
 -- type of shots
@@ -1873,6 +1949,7 @@ ALTER TABLE px.stypes OWNER TO lsadmin;
 GRANT SELECT ON px.stypes TO PUBLIC;
 INSERT INTO px.stypes (st) VALUES ('normal');
 INSERT INTO px.stypes (st) VALUES ('snap');
+INSERT INTO px.stypes (st) VALUES ('segment');
 
 CREATE TABLE px.shots (
         skey     serial         primary key,            -- table key
@@ -1909,8 +1986,9 @@ CREATE TABLE px.shots (
         stimes   int            DEFAULT 0,              -- number of times this has been run
         sfsize   int            DEFAULT NULL,           -- size of the file in bytes
         stape    boolean        DEFALUT False,          -- true if file is known to be on a backup tape
-	sstats   json default NULL,	                -- results of a statistical look at the frame (in JSON)
-	sstatsts timestamp with time zone default null 
+//	sstats   json default NULL,	                -- results of a statistical look at the frame (in JSON)
+//	sstatsts timestamp with time zone default null 
+        sjparams json DEFAULT NULL                      -- miscellaneous parameters to keep from having to add new columns all the time
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -1920,6 +1998,27 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots_skey_seq TO PUBLIC;
 
 
+CREATE TABLE px.shot_stats_table (
+   sstbup text primary key,
+   sstdspid text,
+   sststn int,
+   sstts timestamp with time zone default now(),
+   sststats json
+);
+ALTER TABLE px.shot_stats_table OWNER TO lsadmin;
+CREATE INDEX shot_stats_table_dspid_index ON px.shot_stats_table (sstdspid);
+CREATE INDEX shot_stats_table_stn_index ON px.shot_stats_table (sststn);
+
+CREATE OR REPLACE FUNCTION px.shots_init_stats( bup text, the_dspid text, the_stn int) returns void as $$
+  DECLARE
+  BEGIN
+    INSERT INTO px.shot_stats_table (sstbup, sstdspid, sststn) VALUES (bup, the_dspid, the_stn);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.shots_init_stats( text, text, int) OWNER TO lsadmin;
+
+
+
 CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns void as $$
   DECLARE
     prev json;    
@@ -1927,14 +2026,19 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
     pk   text;
     pv   text;
     needcomma boolean;
-    sk   int;
     stn  int;
+
   BEGIN
 
-  prev = null;
-  SELECT INTO sk, prev, stn skey, sstats, dsstn FROM px.shots left join px.datasets on sdspid=dspid  WHERE sbupath=bup order by skey desc limit 1;
+  IF bup is null or bup not like '/pf/esafs-bu/%' THEN
+    raise exception 'bad backup file name %', bup;
+  END IF;
+
+  use_insert = false;
+
+  SELECT INTO prev, stn sststats, sststn FROM px.shot_stats_table WHERE sstbup = bup;
   IF NOT FOUND THEN
-    raise exception 'frame not found for path %', bup;
+    raise exception 'call px.shots_init_stats first for file %', bup;
   END IF;
 
   needcomma = false;
@@ -1960,14 +2064,19 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
   END LOOP;
   nxt = nxt || '}';
 
-  UPDATE px.shots SET sstats = nxt::json, sstatsts = now() WHERE skey=sk;
+  UPDATE px.shot_status_table SET sstats = nxt::json, sstts = now() WHERE sstbup = bup;
   
-  PERFORM px.kvset( stn, 'detector.stats', '{ "skey": '|| sk || ', "sstats":' || nxt || '}');
+  PERFORM px.kvset( stn, 'detector.stats', '{ "sbupath": '|| bup || ', "sstats":' || nxt || '}');
   
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO lsadmin;
 
+
+CREATE OR REPLACE FUNCTION px.shots_set_jparams( theKey bigint, the_params json) returns void as $$
+  UPDATE px.shots SET sjparams = $2 WHERE skey=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.shots_set_jparams( bigint, json) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
   UPDATE px.shots SET sphi=$2, skappa=$3, sdist=( SELECT dsdist FROM px.datasets WHERE dspid=sdspid) WHERE skey=$1;
@@ -2891,9 +3000,6 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
           INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( px.getstation(), token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=px.getStation()));
-          IF stype = 'normal' THEN
-            PERFORM rmt.cmdrqstroboprocess(token);
-          END IF;
           PERFORM 1 FROM px.pause WHERE pStn=px.getstation() and pps='Not Paused';
           IF FOUND THEN
             PERFORM px.startrun();
@@ -2930,9 +3036,7 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( theStn bigint, token text, stype tex
         PERFORM 1 from px.runqueue where rqToken=token and rqType=stype;
         IF NOT FOUND THEN
           INSERT INTO px.runqueue (rqStn, rqToken, rqType, rqOrder) VALUES ( theStn, token, stype, (SELECT coalesce(max(rqOrder),0)+1 FROM px.runqueue WHERE rqStn=theStn));
-          IF stype = 'normal' THEN
-            PERFORM rmt.cmdrqstroboprocess(token);
-          END IF;
+          PERFORM rmt.cmdrqstroboprocess(token);
           PERFORM 1 FROM px.pause WHERE pStn=theStn and pps='Not Paused';
           IF FOUND THEN
             PERFORM px.startrun( theStn);
@@ -3148,7 +3252,6 @@ ALTER FUNCTION px.getrunqueuetype() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
   --
   -- Remove the top item in the run queue and reorder it
-  -- Also, add requestTransfer(0) to dismount the last sample in a multi sample data collection
   --
   DECLARE
     curParent text;  -- the parent of the current dataset
@@ -3169,9 +3272,9 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
       return;
     END IF;
 
-    IF curtype = 'normal' THEN
+     --  IF curtype = 'normal' THEN
       EXECUTE 'NOTIFY roboprocess_' || curpid;
-    END IF;
+    --  END IF;
     
 
     DELETE FROM px.runqueue WHERE rqKey = curKey;
@@ -3189,9 +3292,6 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
     IF curParent is not NULL THEN
       -- see if any other children remain
       PERFORM 1 FROM px.runqueue LEFT JOIN px.datasets ON rqtoken=dspid WHERE rqStn=px.getstation() and dsparent is not null;
-      IF NOT FOUND THEN
-      --        PERFORM px.requestTransfer( 0);
-      END IF;
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -3326,6 +3426,16 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.isthere( text) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.isthere( stn int, motion text) RETURNS boolean AS $$
+  DECLARE
+    rtn boolean;
+  BEGIN
+    SELECT epics.isthere( elPV) INTO rtn FROM px.epicsLink WHERE elStn=stn and elName=motion;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.isthere( int, text) OWNER TO lsadmin;
+
 CREATE OR REPLACE FUNCTION px.isstopped( thestn bigint, motion text) RETURNS boolean AS $$
   DECLARE
     rtn boolean;
@@ -3392,7 +3502,6 @@ CREATE OR REPLACE FUNCTION px.rt_get_dspeed() returns text as $$
   SELECT px.rt_get_dspeed(px.getStation());
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.rt_get_dspeed() OWNER TO lsadmin;
-
 
 CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
   DECLARE
@@ -4543,28 +4652,32 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
       -- Never grant rights or allow the robot to proceed if
       -- the diffractometer is not on
       PERFORM cats.panic();
+      RETURN rtn;
     END IF;
-    IF md2on THEN
+    --
+    -- the transfer request should have started moving the detector to 650
+    -- If the detector is both stopped and less that 650 then something bad
+    -- has happened to prevent the detector from moving.
+    --
+    SELECT px.rt_get_dist() INTO curDist;
+    SELECT px.isstopped('distance') INTO stopped;
+    IF curDist < 650 THEN
+      rtn := False;
+      IF stopped THEN
+        --
+        -- Something has stopped the detector.
+        --
+        PERFORM px.pusherror( 29110, 'Use epics to move detector to at least 650 mm or call beamline staff.');
+      END IF;
+    ELSE
       --
-      -- the transfer request should have started moving the detector to 650
-      -- If the detector is both stopped and less that 650 then something bad
-      -- has happed to prevent the detector from moving.
+      -- unlocking cryo here is a kludge inserted as a workaround for
+      -- a poorly understood problem.  KB 160210
       --
-      SELECT px.rt_get_dist() INTO curDist;
-      SELECT px.isstopped('distance') INTO stopped;
-      IF curDist < 650 THEN
-        rtn := False;
-        IF stopped THEN
-          --
-          -- Something has stopped the detector.
-          --
-          PERFORM px.pusherror( 29110, 'Use epics to move detector to at least 650 mm or call beamline staff.');
-        END IF;
-      ELSE
-        SELECT px.requestAirRights() INTO rtn;
-        IF rtn THEN
-          PERFORM cats.cmdTimingGotAir();
-        END IF;
+      -- PERFORM px.unlockCryo();
+      SELECT px.requestAirRights() INTO rtn;
+      IF rtn THEN
+        PERFORM cats.cmdTimingGotAir();
       END IF;
     END IF;
     RETURN rtn;
@@ -7354,14 +7467,34 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
     IF NOT FOUND THEN
       return;
     END IF;
-    --    FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
-    FOR rtn.src, rtn.dest, rtn.stats IN SELECT sbupath, sfn, sstats FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE dsesaf=esaf and dsdir = dir and dsfp = fp and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sbupath LOOP
+    --  FOR rtn.src, rtn.dest IN SELECT sbupath, sfn FROM px.shots WHERE sdspid = pid and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sfn LOOP
+    --  FOR rtn.src, rtn.dest, rtn.stats IN SELECT sbupath, sfn, sstats FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE dsesaf=esaf and dsdir = dir and dsfp = fp and sstate='Done' and sfn is not null and sbupath is not null ORDER BY sbupath LOOP
+    FOR rtn.src, rtn.dest, rtn.stats IN
+        SELECT sbupath, sfn, sststats
+          FROM px.datasets
+            LEFT JOIN px.shots on sdspid=dspid
+            LEFT JOIN px.shot_stats_table ON sbupath=sstbup
+          WHERE dsesaf=esaf
+            AND dsdir = dir
+            AND dsfp = fp
+            AND sstate='Done'
+            AND sfn is not null
+            AND sbupath is not null
+          ORDER BY sbupath
+    LOOP
       return next rtn;
     END LOOP;
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
+
+CREATE TYPE px.spotListType AS (bufn text, stats json);
+CREATE OR REPLACE FUNCTION px.spotList( thePid text) returns setof px.spotListType AS $$
+  SELECT sstbup, sststats FROM px.shot_stats_table WHERE sstdspid=$1 order by sstbup;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.spotList( text) OWNER TO lsadmin;
+
 
 CREATE OR REPLACE FUNCTION px.lnnames( pid text, the_type text) returns setof px.lnnamestype AS $$
   DECLARE
