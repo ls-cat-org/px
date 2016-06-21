@@ -21,4 +21,4 @@ install:
 	install -p fixMarccdLog /usr/local/bin
 	install -p AutoDetector.py /usr/local/bin
 	install -p MarccdConfFile.py /usr/local/bin
-	./append.to.sudoers
+#	./append.to.sudoers
