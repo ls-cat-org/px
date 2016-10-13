@@ -100,7 +100,7 @@ CREATE TABLE px._marqueue (
         mqkey serial primary key,                       -- table key
         mqs timestamp with time zone default now(),     -- create time stamp
         mqc inet NOT NULL,                              -- client address (address of marccd)
-	mqstn int NOT NULL,				-- our station
+  mqstn int NOT NULL,       -- our station
         mqcmd text NOT NULL                             -- queued command
 );
 ALTER TABLE px._marqueue OWNER TO lsadmin;
@@ -414,7 +414,7 @@ CREATE TABLE px._config (
         cnotifyrun       text   not null,
         cnotifydetector  text   not null,
         cnotifydiffractometer text not null,
-	cnotifypmac      text   not null,
+  cnotifypmac      text   not null,
         cnotifypause     text   not null,
         cnotifymessage   text   not null,
         cnotifywarning   text   not null,
@@ -423,8 +423,8 @@ CREATE TABLE px._config (
         cnotifyrobot     text   not null,
         cnotifycenter    text   not null,
         cnotifylogin     text   not null,
-	cnotifykvs       text   not null,
-	cnotifysample    text   not null,
+  cnotifykvs       text   not null,
+  cnotifysample    text   not null,
         clustrepool      text   not null default 'pffs.pool_slow'
 );
 ALTER TABLE px._config OWNER TO lsadmin;
@@ -852,6 +852,18 @@ ALTER FUNCTION px.unlock_diffractometer(int) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
+  BEGIN
+    IF px.getstation() = 1 THEN
+      PERFORM eiger.seq_run_prep(shot_key, kappa, phi, cx, cy, ax, ay, az);
+    ELSE
+      PERFORM px.seq_run_prep_OLD(shot_key, kappa, phi, cx, cy, ax, ay, az);
+    END IF;
+    return;
+   END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION eiger.seq_run_prep( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.seq_run_prep_OLD( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
   DECLARE
     the_stn int;
   BEGIN
@@ -892,10 +904,7 @@ CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi fl
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.seq_run_prep( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
-
-
-
+ALTER FUNCTION px.seq_run_prep_OLD( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
 
 
 CREATE TABLE px.axes (
@@ -1029,7 +1038,7 @@ CREATE TABLE px.datasets (
                 references px.stations (stnkey) ON UPDATE CASCADE,
         dstype text NOT NULL default 'Normal'
                 references px.datasettypes (dst) ON UPDATE CASCADE,
-        dsparams   numeric[][] default NULL,			-- parameters for the centering modes
+        dsparams   numeric[][] default NULL,      -- parameters for the centering modes
         dsoscaxis  text         default 'omega',                -- the Axis to move, presumably NULL means don't move a thing
         dsstart    numeric      default 0,                      -- starting angle of the dataset
         dsdelta    numeric      default 1,                      -- distance to next starting angle (usually owidth)
@@ -1044,18 +1053,21 @@ CREATE TABLE px.datasets (
                  references px.expunits (eu) ON UPDATE CASCADE,
         dsphi      numeric DEFAULT NULL,                        -- set phi (NULL means don't touch)
         dsomega    numeric DEFAULT NULL,                        -- set omega (NULL means don't touch)
-        dsomegaref numeric DEFAULT NULL,			-- reference angle to convert cetering table x and y into horizontal and vertical.
+        dsomegaref numeric DEFAULT NULL,                        -- reference angle to convert cetering table x and y into horizontal and vertical.
         dskappa    numeric DEFAULT NULL,                        -- set kappa (NULL means don't touch)
         dsdist     numeric DEFAULT NULL,                        -- set distance (NULL means don't touch)
         dsnrg      numeric DEFAULT NULL,                        -- set energy (NULL means don't touch)
         dscomment  text DEFAULT NULL,                           -- comment
-        dsobfuscated boolean default false,                     -- fp and dir have been obfuscated
+        dsobfuscated boolean DEFAULT FALSE,                     -- fp and dir have been obfuscated
         dsparent   text DEFAULT NULL references px.datasets (dspid),
-        dspositions int[] default '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
+        dspositions int[] DEFAULT '{0}',                        -- references px.holderpositions (hpid) -- holder positions for new shots (should be a reference)
         dseditts timestamp with time zone default now(),        -- time of last edit
-        dseditnum integer default 0,                            -- increment each time an edit is made
-        dsrobopid text    default NULL,				-- id of remote robo process
-        dsjparams json DEFAULT NULL                              -- This allows us to add paramters without adding columns.  Hopefully not a terrible idea.
+        dseditnum integer DEFAULT 0,                            -- increment each time an edit is made
+        dsrobopid text    DEFAULT NULL,                         -- id of remote robo process
+        dsjparams json    DEFAULT NULL,                         -- This allows us to add paramters without adding columns.  Hopefully not a terrible idea.
+        dsfrate numeric DEFAULT NULL,                           -- frame rate in frames per degree
+        dssrate numeric DEFAULT NULL,                           -- spindle rate in degrees per second
+        dsrange numeric DEFAULT NULL                            -- full range of a shutterless data collection
 );
 ALTER TABLE px.datasets OWNER TO lsadmin;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
@@ -1124,10 +1136,12 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, theStn, expid, (select stndataroot from px.stations where stnkey=theStn));
     PERFORM px.chkdir( theStn, rtn);
     IF theStn = 1 THEN 
-      PERFORM px.ds_set_jparams( rtn, '{"srate":1,"frate":1}'::json);
-      PERFORM px.ds_set_delta( rtn, 360);
+      UPDATE px.datasets set dstype='Shutterless', dsrobopid=NULL WHERE dspid=rtn;
       PERFORM px.ds_set_start( rtn, 0);
-      PERFORM px.ds_set_end( rtn, 360);
+      PERFORM px.ds_set_delta( rtn, 1);
+      PERFORM px.ds_set_frate( rtn, 1);
+      PERFORM px.ds_set_srate( rtn, 10);
+      PERFORM px.ds_set_range( rtn, 360);
     END IF;
 
     PERFORM px.mkshots( rtn);
@@ -1154,11 +1168,12 @@ ALTER FUNCTION px.newdataset( int ) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.copydataset( theStn int, token text, newDir text, newPrefix text) RETURNS text AS $$
   --
-  -- Called from px.editDS
-  -- and indirectly from BLUMax via px.copydataset( token, newDir, newPrefix)
+  -- Called from px.editDS, node.getshots, node.ds, node.exploreds, and  node.segmentds
   --
-  -- Perhaps makes a copy of a dataset with dspid = token using the new director and prefix specified.
-  -- If the directory and prefix exist already using this ESAF then the existing dataset is returned.
+  -- Perhaps makes a copy of a dataset with dspid = token using the
+  -- new directory and prefix specified.  If the directory and prefix
+  -- exist already using this ESAF then the existing dataset is
+  -- returned.
   --
   DECLARE
     pfx text;           -- prefix after being cleaned up
@@ -1280,7 +1295,6 @@ INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'dist', 'px.ds
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'energy', 'px.ds_set_energy',   false);
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'wavelength', 'px.ds_set_wavelength', false);
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'state', 'px.ds_set_state',     true);
-
 
 CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, theValue text) returns XML AS $$
   DECLARE
@@ -1664,6 +1678,40 @@ CREATE OR REPLACE FUNCTION px.ds_get_delta( token text) RETURNS numeric as $$
 $$ LANGUAGE sql SECURITY DEFINER;
 ALTER FUNCTION px.ds_get_delta( text) OWNER TO lsadmin;
 
+--
+-- Frame Rate
+-- 
+CREATE OR REPLACE FUNCTION px.ds_set_frate( token text, arg2 numeric) RETURNS void as $$
+  BEGIN
+    UPDATE px.datasets set dsfrate = coalesce(arg2, 1.0) WHERE dspid=token;
+    PERFORM px.mkshots( token);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_frate( text, numeric) OWNER TO lsadmin;
+
+--
+-- Spindle Rate
+-- 
+CREATE OR REPLACE FUNCTION px.ds_set_srate( token text, arg2 numeric) RETURNS void as $$
+  BEGIN
+    UPDATE px.datasets set dssrate = coalesce(arg2, 1.0) WHERE dspid=token;
+    PERFORM px.mkshots( token);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_srate( text, numeric) OWNER TO lsadmin;
+
+--
+-- Range
+-- 
+CREATE OR REPLACE FUNCTION px.ds_set_range( token text, arg2 numeric) RETURNS void as $$
+  BEGIN
+    UPDATE px.datasets set dsrange = coalesce(arg2, 360.0) WHERE dspid=token;
+    PERFORM px.mkshots( token);
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_range( text, numeric) OWNER TO lsadmin;
+
+
 
 --
 -- N Oscs
@@ -1971,11 +2019,11 @@ CREATE TABLE px.shots (
         skappa   numeric        DEFAULT NULL,           -- as run starting kappa
         sdist    numeric        DEFAULT NULL,           -- as run starting distance
         snrg     numeric        DEFAULT NULL,           -- as run starting energy
-        scenx    numeric        DEFAULT NULL,		-- as run centering stage x value
-        sceny    numeric        DEFAULT NULL,		-- as run centering stage y value
-        salignx  numeric        DEFAULT NULL,		-- as run alignment stage x value
-        saligny  numeric        DEFAULT NULL,		-- as run alignment stage y value
-        salignz  numeric        DEFAULT NULL,		-- as run alignment stage z value
+        scenx    numeric        DEFAULT NULL,   -- as run centering stage x value
+        sceny    numeric        DEFAULT NULL,   -- as run centering stage y value
+        salignx  numeric        DEFAULT NULL,   -- as run alignment stage x value
+        saligny  numeric        DEFAULT NULL,   -- as run alignment stage y value
+        salignz  numeric        DEFAULT NULL,   -- as run alignment stage z value
         scmt     text           DEFAULT NULL,           -- comment
         sstate   text                                   -- current state of the shot
                  references px.shotstates (ssstate) ON UPDATE CASCADE,
@@ -1985,10 +2033,13 @@ CREATE TABLE px.shots (
         sobfuscated boolean     DEFAULT false,          -- fn, path, and bupath have been obfuscated
         stimes   int            DEFAULT 0,              -- number of times this has been run
         sfsize   int            DEFAULT NULL,           -- size of the file in bytes
-        stape    boolean        DEFALUT False,          -- true if file is known to be on a backup tape
-//	sstats   json default NULL,	                -- results of a statistical look at the frame (in JSON)
-//	sstatsts timestamp with time zone default null 
-        sjparams json DEFAULT NULL                      -- miscellaneous parameters to keep from having to add new columns all the time
+        stape    boolean        DEFAULT False,          -- true if file is known to be on a backup tape
+    //  stats    json           DEFAULT NULL,           -- results of a statistical look at the frame (in JSON)
+    //  statsts  timestamp with time zone DEFAULT NULL 
+        sjparams json           DEFAULT NULL,           -- miscellaneous parameters to keep from having to add new columns all the time
+        sfrate numeric          DEFAULT NULL,           -- actual frame rate in images per degree
+        ssrate numeric          DEFAULT NULL,           -- actual spindle rate in degrees per second
+        srange numeric          DEFAULT NULL            -- range of omega for shutterless data collection
         UNIQUE (sdspid, stype, sindex)
 );
 ALTER TABLE px.shots OWNER TO lsadmin;
@@ -2208,12 +2259,14 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 
+
+drop type px.nextshot2type cascade;
 CREATE TYPE px.nextshot2type AS (
        dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text, 
        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int,
        cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text,
        dsowidth2 numeric, dsoscaxis2 text, dsexp2 numeric, sstart2 numeric, dsphi2 numeric, dsomega2 numeric, dskappa2 numeric, dsdist2 numeric, dsnrg2 numeric,
-       cx2 numeric, cy2 numeric, ax2 numeric, ay2 numeric, az2 numeric, active2 int, sindex2 int, stype2 text);
+       cx2 numeric, cy2 numeric, ax2 numeric, ay2 numeric, az2 numeric, active2 int, sindex2 int, stype2 text, dsfrate numeric, dssrate numeric, dsrange numeric, dsfrate2 numeric, dssrate2 numeric, dsrange2 numeric);
 
 CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
   DECLARE
@@ -2232,12 +2285,13 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
       SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype, thedstype,
-                  rtn.cx,    rtn.cy,    rtn.ax,       rtn.ay,        rtn.az
+                  rtn.cx,    rtn.cy,    rtn.ax,       rtn.ay,        rtn.az, rtn.dsfrate, rtn.dssrate, rtn.dsrange
                       dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,     dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype,  dstype,
-                  scenx,     sceny,     salignx,      saligny,       salignz
+                  scenx,     sceny,     salignx,      saligny,       salignz,    dsfrate,     dssrate,     dsrange
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
-        WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
+        -- WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
+        WHERE dspid=rq.rqToken and sstate = 'NotTaken'
         ORDER BY sindex ASC
         LIMIT 1;
       IF NOT FOUND THEN
@@ -2259,9 +2313,9 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
       END IF;
 
       SELECT INTO rtn.dsowidth2, rtn.dsoscaxis2, rtn.dsexp2, rtn.sstart2, rtn.dsphi2, rtn.dsomega2, rtn.dskappa2, rtn.dsdist2, rtn.dsnrg2, rtn.sindex2, rtn.stype2,
-                  rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2
+                  rtn.cx2, rtn.cy2, rtn.ax2, rtn.ay2, rtn.az2, rtn.dsfrate2, rtn.dssrate2, rtn.dsrange2
                       dsowidth,      dsoscaxis,      dsexp,      sstart,      dsphi,      dsomega,      dskappa,      dsdist,      dsnrg,      sindex,      stype,
-                  scenx,   sceny,   salignx, saligny, salignz
+                  scenx,   sceny,   salignx, saligny, salignz, dsfrate, dssrate, dsrange
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
         WHERE dspid=rq.rqToken and sstate != 'Done' and sstate != 'Writing'
@@ -2287,6 +2341,8 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextshot2() OWNER TO lsadmin;
+
+
 
 
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
@@ -2339,6 +2395,9 @@ CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
     PERFORM 1 FROM px.datasets WHERE dsparent=pid;
     IF NOT FOUND THEN
       FOR rtn IN SELECT * FROM px.shots WHERE sdspid=pid ORDER BY stype DESC, sindex ASC LOOP
+        IF rtn.spath is null THEN
+          SELECT INTO rtn.spath dsdir || '/' || rtn.sfn FROM px.datasets where dspid = rtn.sdspid;
+        END IF;
         return next rtn;
       END LOOP;
     ELSE
@@ -2353,6 +2412,9 @@ CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
         END IF;
       END IF;
       FOR rtn IN SELECT * FROM px.shots WHERE sdspid=childPid ORDER BY stype DESC, sindex ASC LOOP
+        IF rtn.spath is null THEN
+          SELECT INTO rtn.spath dsdir || '/' || rtn.sfn FROM px.datasets where dspid = rtn.sdspid;
+        END IF;
         return next rtn;
       END LOOP;
     END IF;
@@ -2558,6 +2620,44 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.mksnap( text, numeric) OWNER TO lsadmin;
 
 
+CREATE OR REPLACE FUNCTION px.mkshutterless( theStn int, pid text) RETURNS void AS $$
+  --
+  -- Add a single entry in to the shots table for shutterless data collection
+  --
+  DECLARE
+    nexti int;  -- next value of the index
+    fp text;    -- file prefix
+    ds record;  -- our dataset
+    sample int; -- current sample number
+    kidtok text; -- dspid of children
+
+  BEGIN
+    SELECT * INTO ds FROM px.datasets WHERE dspid=pid;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'token % not found', pid;
+    END IF;
+
+    IF array_lower( ds.dspositions, 1) != array_upper( ds.dspositions, 1) THEN
+      -- Here we have multiple samples.  Make snaps but not for this one
+      FOR kidtok IN SELECT dspid FROM px.datasets WHERE dsparent = pid ORDER BY dspositions[1] LOOP
+        PERFORM px.mkshutterless( kidtok);
+      END LOOP;
+    ELSE
+      -- Here we just have one sample
+      SELECT  INTO fp, sample dsfp, coalesce( dspositions[1], 0) FROM px.datasets WHERE dspid=pid;
+      SELECT INTO nexti coalesce(max(sindex)+1,1) FROM px.shots WHERE sdspid=pid and stype='shutterless';
+      INSERT INTO px.shots
+               (sdspid,stype,        sindex,sfn,                                       sstart,    sstate,    sposition, sfrate,    ssrate,    srange)
+        VALUES (pid,   'shutterless',nexti, fp || '.' || trim(to_char(nexti,'099')),ds.dsstart,'NotTaken',sample,    ds.dsfrate,ds.dssrate,ds.dsrange );
+        --VALUES (pid,   'shutterless',nexti, fp || '_SL.' || trim(to_char(nexti,'099')),ds.dsstart,'NotTaken',sample,    ds.dsfrate,ds.dssrate,ds.dsrange );
+      PERFORM px.pushrunqueue( theStn, pid, 'shutterless');
+      PERFORM px.unpause( theStn);
+    END IF;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.mkshutterless( int, text) OWNER TO lsadmin;
+
+
 CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeric) RETURNS void AS $$
   DECLARE
     nexti int;  -- next value of the index
@@ -2689,14 +2789,14 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
         --
         -- Change everything to match the parent except dsfn, dspid, and dspositions
         UPDATE px.datasets SET
-          dsesaf = ds.dsesaf, dsdir = ds.dsdir, dsdirs = ds.dsdirs, dsstn = ds.dsstn, dsoscaxis = ds.dsoscaxis,
+          dstype = ds.dstype, dsesaf = ds.dsesaf, dsdir = ds.dsdir, dsdirs = ds.dsdirs, dsstn = ds.dsstn, dsoscaxis = ds.dsoscaxis,
           dsowidth = ds.dsowidth, dsnoscs = ds.dsnoscs, dsoscsense = ds.dsoscsense, dsnwedge = ds.dsnwedge,
           dsend = ds.dsend, dsexp = ds.dsexp, dsexpunit = ds.dsexpunit, dsphi = ds.dsphi, dsomega = ds.dsomega,
-          dskappa = ds.dskappa, dsdist = ds.dsdist, dsnrg = ds.dsnrg, dscomment = ds.dscomment
+          dskappa = ds.dskappa, dsdist = ds.dsdist, dsnrg = ds.dsnrg, dscomment = ds.dscomment, dsfrate=ds.dsfrate, dssrate=dssrate
           WHERE dsparent = token;
 
         --
-        -- Create additional children data sets and make shots (via spawn)
+        -- Add additional children data sets and make shots (via spawn)
         FOR i IN array_lower( ds.dspositions, 1) .. array_upper( ds.dspositions, 1) LOOP
           sample := ds.dspositions[i];
           PERFORM px.spawndataset( token, sample);
@@ -2707,7 +2807,9 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       -- Here we have only one sample.  Just make the shots.
       sample := ds.dspositions[1];
 
-      -- But first take care of the case where this dataset used to be a parent
+      -- But first take care of the case where this dataset used to be
+      -- a parent but is one no longer.
+      --
       FOR pid IN SELECT dspid FROM px.datasets WHERE dsparent = token LOOP
         DELETE FROM px.shots WHERE sdspid=pid AND sstate != 'Done';
         PERFORM 1 FROM px.shots WHERE sdspid=pid;
@@ -2717,6 +2819,16 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
           UPDATE px.datasets SET dsparent=NULL WHERE dspid=pid;
         END IF;
       END LOOP;
+
+      --
+      --  We are done for shutterless datasets.  Use px.mkshutterless
+      --  to add a shutterless dataset.  Here we just give up as we do
+      --  not want to add a ton of shots that are then summarily
+      --  deleted since they'll never be taken.
+      --
+      IF ds.dstype = 'Shutterless' THEN
+        return;
+      END IF;
 
       --
       -- get file prefix
@@ -2735,7 +2847,9 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       --
       -- calculate delta and number of frames
       --
+      
       delta := ds.dsdelta;
+
       IF ds.dsend = ds.dsstart+ds.dsowidth THEN
         delta = ds.dsowidth;
         nframes = 1;
@@ -2748,7 +2862,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
         END IF;
         nframes := CAST((ds.dsend-ds.dsstart)/delta AS int);
       END IF;
-    
+
       UPDATE px.datasets set dsend=ds.dsstart+delta*nframes WHERE dspid=token;
       SELECT INTO ds.dsend dsend FROM px.datasets WHERE dspid=token;
     
@@ -3207,7 +3321,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) retu
             LOOP
 
         startTime := startTime + rq.deltaTime;
-	tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
+  tmp = xmlconcat( tmp, xmlelement( name dataset, xmlattributes( rq.dspid as dspid, rq.type as "type", rq.k as k, rq.etc as etc)));
       END LOOP;
       rtn = xmlelement( name runqueue, xmlattributes( 'true' as success), tmp);
     END IF;
@@ -4166,20 +4280,28 @@ CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
     -- transfer
     -- center
   DECLARE
-    rtn px.nextActionType;    -- return value
-    tmp px._md2queue;    --
+    rtn px.nextActionType;      -- return value
+    tmp px._md2queue;           --
+    stn int;                    -- the "type" on the runqueue
    BEGIN
     rtn.key    := 0;
     rtn.action := 'noAction';
+    stn = px.getstation();
     SELECT * INTO tmp FROM px.md2popqueue();
     IF length( tmp.md2cmd)>0 THEN
       rtn.action := tmp.md2Cmd;
       rtn.key    := tmp.md2Key::bigint;
     ELSE
       IF not px.ispaused() THEN
-        PERFORM 1 FROM px.runqueue WHERE rqstn = px.getstation();
+        PERFORM 1 FROM px.runqueue WHERE rqstn = stn;
         IF FOUND THEN
-          rtn.action := 'collect';
+          IF stn = 1 THEN
+            --
+            -- shutterless requires different handling by the client
+            rtn.action = 'shutterless';
+          ELSE
+            rtn.action := 'collect';
+          END IF;
           rtn.key    := 0;
         END IF;
       END IF;
@@ -4383,7 +4505,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     zz1 numeric;
     theStn int;                 -- our station
     angr float;                 -- rotation angle (in rads)
-    tool int;			-- our current tool
+    tool int;     -- our current tool
   BEGIN
 
     SELECT px.getStation() INTO theStn;
@@ -4695,7 +4817,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
     rsmp int;   -- the requested sample
     dist numeric; -- next sample distance
     spres boolean; -- sample really present
-    thestn int;		-- our station
+    thestn int;   -- our station
   BEGIN
     PERFORM px.dropAirRights();
     SELECT INTO thestn px.getstation();
@@ -4730,7 +4852,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
         SELECT INTO rsmp taid FROM px.transferargs WHERE tastn=thestn ORDER BY takey desc LIMIT 1;
         SELECT INTO spres px.rt_get_capdetected( thestn) != 0;
 
-	raise notice 'dropRobotAirRights station: %,  requested sample: %,  current sample: %, dist: %,  cap detected: %', thestn, rsmp, smpl, dist, spres;
+  raise notice 'dropRobotAirRights station: %,  requested sample: %,  current sample: %, dist: %,  cap detected: %', thestn, rsmp, smpl, dist, spres;
 
         IF rsmp is not null and rsmp != 0 and rsmp = smpl and spres is not null and spres THEN
           PERFORM px.md2pushqueue( thestn, 'changeMode fastCentering');
@@ -5043,7 +5165,7 @@ ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO lsad
 CREATE TABLE px._md2queue (
        md2Key serial primary key,       -- our key
        md2ts timestamp with time zone not null default now(),
-       md2Stn int not null,		-- station number
+       md2Stn int not null,   -- station number
        md2Cmd text not null             -- the Command
 );
 ALTER TABLE px._md2queue OWNER TO lsadmin;
@@ -5620,7 +5742,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( theExpNo int) returns xml AS $$
       stt := NULL;
       st  := NULL;
       IF FOUND THEN
-	SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=theStn.stnkey;
+  SELECT bit_or((2^(objid::int-1))::int) INTO st FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=theStn.stnkey;
         SELECT lstext INTO stt FROM px.lockstates WHERE lsstate=(st & b'111111'::int);
       END IF;
       SELECT skey, coalesce(sfn,'') as sfn, coalesce(spath,'') as spath, coalesce(sbupath,'') as sbupath INTO shts
@@ -6005,21 +6127,21 @@ ALTER FUNCTION px.getShotsXml( text, text) OWNER TO lsadmin;
 
 
 CREATE TABLE px.kvs (
-       kvkey serial primary key,			-- our key
-       kvts  timestamptz not null default now(),	-- our timestamp
-       kvseq serial,					-- sequence number to indicate new values
+       kvkey serial primary key,      -- our key
+       kvts  timestamptz not null default now(),  -- our timestamp
+       kvseq serial,          -- sequence number to indicate new values
        kvname text not null,
        kvvalue text,
-       kvro boolean default true,			-- most variables are read only, write privilages implied.  Needed for PV support
+       kvro boolean default true,     -- most variables are read only, write privilages implied.  Needed for PV support
        kvpvname text default null
           references epics._pvmonitors (pvmname) on update cascade,
-       kvpvmi int default null references epics._pvmonitors (pvmmonitorindex),	-- index of the pv name in kvvalue
-       kvmotion text default null			-- use our epics.movit routine to move this one
+       kvpvmi int default null references epics._pvmonitors (pvmmonitorindex),  -- index of the pv name in kvvalue
+       kvmotion text default null     -- use our epics.movit routine to move this one
           references epics._motions (mmotorpvname) on update cascade,
-       kvmd2cmd text default null,			-- use this method to send command to md2 rather than just set the kv value
-       kvstn int default null,				-- needed to send commands to md2 from epics
-       kvdbrtype int default 0,				-- native type to report to epics
-       kvnotify text[] default null			-- list of notifies to send on change
+       kvmd2cmd text default null,      -- use this method to send command to md2 rather than just set the kv value
+       kvstn int default null,        -- needed to send commands to md2 from epics
+       kvdbrtype int default 0,       -- native type to report to epics
+       kvnotify text[] default null     -- list of notifies to send on change
        UNIQUE( kvname)
 );
 ALTER TABLE px.kvs OWNER TO lsadmin;
@@ -6114,8 +6236,8 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
   BEGIN
     raise exception 'px.kvupdate is obsolete  station %   variables %', thestn, kvps;
     
-    theSeq := NULL;			-- only set if there is a new value
-    notify_epics := FALSE;		-- only send notify if we've changed something that is monitored
+    theSeq := NULL;     -- only set if there is a new value
+    notify_epics := FALSE;    -- only send notify if we've changed something that is monitored
     notify_redis := FALSE;              -- make sure the value changes before telling redis aboutit
 
     FOR i IN array_lower( kvps,1) .. array_upper( kvps,1) BY 2 LOOP
@@ -6476,7 +6598,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     END IF;
     
     if n = 1 then
-      rtn.active = 0;	-- Don't change activate this if there is no second point
+      rtn.active = 0; -- Don't change activate this if there is no second point
       select into rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
                   px.kvget( thestn, 'centers.0.cx')::float,
                   px.kvget( thestn, 'centers.0.cy')::float,
@@ -7119,7 +7241,7 @@ CREATE TABLE px.centertable (
        cpid text references rmt.pids (ppid),    -- request authentication
        cip inet not null,                       -- ip address of requesting machine
        cport int not null,                      -- requesting port
-       ctcv text default null			-- the video started by this entry
+       ctcv text default null     -- the video started by this entry
          references rmt.centeringVideos (cvHash)
          ON DELETE SET NULL
          ON UPDATE CASCADE,
@@ -7129,11 +7251,11 @@ CREATE TABLE px.centertable (
        cz float,        -- Alignment table y (horizontal as seen on screen) change
        b  float,        -- y offset to edge of screen
        t0 float,        -- angle
-       cabscx float,	-- absolute value of centering table x after applying changes
-       cabscy float,	-- absolute value of centering table y after applying changes
-       cabsax float,	-- absolute value of alignment table x after applying changes
-       cabsay float,	-- absolute value of alignment table y after applying changes
-       cabsaz float,	-- absolute value of alignment table z after applying changes
+       cabscx float,  -- absolute value of centering table x after applying changes
+       cabscy float,  -- absolute value of centering table y after applying changes
+       cabsax float,  -- absolute value of alignment table x after applying changes
+       cabsay float,  -- absolute value of alignment table y after applying changes
+       cabsaz float,  -- absolute value of alignment table z after applying changes
        cabskappa float, -- absolute value of kappa after applying changes
        cabsphi float    -- absolute value of phi after applying changes
 );
@@ -7249,8 +7371,8 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     rtn px.centertype2;
     scaleH float;         -- centering stage x & y and alignment stage z use the vertical scale
     scaleW float;         -- alignment stage y uses the horizontal scale
-    CenterX float;	  -- pixel position of optical center
-    CenterY float;	  -- pixel position of optical center
+    CenterX float;    -- pixel position of optical center
+    CenterY float;    -- pixel position of optical center
     vwidth float;         -- picture width in pixels
     vheight float;        -- picture height in pixels
     omegaReference float; -- the centering stage is rotated this much relative to omega = 0
@@ -7261,8 +7383,8 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
     scaleW = px.kvget( theStn, 'cam.xScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
     scaleH = px.kvget( theStn, 'cam.yScale')::float / 1000.;    -- (microns/pixel) * (mm/micron)
 
-    CenterX = px.kvget( theStn, 'cam.CenterX')::float;		-- pixel position of optical center
-    CenterY = px.kvget( theStn, 'cam.CenterY')::float;		-- pixel position of optical center
+    CenterX = px.kvget( theStn, 'cam.CenterX')::float;    -- pixel position of optical center
+    CenterY = px.kvget( theStn, 'cam.CenterY')::float;    -- pixel position of optical center
 
     vwidth = px.kvget( theStn, 'cam.videoWidth')::float;        -- pixels
     vheight= px.kvget( theStn, 'cam.videoHeight')::float;       -- pixels
@@ -7285,7 +7407,7 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
                 0.0,
                 (CASE cz WHEN 0 THEN 0 ELSE (CenterX - cz * vwidth) * scaleW END),
                 (CASE cb WHEN 0 THEN 0 ELSE (cb *vheight - CenterY) * scaleH END),
-		ctcv
+    ctcv
                 FROM px.centertable
                 WHERE cstn=theStn
                 ORDER BY ckey DESC
@@ -7511,17 +7633,17 @@ ALTER FUNCTION px.lnnames( text, text) OWNER TO lsadmin;
 
 
 CREATE TABLE px.detectorinfo (
-       dikey serial primary key,		-- our key
-       dits timestamp with time zone		-- last update
+       dikey serial primary key,    -- our key
+       dits timestamp with time zone    -- last update
             default now(),
-       distn bigint not null			-- the station
+       distn bigint not null      -- the station
          references px.stations (stnkey),
-       diinfo text,				-- detector info string
-       dixpixsize numeric,			-- pixel size in mm
+       diinfo text,       -- detector info string
+       dixpixsize numeric,      -- pixel size in mm
        diypixsize numeric,
-       dixsize int,				-- full size in pixels
+       dixsize int,       -- full size in pixels
        diysize int,
-       dibin int				-- bin mode
+       dibin int        -- bin mode
 );
 ALTER TABLE px.detectorinfo OWNER TO lsadmin;
 
@@ -7550,8 +7672,8 @@ ALTER FUNCTION px.setdetectorinfo( text, numeric, numeric, int, int, int) OWNER 
 
 CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as $$
   DECLARE
-    rtn numeric;	-- return value
-    topd numeric;	-- distance to top of detector (mm)
+    rtn numeric;  -- return value
+    topd numeric; -- distance to top of detector (mm)
     theta numeric;
   BEGIN
 
@@ -7560,8 +7682,8 @@ CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as 
     return null;
   END IF;
   
-  theta := atan2( topd, px.rt_get_ndist( thestn))/2.0;		-- 2 theta from geometry
-  rtn   := 6.1992092867/sin(theta)/px.rt_get_nenergy( thestn);	-- Bragg's law. hc/2 in units of keV⋅Å
+  theta := atan2( topd, px.rt_get_ndist( thestn))/2.0;    -- 2 theta from geometry
+  rtn   := 6.1992092867/sin(theta)/px.rt_get_nenergy( thestn);  -- Bragg's law. hc/2 in units of keV⋅Å
 
   return rtn;
   END;
@@ -7570,10 +7692,10 @@ ALTER FUNCTION px.rt_get_ntopres( bigint) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.rt_set_topres( thestn bigint, res numeric) returns void as $$
   DECLARE
-    rtn numeric;	-- return value
-    topd numeric;	-- distance to top of detector (mm)
+    rtn numeric;  -- return value
+    topd numeric; -- distance to top of detector (mm)
     theta numeric;
-    d numeric;		-- possibly the distance to use
+    d numeric;    -- possibly the distance to use
   BEGIN
 
     SELECT INTO topd (diysize * diypixsize / dibin)/2.0 - px.rt_get_nbcy( thestn) FROM px.detectorinfo WHERE distn=thestn ORDER BY dikey desc limit 1;
@@ -7705,9 +7827,6 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
           rtn.shots    = rtn.shots    + thecount;
       END LOOP;
 
-
-
-
       SELECT INTO rtn.institution, rtn.piln, rtn.pifn, rtn.piemail expinst, expln, expfn, expemail FROM esaf.experimenter WHERE expexperimentid=rtn.esaf AND expspokesperson='Y' LIMIT 1;
       SELECT INTO nfunding count(*) FROM esaf.esaffunding WHERE efexpid=rtn.esaf;
       IF NOT FOUND or nfunding=0 THEN
@@ -7723,3 +7842,46 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.obfuscate_dsdir_dsfp(the_esaf int) RETURNS VOID AS $$
+  UPDATE px.datasets SET dsdir=md5(dsdir), dsfp=md5(dsfp), dsobfuscated=true
+    WHERE dsesaf=$1 AND NOT dsobfuscated;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.obfuscate_dsdir_dsfp(int) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.obfuscate_sfn_spath_sbupath(the_dspid text) RETURNS VOID AS $$
+  UPDATE px.shots SET sfn=md5(sfn), spath=md5(spath), sbupath=md5(sbupath), sobfuscated=true
+  WHERE sdspid=$1 AND NOT sobfuscated;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.obfuscate_sfn_spath_sbupath(text) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.active_datasets(esaf int) returns setof text AS $$
+  SELECT DISTINCT dspid  FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE skey is not null AND sstate='Done' and dsesaf=$1;
+$$ LANGUAGE SQL SECURITY DEFINER;
+ALTER FUNCTION px.active_datasets(int) OWNER TO lsadmin;
+
+
+
+CREATE OR REPLACE FUNCTION px.pymodules() returns text as $$
+
+import sys
+
+#sys.path.append('/usr/local/lib/python2.7/dist-packages/redis-2.10.5-py2.7.egg')
+import redis
+
+#from cStringIO import StringIO
+
+#old_stdout = sys.stdout
+#sys.stdout = mystdout = StringIO()
+
+#help('modules')
+
+#sys.stdout = old_stdout
+
+#return mystdout.getvalue()
+
+return sys.path
+
+$$ language plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.pymodules() OWNER TO lsadmin;
