@@ -7861,7 +7861,59 @@ CREATE OR REPLACE FUNCTION px.active_datasets(esaf int) returns setof text AS $$
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.active_datasets(int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.delete_all_inactive_frames() RETURNS int AS $$
+  --
+  -- Delete all frames that are not 'Done' UNLESS they are associated
+  -- with an ESAF that is currently logged in.
+  --
+  DECLARE
+    rtn int;
+  BEGIN
 
+    WITH active_esafs AS (SELECT lesaf FROM px.logins WHERE louts is null)
+    DELETE
+        FROM px.shots
+        USING px.datasets
+        WHERE sdspid = dspid
+        AND sstate != 'Done'
+        AND dsesaf NOT IN (SELECT lesaf FROM active_esafs);
+
+    GET DIAGNOSTICS rtn = ROW_COUNT;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.delete_all_inactive_frames() OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.delete_inactive_frames(stn int) RETURNS int AS $$
+  --
+  -- Delete all the frames that are not 'Done' for a given station
+  -- EXCEPT for frames that are currently logged in to that station
+  --
+  DECLARE
+    rtn int;
+  BEGIN
+
+    --
+    -- The active_esaf query returns an esaf (if there is one) that we
+    -- should not delete frames from.  In particular, if an ESAF is
+    -- currently running on the station then at best it would be
+    -- confusing to have a dataset truncated while trying to set it up
+    -- or run it.
+    --
+    WITH active_esaf AS (SELECT lesaf FROM px.logins WHERE louts is null and lstn=stn)
+    DELETE
+        FROM px.shots
+        USING px.datasets
+        WHERE sdspid = dspid
+        AND dsstn = stn
+        AND sstate != 'Done'
+        AND dsesaf NOT IN (SELECT lesaf FROM active_esaf);
+
+    GET DIAGNOSTICS rtn = ROW_COUNT;
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.delete_inactive_frames(int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.pymodules() returns text as $$
 
