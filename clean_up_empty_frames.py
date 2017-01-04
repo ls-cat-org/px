@@ -55,7 +55,7 @@ class ESAF_Watcher:
 
     def run(self):
         self.p.subscribe(**{'REDIS_PG_CONNECTOR': self.handler})
-        self.thread = self.p.run_in_thread(sleep_time=0.001)
+        self.thread = self.p.run_in_thread(sleep_time=0.1)
 
 
     def close(self):
