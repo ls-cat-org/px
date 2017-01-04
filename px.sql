@@ -2860,7 +2860,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
         IF delta = 0 THEN
           RAISE EXCEPTION 'delta not given and cannot be calculated';
         END IF;
-        nframes := CAST((ds.dsend-ds.dsstart)/delta AS int);
+        nframes := COALESCE(CAST((ds.dsend-ds.dsstart)/delta AS int), 0);
       END IF;
 
       UPDATE px.datasets set dsend=ds.dsstart+delta*nframes WHERE dspid=token;
