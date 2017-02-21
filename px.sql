@@ -4359,7 +4359,7 @@ ALTER TABLE px.nextSamples OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
   DECLARE
   BEGIN
-    -- Kill off sibings...
+    -- Kill off siblings...
     --
     DELETE FROM px.nextsamples WHERE nsstn = NEW.nsstn and (nsState = 'NEW' or nsState = 'WORKING');
     return NEW;
@@ -4447,14 +4447,11 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void 
     tool1 int;
     tool2 int;
   BEGIN
-    --
-    -- Don't do anything if there is a request still in nextSamples for this station
-    -- This should take care of the case where someone double clicks or two (or more) 
-    -- people click at the sample time to mount a sample.
-    --
+
+    -- Unceremoniously remove any existing entries for this station
     PERFORM 1 FROM px.nextSamples WHERE nsstn = stn;
     IF FOUND THEN
-      return;
+      DELETE FROM px.nextSamples WHERE nsstn = stn;
     END IF;
 
     -- Make sure we don't start up an old dataset
