@@ -4632,6 +4632,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
       return 0;
     END IF;
     IF cursam = 0 THEN
+
       --      PERFORM cats.put_bcrd( theId, xx, yy, zz, besttime);
       PERFORM cats.put( theId, xx, yy, zz, besttime);
     ELSE
@@ -6371,10 +6372,10 @@ CREATE OR REPLACE FUNCTION px.kvsetpy( stn int, k text, v text) returns void as 
 
   if not SD.has_key( "w"):
     SD["w"]    = [ None, None, None, None, None]
-    SD["w"][1] = redis.StrictRedis(host="mung-2.ls-cat.org",  port=6379,db=0)
-    SD["w"][2] = redis.StrictRedis(host="orange-2.ls-cat.org",port=6379,db=0)
-    SD["w"][3] = redis.StrictRedis(host="kiwi-2.ls-cat.org",  port=6379,db=0)
-    SD["w"][4] = redis.StrictRedis(host="mango-2.ls-cat.org", port=6379,db=0)
+    SD["w"][1] = redis.StrictRedis(host="10.1.253.164",  port=6379,db=0)
+    SD["w"][2] = redis.StrictRedis(host="10.1.253.14",port=6379,db=0)
+    SD["w"][3] = redis.StrictRedis(host="10.1.253.18",  port=6379,db=0)
+    SD["w"][4] = redis.StrictRedis(host="10.1.253.19", port=6379,db=0)
 
   lk   = k
   lstn = stn
