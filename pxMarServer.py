@@ -1,9 +1,9 @@
-#! /usr/local/bin/python
+#! /usr/bin/python
 #
 # pxMarServer.py
 #
 # remote mode server to support Mar/Rayonix detectors as LS-CAT
-# (C) 2008-2011 by Keith Brister
+# (C) 2008-2017 by Keith Brister
 # All rights reserved.
 #
 
