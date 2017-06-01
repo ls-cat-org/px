@@ -463,14 +463,14 @@ class PxMarServer:
         #
         # Set the lustre options for the new directory
         #
-        try:
-            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
-            p.wait()
-            if p.returncode != 0:
-                print( "lfs returned %d" % (p.returncode))
-        except OSError, (errno, strerror):
-            if errno != 2:
-                raise
+        #try:
+        #    p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
+        #    p.wait()
+        #    if p.returncode != 0:
+        #        print( "lfs returned %d" % (p.returncode))
+        #except OSError, (errno, strerror):
+        #    if errno != 2:
+        #        raise
 
 
     def serviceIn( self, event):
@@ -515,9 +515,17 @@ class PxMarServer:
 
             if not self.flushStatus:
                 #
+                # Find the last status message and use that one (only)
+                #
+                for i in range( len(ml) - 1, -1, -1):
+                    if ml[i].find("is_state") == 0:
+                        self.setStatus(ml[i])
+                        break;
+
+                #
                 # use only the last message to set the status
-                if len( ml[-1]):
-                    self.setStatus( ml[-1])
+                #if len( ml[-1]):
+                #    self.setStatus( ml[-1])
                 #
                 # Maybe other messages besides status: try to parse them
                 self.parseMar(ml)
