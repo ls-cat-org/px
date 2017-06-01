@@ -184,7 +184,7 @@ class PxMarServer:
             od = hl[0]
             of = hl[1]
             if od == d and of == f:
-                print >> sys.stderr, time.asctime(), "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
+                print >> self.logfile, time.asctime(), "already have dir=%s and file=%s in link queue, ignoring" %(d, f)
                 return
 
         self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
@@ -205,7 +205,7 @@ class PxMarServer:
                 tmp = datetime.datetime.now() - t
                 qs = "select px.pusherror( 10001, 'Waited %d seconds for file %s, gave up.')" % (tmp.days*24*3600 +tmp.seconds, f);
                 self.query( qs);
-                print >> sys.stderr, time.asctime(), "------POPING-------------",datetime.datetime.now(),t,tmp
+                print >> self.logfile, time.asctime(), "------POPING-------------",datetime.datetime.now(),t,tmp
                 self.hlList.pop( self.hlList.index(hl))
             else:
                 #
@@ -216,12 +216,12 @@ class PxMarServer:
                     statinfo = os.stat( d+"/"+f)
                 except:
                     # the file does not yet exist
-                    # print >> sys.stderr, time.asctime(), "%s/%s does not yet exist" % (d,f)
+                    # print >> self.logfile, time.asctime(), "%s/%s does not yet exist" % (d,f)
                     return
 
                 #
                 # Got it
-                print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s  %d" % (d,f, int(shotKey))
+                print >> self.logfile, time.asctime(), "====== Found it:  %s/%s  %d" % (d,f, int(shotKey))
                 #
                 qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
                 self.query( qs)
@@ -231,14 +231,14 @@ class PxMarServer:
                 qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
-                    print >> sys.stderr, time.asctime(), "Shot no longer exists, abandoning it"
+                    print >> self.logfile, time.asctime(), "Shot no longer exists, abandoning it"
                     return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
 
                 if len(bp) == 0:
                     zz = self.hlList.pop( self.hlList.index(hl))
-                    print >> sys.stderr, 'Could not find back up file for shot key %d,  hl: %s' % (int(shotKey), zz)
+                    print >> self.logfile, 'Could not find back up file for shot key %d,  hl: %s' % (int(shotKey), zz)
                     return;
 
                 #
@@ -251,16 +251,16 @@ class PxMarServer:
                         
                 bfn = bud+'/'+f
 
-                print >> sys.stderr, "Backup file name:", bfn
+                print >> self.logfile, "Backup file name:", bfn
 
                 try:
-                    print >> sys.stderr, time.asctime(), "making directory %s" % ( bud)
+                    print >> self.logfile, time.asctime(), "making directory %s" % ( bud)
                     os.makedirs( bud, 0770)
                 except OSError, (errno, strerr):
                     if errno != 17:
                         qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
                         self.query( qs);
-                        print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
+                        print >> self.logfile, time.asctime(), "Failed to make backup directory %s" % (bud)
                         self.hlList.pop( self.hlList.index(hl))
                         return
 
@@ -285,7 +285,7 @@ class PxMarServer:
                         found=False
                     i = i+1
 
-                print >> sys.stderr, time.asctime(), "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                print >> self.logfile, time.asctime(), "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
                 try:
                     os.link( d+'/'+f, bfn)
                 except:
@@ -293,7 +293,7 @@ class PxMarServer:
                     self.query( qs)
                     qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
                     self.query( qs);
-                    print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    print >> self.logfile, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
                     self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s", "sdspid": "%s"}' % (int(shotKey), bfd, d+'/'+f), self.sdspid);
 
                 else:
@@ -302,7 +302,7 @@ class PxMarServer:
                     qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                     self.query( qs)
 
-                    print >> sys.stderr, 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid);
+                    print >> self.logfile, 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid);
                     self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid));
 
                  
@@ -365,10 +365,10 @@ class PxMarServer:
         try:
             rtn = self.db.query( qs)
         except:
-            print >> sys.stderr, time.asctime(), sys.exc_info()[0]
-            print >> sys.stderr, '-'*60
-            traceback.print_exc(file=sys.stderr)
-            print >> sys.stderr, '-'*60
+            print >> self.logfile, time.asctime(), sys.exc_info()[0]
+            print >> self.logfile, '-'*60
+            traceback.print_exc(file=self.logfile)
+            print >> self.logfile, '-'*60
 
             self.reset()
             rtn = self.db.query( qs)
@@ -379,7 +379,7 @@ class PxMarServer:
         # Move the motor and wait for it to stop at the correct place
         #
         # Here the distance is not specified or is boggus
-        print >> sys.stderr, time.asctime(), theDist
+        print >> self.logfile, time.asctime(), theDist
         if self.skey != None:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Moving'))
             self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Moving", "msg": "", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
@@ -463,7 +463,7 @@ class PxMarServer:
                 # Probably the directory path includes something we do not have permissions for
                 qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(theDir), errno, self.es(strerror))
                 self.query( qs);
-                print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
+                print >> self.logfile, time.asctime(), "Error creating directory: %s" % (strerror)
                 theDirState = 'Invalid'
                 self.redis.set( 'detector.checkdir', '{ "dir": "%s", "valid": false}' % (theDir));
 
@@ -584,7 +584,7 @@ class PxMarServer:
                                 if errno != 17:
                                     qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(r["dsdir"]), int(errno), self.es(strerror))
                                     self.query( qs);
-                                    print >> sys.stderr, time.asctime(), "Error creating directory: %s" % (strerror)
+                                    print >> self.logfile, time.asctime(), "Error creating directory: %s" % (strerror)
 
                             #
                             # set the kv pair for the directory and file name
@@ -602,7 +602,7 @@ class PxMarServer:
                             except OSError, (errno, strerror):
                                 # Don't complain if the file does not exist
                                 if errno != 2:
-                                    print >> sys.stderr, time.asctime(), "Error deleting old file: %s" % (strerror)
+                                    print >> self.logfile, time.asctime(), "Error deleting old file: %s" % (strerror)
 
                         else:
                             # the shot was not found: send the data to the bit bucket but go through the motions of collecting
@@ -611,7 +611,7 @@ class PxMarServer:
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             qs = "select px.pusherror( 10005, '')"
                             self.query( qs);
-                            print >> sys.stderr, time.asctime(), "Could not determine either the filename or the directory: data sent to /dev/null instead"
+                            print >> self.logfile, time.asctime(), "Could not determine either the filename or the directory: data sent to /dev/null instead"
 
 
                         #
@@ -619,18 +619,18 @@ class PxMarServer:
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
                         if not self.waitdist(r["sdist"]):
-                            print >> sys.stderr, "Failed to move detector into position."
+                            print >> self.logfile, "Failed to move detector into position."
                             self.query( "select px.dropDetectorOn()")
                             #
                             # Possibly this wait is too long.
                             # It should be long enough so that the diffractometer notices and aborts the exposure
                             #
-                            print >>sys.stderr, " Wait for MD2 to realize what's happened"
+                            print >>self.logfile, " Wait for MD2 to realize what's happened"
                             for i in range(10):
-                                print >> sys.stderr, ".",
-                                sys.stderr.flush()
+                                print >> self.logfile, ".",
+                                self.logfile.flush()
                                 time.sleep( 0.2)
-                            print >>sys.stderr, " Done"
+                            print >>self.logfile, " Done"
                             self.query( "select px.setDetectorOn()")
                             return
 
@@ -645,7 +645,7 @@ class PxMarServer:
                             beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
                             beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
                             dist = r2["dist"]
-                            print >> sys.stderr, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
+                            print >> self.logfile, time.asctime(), "beam_x: ", beam_x, "beam_y: ", beam_y, "distance: ", dist
                         else:
                             beam_x = 2048
                             beam_y = 2048
@@ -661,7 +661,7 @@ class PxMarServer:
                         hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                             dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                             )
-                        print >> sys.stderr, time.asctime(), hs
+                        print >> self.logfile, time.asctime(), hs
                         self.queue.insert( 0, hs)
                         
                         self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
@@ -670,7 +670,7 @@ class PxMarServer:
                         cmd = "start"
                         self.collectingFlag = True
                         self.flushStatus    = True
-                        print >> sys.stderr, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
+                        print >> self.logfile, time.asctime(), "found collect, changing to start, adding %s" % (self.queue[0])
 
                         
                     #
@@ -693,13 +693,13 @@ class PxMarServer:
             #
             # Save command in queue
             self.queue.append( cmd)
-            print >> sys.stderr, time.asctime(), "queued %s" % (cmd)
+            print >> self.logfile, time.asctime(), "queued %s" % (cmd)
 
     def nextCmd( self):
         rtn = None
         if len(self.queue) > 0:
             rtn = self.queue.pop(0)
-            print >> sys.stderr, time.asctime(), "dequeued %s" % (rtn)
+            print >> self.logfile, time.asctime(), "dequeued %s" % (rtn)
         return rtn
 
     def parseMar( self, ml):
@@ -712,14 +712,14 @@ class PxMarServer:
                 self.xsize=int(rsp[1])
                 self.ysize=int(rsp[2])
                 self.updatedDetectorInfo = False
-                print >>sys.stderr, time.asctime(), "SIZE: ", self.xsize,self.ysize
+                print >>self.logfile, time.asctime(), "SIZE: ", self.xsize,self.ysize
 
             if msg.find("is_bin")==0:
                 rsp = msg.split(",")
                 self.xbin=int(rsp[1])
                 self.ybin=int(rsp[2])
                 self.updatedDetectorInfo = False
-                print >>sys.stderr, time.asctime(), "BIN: ",self.xbin,self.ybin
+                print >>self.logfile, time.asctime(), "BIN: ",self.xbin,self.ybin
 
     def setStatus( self, msg):
         rsp = msg.split( ",")
@@ -745,26 +745,26 @@ class PxMarServer:
 
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
-                    print >> sys.stderr, time.asctime(), "Your wish is my command.  Waiting patiently for your instructions."
+                    print >> self.logfile, time.asctime(), "Your wish is my command.  Waiting patiently for your instructions."
                     self.query( "select px.lock_detector()")
                     self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
-                    print >> sys.stderr, time.asctime(), "Integrating..."
+                    print >> self.logfile, time.asctime(), "Integrating..."
                     self.query( "select px.unlock_detector()")  # give up mar lock
                     self.haveLock      = False      # reset flags
                         
                     #
                     # this is the exposure, command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
-                    print >> sys.stderr, time.asctime(), "Waiting for exposure to end..."
+                    print >> self.logfile, time.asctime(), "Waiting for exposure to end..."
                     self.query( "select px.lock_diffractometer()")
-                    print >> sys.stderr, time.asctime(), "Exposure ended"
+                    print >> self.logfile, time.asctime(), "Exposure ended"
 
                     # eventually we'll get the lock, give it up immediately
                     self.query( "select px.unlock_diffractometer()")
-                    print >> sys.stderr, time.asctime(), "Diffractometer unlocked"
+                    print >> self.logfile, time.asctime(), "Diffractometer unlocked"
 
                     #
                     # allow sending the next command in the queue (should be the readout)
@@ -810,6 +810,8 @@ class PxMarServer:
         Grab needed parameters from the environment and set up polling file descriptors
         to communicate with marccd and the database.
         """
+
+        self.logfile = open("/tmp/pxMarServer.log", "w")
 
         #
         # Use redis to communicate state info to UI
@@ -900,7 +902,7 @@ class PxMarServer:
                 
             except select.error, (errno, strerror):
                 if errno == 4:
-                    print >>sys.stderr, "pxMarServer.py poll: ", strerror
+                    print >>self.logfile, "pxMarServer.py poll: ", strerror
                 else:
                     raise
 
@@ -937,10 +939,10 @@ class PxMarServer:
                     self.ltime = time.time()
 
 
-        print >> sys.stderr, time.asctime(), "pxMarServer.py: cleaning up"
+        print >> self.logfile, time.asctime(), "pxMarServer.py: cleaning up"
         self.query( "select px.dropDetectorOn()")
         self.db.close()
-        print >> sys.stderr, time.asctime(), "pxMarServer.py: Exiting now."
+        print >> self.logfile, time.asctime(), "pxMarServer.py: Exiting now."
         self.redis.set( 'detector.running', False);
 
 #
