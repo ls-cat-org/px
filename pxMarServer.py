@@ -1,9 +1,9 @@
-#! /usr/bin/python
+#! /usr/local/bin/python
 #
 # pxMarServer.py
 #
 # remote mode server to support Mar/Rayonix detectors as LS-CAT
-# (C) 2008-2017 by Keith Brister
+# (C) 2008-2011 by Keith Brister
 # All rights reserved.
 #
 
@@ -221,7 +221,7 @@ class PxMarServer:
 
                 #
                 # Got it
-                print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s" % (d,f)
+                print >> sys.stderr, time.asctime(), "====== Found it:  %s/%s  %d" % (d,f, int(shotKey))
                 #
                 qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
                 self.query( qs)
@@ -235,70 +235,78 @@ class PxMarServer:
                     return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
-                if len(bp) > 0:
-                    #
-                    # create the path components if needed
-                    #
-                    if d[0] == '/':
-                        bud = bp+"/"+d[1:]
-                    else:
-                        bud = bp+"/"+d
-                            
-                    bfn = bud+'/'+f
 
-                    try:
-                        print >> sys.stderr, time.asctime(), "making directory %s" % ( bud)
-                        os.makedirs( bud, 0770)
-                    except OSError, (errno, strerr):
-                        if errno != 17:
-                            qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
-                            self.query( qs);
-                            print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
-                            self.hlList.pop( self.hlList.index(hl))
-                            return
+                if len(bp) == 0:
+                    zz = self.hlList.pop( self.hlList.index(hl))
+                    print >> sys.stderr, 'Could not find back up file for shot key %d,  hl: %s' % (int(shotKey), zz)
+                    return;
 
-                    #
-                    # see if the link already exists
-                    # If so, alter the file name and try again
-                    i = 0
+                #
+                # create the path components if needed
+                #
+                if d[0] == '/':
+                    bud = bp+"/"+d[1:]
+                else:
+                    bud = bp+"/"+d
+                        
+                bfn = bud+'/'+f
+
+                print >> sys.stderr, "Backup file name:", bfn
+
+                try:
+                    print >> sys.stderr, time.asctime(), "making directory %s" % ( bud)
+                    os.makedirs( bud, 0770)
+                except OSError, (errno, strerr):
+                    if errno != 17:
+                        qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
+                        self.query( qs);
+                        print >> sys.stderr, time.asctime(), "Failed to make backup directory %s" % (bud)
+                        self.hlList.pop( self.hlList.index(hl))
+                        return
+
+                #
+                # see if the link already exists
+                # If so, alter the file name and try again
+                i = 0
+                found = True
+                while found:
+                    # assume we found it
                     found = True
-                    while found:
-                        # assume we found it
-                        found = True
 
-                        # add a "_ddd" if the link already exists
-                        # this prevents someone from overwriting their own data
-                        if i==0:
-                            bfn = bud+'/'+f
-                        else:
-                            bfn = "%s/%s_%03d" % (bud, f, i)
-                        try:
-                            os.stat( bfn)
-                        except:
-                            found=False
-                        i = i+1
-
-                    print >> sys.stderr, time.asctime(), "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
-                    try:
-                        os.link( d+'/'+f, bfn)
-                    except:
-                        qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Error')
-                        self.query( qs)
-                        qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
-                        self.query( qs);
-                        print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
-                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s", "sdspid": "%s"}' % (int(shotKey), bfd, d+'/'+f), self.sdspid);
-
+                    # add a "_ddd" if the link already exists
+                    # this prevents someone from overwriting their own data
+                    if i==0:
+                        bfn = bud+'/'+f
                     else:
-                        qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
-                        self.query( qs);
-                        qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
-                        self.query( qs)
-                        qs = "select px.shots_set_stats( '%s', '%s', px.getstation(), NULL, NULL)" % (bfn, self.sdspid)
-                        self.query( qs)
-                        self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid));
-                    
-                    self.hlList.pop( self.hlList.index(hl))
+                        bfn = "%s/%s_%03d" % (bud, f, i)
+                    try:
+                        os.stat( bfn)
+                    except:
+                        found=False
+                    i = i+1
+
+                print >> sys.stderr, time.asctime(), "making hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                try:
+                    os.link( d+'/'+f, bfn)
+                except:
+                    qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Error')
+                    self.query( qs)
+                    qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
+                    self.query( qs);
+                    print >> sys.stderr, time.asctime(), "Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f)
+                    self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s", "sdspid": "%s"}' % (int(shotKey), bfd, d+'/'+f), self.sdspid);
+
+                else:
+                    qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
+                    self.query( qs);
+                    qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
+                    self.query( qs)
+
+                    print >> sys.stderr, 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid);
+                    self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid));
+
+                 
+                self.hlList.pop( self.hlList.index(hl))
 
     def close( self):
         if self.dbfd != None and self.p != None:
@@ -463,14 +471,14 @@ class PxMarServer:
         #
         # Set the lustre options for the new directory
         #
-        #try:
-        #    p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
-        #    p.wait()
-        #    if p.returncode != 0:
-        #        print( "lfs returned %d" % (p.returncode))
-        #except OSError, (errno, strerror):
-        #    if errno != 2:
-        #        raise
+        try:
+            p = subprocess.Popen( ["/usr/bin/lfs", "setstripe", "-s", "4M", "-c", "1", "-i", "-1", "-p", self.lustrePool, theDir], close_fds=True, shell=False)
+            p.wait()
+            if p.returncode != 0:
+                print( "lfs returned %d" % (p.returncode))
+        except OSError, (errno, strerror):
+            if errno != 2:
+                raise
 
 
     def serviceIn( self, event):
@@ -515,17 +523,9 @@ class PxMarServer:
 
             if not self.flushStatus:
                 #
-                # Find the last status message and use that one (only)
-                #
-                for i in range( len(ml) - 1, -1, -1):
-                    if ml[i].find("is_state") == 0:
-                        self.setStatus(ml[i])
-                        break;
-
-                #
                 # use only the last message to set the status
-                #if len( ml[-1]):
-                #    self.setStatus( ml[-1])
+                if len( ml[-1]):
+                    self.setStatus( ml[-1])
                 #
                 # Maybe other messages besides status: try to parse them
                 self.parseMar(ml)
