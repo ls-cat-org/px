@@ -1,6 +1,6 @@
-#! /usr/local/bin/python
+#! /usr/bin/python
 #
-# Copyright 2010, 2012, 2015, 2016 by Northwestern University
+# Copyright 2010, 2012, 2015, 2016, 2017 by Northwestern University
 #
 # Automatically run marccd as the right user in the right directory
 #
@@ -303,6 +303,15 @@ class AutoDetector:
 
                     os.waitpid(self.forkedPID, 0)       # Cleanup the zombie
                     self.forkedPID = None
+                    #
+                    # remove old log file
+                    #
+                    # TODO: put logs in /var/log/pxMarServer and rotate instead of delete
+                    #
+                    try:
+                        os.remove("/tmp/pxMarServer.log")
+                    except:
+                        pass
 
                 self.spawn()
 
