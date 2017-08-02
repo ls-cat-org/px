@@ -2342,9 +2342,6 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.nextshot2() OWNER TO lsadmin;
 
-
-
-
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
     ntfy text;
@@ -4559,8 +4556,6 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
       raise notice 'xx1: %   yy1: %  zz1: %  xx: %   yy: %   zz: %', xx1, yy1, zz1, xx, yy, zz;
     END IF;
 
-
-
     --    raise exception 'startTransfer: theId=%, xx=%, yy=%, zz=%', to_hex(theId), xx::int, yy::int, zz::int;
 
     SELECT  px.startTransfer( theId, present, xx::int, yy::int, zz::int, esttime) into rtn;
@@ -6275,6 +6270,36 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.kvupdate( int, text[]) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.kvdel( stn int, k text) returns void as $$
+  if not SD.has_key( "redis"):
+    import redis
+    SD["redis"] = redis
+
+  redis = SD["redis"]
+  if not SD.has_key( "w"):
+    SD["w"]    = [ None, None, None, None, None]
+    SD["w"][1] = redis.StrictRedis(host="10.1.253.164",  port=6379,db=0)
+    SD["w"][2] = redis.StrictRedis(host="10.1.253.14",port=6379,db=0)
+    SD["w"][3] = redis.StrictRedis(host="10.1.253.18",  port=6379,db=0)
+    SD["w"][4] = redis.StrictRedis(host="10.1.253.19", port=6379,db=0)
+  
+  lk   = k
+  lstn = stn
+  if k.find('stns.') != 0:
+    if stn < 1 or stn > 4:
+      return
+    lk = 'stns.%d.%s' % (stn, k)
+  else:
+    lstn = int(k[5])
+    if lstn < 1 or lstn > 4:
+      return
+  w = SD["w"]
+  w[lstn].delete(lk)
+  return
+
+$$ language plpythonu SECURITY DEFINER;
+ALTER FUNCTION px.kvdel( int, text) OWNER TO lsadmin;
 
 
 CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
