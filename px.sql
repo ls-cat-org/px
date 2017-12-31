@@ -4370,7 +4370,8 @@ CREATE TABLE px.lastSamples (
        lsKey serial primary key,
        lsts timestamp with time zone default now(),
        lsStn int not null references px.stations (stnKey) on update cascade,
-       lsId int not null
+       lsId int not null,
+       lsesaf int
 );
 ALTER TABLE px.lastSamples OWNER TO lsadmin;
 
@@ -4431,9 +4432,12 @@ ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
   DECLARE
+    our_esaf int;
   BEGIN
+    SELECT INTO our_esaf lesaf FROM px.logins WHERE lstn=px.getstation() and lints <= now() and louts is null;
+
     INSERT INTO px.nextSamples (nsStn, nsId, nsState) VALUES (px.getstation(), theId, 'NEW');
-    INSERT INTO px.lastSamples (lsStn, lsId) VALUES (px.getstation(), theId);
+    INSERT INTO px.lastSamples (lsStn, lsId, lsesaf) VALUES (px.getstation(), theId, our_esaf);
     PERFORM px.md2pushqueue( 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -4789,7 +4793,9 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
       -- unlocking cryo here is a kludge inserted as a workaround for
       -- a poorly understood problem.  KB 160210
       --
-      -- PERFORM px.unlockCryo();
+      --IF px.getstation() = 1 THEN
+      --  PERFORM px.unlockCryo();
+      --END IF;
       SELECT px.requestAirRights() INTO rtn;
       IF rtn THEN
         PERFORM cats.cmdTimingGotAir();
@@ -6621,7 +6627,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     END IF;
     
     if n = 1 then
-      rtn.active = 0; -- Don't change activate this if there is no second point
+      rtn.active = 0; -- Don't "activate" if there is no second point
       select into rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
                   px.kvget( thestn, 'centers.0.cx')::float,
                   px.kvget( thestn, 'centers.0.cy')::float,
@@ -7634,6 +7640,31 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
 
+CREATE TYPE px.hardlinktype AS (src text, dest text);
+CREATE OR REPLACE FUNCTION px.hardlinks(esaf int) returns setof px.hardlinktype AS $$
+  DECLARE
+    rtn px.hardlinktype;
+
+  BEGIN
+    FOR rtn.src, rtn.dest IN
+      SELECT sbupath, spath
+        FROM px.datasets
+          LEFT JOIN px.shots on sdspid = dspid
+        WHERE dsesaf = esaf
+          AND dsstn != 1
+          AND sstate='Done'
+          AND sfn is not null
+          AND sbupath is not null
+        ORDER BY sbupath
+    LOOP
+      return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.hardlinks(int) OWNER TO lsadmin;
+
+
 CREATE TYPE px.spotListType AS (bufn text, stats json);
 CREATE OR REPLACE FUNCTION px.spotList( thePid text) returns setof px.spotListType AS $$
   SELECT sstbup, sststats FROM px.shot_stats_table WHERE sstdspid=$1 order by sstbup;
@@ -7960,3 +7991,105 @@ return sys.path
 
 $$ language plpythonu SECURITY DEFINER;
 ALTER FUNCTION px.pymodules() OWNER TO lsadmin;
+
+
+CREATE OR REPLACE FUNCTION px.raster_step(params jsonb) RETURNS BOOLEAN AS $$
+  DECLARE
+    rtn boolean;
+    cdir text;
+    cfp  text;
+    cursam int;
+    qs text;
+    needq boolean;
+    thedspid text;
+    theStn int;
+    pkey text;
+    pvalue text;
+  BEGIN
+    -- modified from node.ds which is a modified version of px.editds
+    --
+
+    rtn = false;
+
+    raise notice 'px.raster_step params: %', params;
+
+    theStn = (params->>'theStn')::int;
+
+    perform px.kvset( theStn, 'centers.length', '2');
+    perform px.kvset( theStn, 'centers.0.cx',   params->>'cx');
+    perform px.kvset( theStn, 'centers.0.cy',   params->>'cy');
+    perform px.kvset( theStn, 'centers.0.ax',   params->>'ax');
+    perform px.kvset( theStn, 'centers.0.ay',   params->>'ay1');
+    perform px.kvset( theStn, 'centers.0.az',   params->>'az');
+    perform px.kvset( theStn, 'centers.1.cx',   params->>'cx');
+    perform px.kvset( theStn, 'centers.1.cy',   params->>'cy');
+    perform px.kvset( theStn, 'centers.1.ax',   params->>'ax');
+    perform px.kvset( theStn, 'centers.1.ay',   params->>'ay2');
+    perform px.kvset( theStn, 'centers.1.az',   params->>'az');
+
+    -- Get the current info for this dataset
+    --
+    SELECT dsdir, dsfp, dspid INTO cdir, cfp, thedspid FROM px.datasets LEFT JOIN px.stnstatus ON ssdsedit=dspid where ssstn=theStn LIMIT 1;
+    
+    IF NOT FOUND or cdir != params->>'dir' or cfp != params->>'fp' THEN
+      SELECT px.copydataset( theStn, thedspid, params->>'dir', params->>'fp') INTO thedspid;
+      UPDATE px.datasets set dstype='Normal', dsrobopid=NULL WHERE dspid=thedspid;
+    END IF;
+
+    UPDATE px.stnstatus set ssdsedit=thedspid where ssstn=theStn;
+
+    -- Make sure we collect (only) on the current sample
+    SELECT coalesce(px.getCurrentSampleID( theStn),0) INTO curSam;
+    UPDATE px.datasets SET dspositions[1] = cursam WHERE dspid = thedspid;
+
+    FOR pkey, pvalue IN SELECT key, value FROM jsonb_each(params) LOOP
+      SELECt edsFunc, edsQuotes INTO qs, needq FROM px.editDStable WHERE edsName = pkey;
+      IF NOT FOUND THEN
+        CONTINUE;
+      END IF;
+
+      IF needq THEN
+        qs := qs || '(''' || thedspid || ''',''' || pvalue || ''')';
+      ELSE
+        qs := qs || '(''' || thedspid || ''','   || pvalue || ')';
+      END IF;
+
+      EXECUTE 'select ' || qs;
+
+    END LOOP;
+
+    
+
+
+    --PERFORM px.pushrunqueue( theStn, ssdsedit, 'normal') FROM px.stnstatus WHERE ssstn=theStn;
+    --PERFORM px.unpause( theStn);
+    --PERFORM px.startrun( theStn);
+
+    return rtn;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.raster_step(jsonb) OWNER TO lsadmin;
+
+CREATE OR REPLACE FUNCTION px.set_sample_esaf() returns void AS $$
+  DECLARE
+  the_lskey int;
+  our_esaf int;
+  BEGIN
+
+
+  FOR the_lskey IN SELECT lskey FROM px.lastsamples LOOP
+    SELECT INTO our_esaf lesaf
+      FROM px.logins
+        LEFT JOIN px.lastsamples ON lstn = lsstn
+        WHERE lskey=the_lskey
+        AND lints <= lsts
+        AND louts >= lsts;
+
+    IF FOUND THEN
+      UPDATE px.lastsamples set lsesaf=our_esaf where lskey=the_lskey;
+    END IF;
+  END LOOP;
+
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.set_sample_esaf() OWNER TO lsadmin;
