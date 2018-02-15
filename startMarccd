@@ -104,4 +104,4 @@ cd ${theHomeDirectory}
 # Here /usr/local/bin/pxMarServer.py supports 
 # the remote mode services.
 #
-/opt/marccd/bin/marccd -rf
+/opt/marccd/bin/marccd -rf 

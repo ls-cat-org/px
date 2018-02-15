@@ -151,7 +151,7 @@ class AutoDetector:
             #
             # run the marccd program
             #
-            marccd = subprocess.Popen( "/usr/local/bin/marccd", env=marccdEnv,
+            marccd = subprocess.Popen( "/usr/local/bin/startMarccd", env=marccdEnv,
                                        shell=True, stdout=cstdout, stderr=cstderr, stdin=None, bufsize=-1,
                                        cwd=self.pw[5])
             #

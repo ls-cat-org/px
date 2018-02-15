@@ -17,7 +17,7 @@ dist:
 
 install: 
 	install -p pxMarServer.py /usr/local/bin
-	install -p marccd /usr/local/bin
+	install -p startMarccd /usr/local/bin
 	install -p fixMarccdLog /usr/local/bin
 	install -p AutoDetector.py /usr/local/bin
 	install -p MarccdConfFile.py /usr/local/bin
