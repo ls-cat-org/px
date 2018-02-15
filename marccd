@@ -6,8 +6,10 @@
 # when marccd is run it runs correctly.  It should refuse to run if
 # the MD2 is not running as the same user.
 #
-# Copyright (C) 2009-2011 by Keith Brister
+# Copyright (C) 2009-2011,2018 by Northwestern University
 # All rights reserved.
+# Author: Keith Brister
+#
 
 #
 # make sure the marccd/log file is writable
@@ -17,7 +19,12 @@ sudo /usr/local/bin/fixMarccdLog
 #
 # kill off any stray pxMarServer processes
 #
+#
+# For some reason marccd itself is not dying when we kill pxMarServer
+# so we'll need to go hunting for it on our own.
+#
 sudo /usr/bin/killall -q pxMarServer.py
+sudo /usr/bin/killall -q marccd
 
 #
 # wait for a gracefull exit
@@ -28,6 +35,7 @@ sleep 2
 # kill off any stray pxMarServer processes, make sure they are dead
 #
 sudo /usr/bin/killall -q -s KILL pxMarServer.py
+sudo /usr/bin/killall -q -s KILL marccd
 
 #
 # set up the marccd environment
@@ -82,7 +90,6 @@ if [[ "ZZ"$currentuser != "ZZ"$iam ]]; then
 	exit
     fi
 fi
-
 
 #
 # We always assume the user is running marccd from their home directory.  Make it so.
