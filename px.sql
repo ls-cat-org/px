@@ -2284,9 +2284,14 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
 
    SELECT INTO rq * FROM px.runqueue WHERE rqStn=px.getStation() ORDER BY rqOrder ASC LIMIT 1;
     IF FOUND THEN
-      SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi, rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype, thedstype,
+
+
+      SELECT INTO rtn.dsdir, rtn.dspid, rtn.dsowidth, rtn.dsoscaxis, rtn.dsexp, rtn.skey, rtn.sstart, rtn.sfn, rtn.dsphi,
+                  rtn.dsomega, rtn.dskappa, rtn.dsdist, rtn.dsnrg, rtn.dshpid, rtn.sindex, rtn.stype, thedstype,
                   rtn.cx,    rtn.cy,    rtn.ax,       rtn.ay,        rtn.az, rtn.dsfrate, rtn.dssrate, rtn.dsrange
-                      dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,     dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype,  dstype,
+
+                  dsdir,     dspid,     dsowidth,     dsoscaxis,     dsexp,     skey,     sstart,     sfn,     dsphi,
+                  dsomega,     dskappa,     dsdist,     dsnrg,     sposition,  sindex,    stype,  dstype,
                   scenx,     sceny,     salignx,      saligny,       salignz,    dsfrate,     dssrate,     dsrange
         FROM px.datasets
         LEFT JOIN  px.shots ON dspid=sdspid and stype=rq.rqType
@@ -2333,7 +2338,6 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
           END IF;
         END IF;
       END IF;
-
 
       RETURN NEXT rtn;
     END IF;
