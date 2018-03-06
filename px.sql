@@ -2000,7 +2000,7 @@ INSERT INTO px.stypes (st) VALUES ('snap');
 INSERT INTO px.stypes (st) VALUES ('segment');
 
 CREATE TABLE px.shots (
-        skey     serial         primary key,            -- table key
+        skey     bigserial      primary key,            -- table key
         sts     timestamp with time zone default now(), -- time of creation or last status change
         sdspid   text                                   -- PID of dataset
                 references px.datasets (dspid) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -2198,7 +2198,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_get_normal_stats( text) OWNER TO lsadmin;
 
 
-CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
+CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey bigint) returns void AS $$
   DECLARE
     ds record;  -- the dataset record
     token text; -- the record token
@@ -2210,12 +2210,12 @@ CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey int) returns void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_expose( int) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_expose( bigint) OWNER TO lsadmin;
 
 
 
 DROP TYPE px.nextshottype CASCADE;
-CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text,
+CREATE TYPE px.nextshottype AS (dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey bigint, sstart numeric, sfn text,
         dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int, cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text);
 
 CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
@@ -2262,7 +2262,7 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 
 drop type px.nextshot2type cascade;
 CREATE TYPE px.nextshot2type AS (
-       dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey int, sstart numeric, sfn text, 
+       dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey bigint, sstart numeric, sfn text, 
        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int,
        cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text,
        dsowidth2 numeric, dsoscaxis2 text, dsexp2 numeric, sstart2 numeric, dsphi2 numeric, dsomega2 numeric, dskappa2 numeric, dsdist2 numeric, dsnrg2 numeric,
