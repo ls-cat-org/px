@@ -16,6 +16,8 @@ stn_config = [
     {'stn': 4, 'host': 'mango-2.ls-cat.org'}
 ]
     
+stn_status = {}
+
 
 class ESAF_Watcher:
 
@@ -37,7 +39,12 @@ class ESAF_Watcher:
         if not self.v and last_v:
             self.arm_trigger = True
 
-        print( "%s: %s" % (self.k, str(self.v)))
+        stn_status[self.k] = str(self.v)
+
+        print("*********************************************")
+        for k in sorted(stn_status):
+            print("%s: %s" % (k, stn_status[k]))
+        print("*********************************************")
 
 
     def __init__(self, stn, host):
@@ -51,6 +58,7 @@ class ESAF_Watcher:
             self.v = False
             self.arm_trigger = True
 
+        stn_status[self.k] = self.v
         print(self.k, self.v)
 
     def run(self):
