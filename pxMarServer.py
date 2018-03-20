@@ -164,12 +164,9 @@ class PxMarServer:
     haveLock = False    # indicates we have the "ready to aquire" semaphore
     lo = ""             # left over input from processing reads from marccd
     previousStatus = -1
-    waitForStatus=False  # flag indicating we should block output until we've received a status update
-    statusRequested=False
     skey = None         # key of from shots table with record we want
     fn = None           # filename from "collect" meta command
     collectingFlag=False # indicates we are integrating and should only look for aborts
-    outputBlocked=False  # indicates we have blocked the output to the marccd program
     flushStatus = False  # flush status buff so we do not get old status
     hlList      = []    # dictionary of hardlinks to make
     xsize = None        # size of image
@@ -364,7 +361,6 @@ class PxMarServer:
                 pass
         self.haveLock       = False
         self.collectingFlag = False
-        self.outputBlocked  = False
         self.flushStatus    = False
 
         raise PxMarError( 'Reset Complete')
@@ -548,11 +544,6 @@ class PxMarServer:
                 if self.lo == "":
                     self.flushStatus = False
 
-            if not self.statusRequested:
-                os.write(self.fdout, "get_state\n")
-                self.statusRequested = True
-
-
     def serviceOut( self, event):
 
         global EXIT_NOW
@@ -565,23 +556,13 @@ class PxMarServer:
             return
 
         if event == select.POLLOUT:
-            if not self.statusRequested:
-                os.write(self.fdout, "get_state\n")
-                self.statusRequested = True
-
             #
             # Don't do anything if last command was "start" or we are waiting for status
-            if not self.waitForStatus and not (self.collectingFlag and self.haveLock):
+            if not (self.collectingFlag and self.haveLock):
                 #
                 # Get command to send to detector
                 cmd = self.nextCmd()
                 if cmd != None:
-                    #
-                    # Force status read before outputting anynthing else
-                    self.waitForStatus = True
-                    self.blockOutput()
-
-
                     #
                     # see if we have the "meta command" collect
                     # save the file name and morph into a "start"
@@ -769,22 +750,7 @@ class PxMarServer:
         except:
             pass
         else:
-            self.waitForStatus = True
             if self.status & busyMask == 0:
-                #
-                # wait no longer for status
-                self.waitForStatus = False
-                self.statusRequested = False
-
-                # if reading or nothing to send, block output to marccd
-                #
-                if not self.outputBlocked and (((self.status & (readMask | zingMask)) != 0) or len( self.queue) == 0):
-                    self.blockOutput()
-
-                # if not reading and not aquiring and something to send, allow it
-                if self.outputBlocked and ((self.status & (zingMask | readMask)) == 0) and len( self.queue) > 0:
-                    self.enableOutput()
-
                 # if not acquiring, grab the marlock
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
                     print >> self.logfile, time.asctime(), "Your wish is my command.  Waiting patiently for your instructions."
@@ -814,21 +780,8 @@ class PxMarServer:
                     self.logfile.flush()
 
                     #
-                    # allow sending the next command in the queue (should be the readout)
-                    self.enableOutput()
-
-                    #
                     # Signal we are done collecting
                     self.collectingFlag = False
-
-    def blockOutput( self):
-        self.p.register( self.fdout, ~select.POLLOUT & self.fdoutFlags)
-        self.outputBlocked = True
-
-
-    def enableOutput( self):
-        self.p.register( self.fdout, select.POLLOUT | self.fdoutFlags)
-        self.outputBlocked = False
 
     def dbServiceIn( self, event):
         #
@@ -878,11 +831,10 @@ class PxMarServer:
         #
         # return from select when fdout has a problem 
         self.fdoutFlags = select.POLLERR | select.POLLHUP | select.POLLNVAL
-        self.outputBlocked = False
 
         self.p = select.poll()
         self.p.register( self.fdin, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
-        self.p.register( self.fdout, self.fdoutFlags)
+        self.p.register( self.fdout, select.POLLOUT | self.fdoutFlags)
         
         self.open()
 
