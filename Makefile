@@ -21,4 +21,5 @@ install:
 	install -p fixMarccdLog /usr/local/bin
 	install -p AutoDetector.py /usr/local/bin
 	install -p MarccdConfFile.py /usr/local/bin
+	./maybe_install_pxMarServer_rsyslogd.sh
 #	./append.to.sudoers
