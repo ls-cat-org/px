@@ -364,19 +364,9 @@ class PxMarServer:
         try:
             rtn = self.db.query( qs)
         except:
-            print >> sys.stderr, time.asctime(), sys.exc_info()[0]
-            print >> sys.stderr, '-'*60
-            traceback.print_exc(file=sys.stderr)
-            print >> sys.stderr, '-'*60
-            sys.stderr.flush()
-            
-            #syslog.syslog(sys.exc_info()[0])
-            #logstr = traceback.format_exc()
-            #syslog.syslog(logstr)
-
+            syslog.syslog("query: Failed db.query %s" % (qs))
             self.reset()
             rtn = self.db.query( qs)
-
 
         return rtn
             
