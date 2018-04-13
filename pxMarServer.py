@@ -185,7 +185,7 @@ class PxMarServer:
             od = hl[0]
             of = hl[1]
             if od == d and of == f:
-                syslog.syslog("already have dir=%s and file=%s in link queue, ignoring" % (d, f))
+                syslog.syslog("hlPush: Already have dir=%s and file=%s in link queue, ignoring" % (d, f))
                 return
 
         self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
@@ -220,7 +220,7 @@ class PxMarServer:
 
                 #
                 # Got it
-                syslog.syslog("====== Found it:  %s/%s  %d" % (d,f, int(shotKey)))
+                syslog.syslog("hlPop: ====== Found it:  %s/%s  %d" % (d,f, int(shotKey)))
                 #
                 qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
                 self.query( qs)
@@ -230,14 +230,14 @@ class PxMarServer:
                 qr = self.query( qs)
                 rd = qr.dictresult()
                 if len( rd) == 0:
-                    syslog.syslog("Shot no longer exists, abandoning it")
+                    syslog.syslog("hlPop: Shot no longer exists, abandoning it.")
                     return
                 r = qr.dictresult()[0]
                 bp = r["bp"]
 
                 if len(bp) == 0:
                     zz = self.hlList.pop( self.hlList.index(hl))
-                    syslog.syslog('Could not find back up file for shot key %d,  hl: %s' % (int(shotKey), zz))
+                    syslog.syslog('hlPop: Could not find back up file for shot key %d,  hl: %s' % (int(shotKey), zz))
                     return;
 
                 #
@@ -250,16 +250,16 @@ class PxMarServer:
                         
                 bfn = bud+'/'+f
 
-                syslog.syslog( "Backup file name: %s" % (bfn))
+                syslog.syslog( "hlPop: Backup file name: %s" % (bfn))
 
                 try:
-                    syslog.syslog("Making directory %s" % (bud))
+                    syslog.syslog("hlPop: Making directory %s" % (bud))
                     os.makedirs( bud, 0770)
                 except OSError, (errno, strerr):
                     if errno != 17:
                         qs = "select px.pusherror( 10002, 'Error: %d  %s   Directory: %s')" % (errno, strerr, bud)
                         self.query( qs);
-                        syslog.syslog("Failed to make backup directory %s" % (bud))
+                        syslog.syslog("hlPop: Failed to make backup directory %s" % (bud))
                         self.hlList.pop( self.hlList.index(hl))
                         return
 
@@ -284,16 +284,16 @@ class PxMarServer:
                         found=False
                     i = i+1
 
-                syslog.syslog("Making hard link %s to file %s\n" % ( bfn, d+'/'+f));
+                syslog.syslog("hlPop: Making hard link %s to file %s/%s" % ( bfn, d, f));
                 try:
-                    os.link( d+'/'+f, bfn)
+                    os.link( "%s/%s" % (d, f), bfn)
                 except:
                     qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Error')
                     self.query( qs)
-                    qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s')" % (bfn, d+'/'+f)
+                    qs = "select px.pusherror( 10003, 'Hard Link %s,  file %s/%s')" % (bfn, d, f)
                     self.query( qs);
-                    syslog.syslog("Failed to make hard link %s to file %s\n" % ( bfn, d+'/'+f))
-                    self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s", "sdspid": "%s"}' % (int(shotKey), bfd, d+'/'+f), self.sdspid);
+                    syslog.syslog("hlPop: Failed to make hard link %s to file %s/%s" % ( bfn, d, f))
+                    self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Failed to make hard link %s to file %s/%s", "sdspid": "%s"}' % (int(shotKey), bfd, d, f), self.sdspid);
 
                 else:
                     qs = "select px.shots_set_bupath( %d, '%s')" % (int(shotKey), bfn)
@@ -301,10 +301,11 @@ class PxMarServer:
                     qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                     self.query( qs)
 
-                    syslog.syslog('detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid))
-                    self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid))
+                    detector_state = '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid)
 
-                 
+                    syslog.syslog('hlPop: detector.state  %s' % (detector_state))
+                    self.redis.set( 'detector.state', detector_state)
+
                 self.hlList.pop( self.hlList.index(hl))
 
     def close( self):
@@ -363,11 +364,19 @@ class PxMarServer:
         try:
             rtn = self.db.query( qs)
         except:
-            syslog.syslog(sys.exc_info()[0])
-            logstr = traceback.format_exc()
-            syslog.syslog(logstr)
+            print >> sys.stderr, time.asctime(), sys.exc_info()[0]
+            print >> sys.stderr, '-'*60
+            traceback.print_exc(file=sys.stderr)
+            print >> sys.stderr, '-'*60
+            sys.stderr.flush()
+            
+            #syslog.syslog(sys.exc_info()[0])
+            #logstr = traceback.format_exc()
+            #syslog.syslog(logstr)
+
             self.reset()
             rtn = self.db.query( qs)
+
 
         return rtn
             
@@ -409,6 +418,7 @@ class PxMarServer:
                 self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                 self.query( "select px.pauserequest()");
                 self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
+                syslog.syslog("waitdist: isthere failed (1)")
                 return False
                 
             if r["isthere"] == 'f':
@@ -425,6 +435,7 @@ class PxMarServer:
                         self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Error'))
                         self.query( "select px.pauserequest()");
                         self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Error", "msg": "Detector move request failed.", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
+                        syslog.syslog("waitdist: isthere failed (2)")
                         return False
 
                     if r["isthere"] == 't':
@@ -433,6 +444,8 @@ class PxMarServer:
             self.query( "select px.shots_set_state( %d, '%s')" % (int(self.skey), 'Exposing'))
             self.query( "select px.shots_set_energy( %d)" % (int(self.skey)))
             self.redis.set( 'detector.state', '{ "skey": %d, "sstate": "Exposing", "msg": "", "sdspid": "%s"}' % (int(self.skey), self.sdspid));
+
+        syslog.syslog("waitdist: Success")
         return True;
             
 
@@ -462,7 +475,7 @@ class PxMarServer:
                 # Probably the directory path includes something we do not have permissions for
                 qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(theDir), errno, self.es(strerror))
                 self.query( qs);
-                syslog.syslog("Error creating directory: %s" % (strerror))
+                syslog.syslog("checkdir: Error creating directory: %s" % (strerror))
                 theDirState = 'Invalid'
                 self.redis.set( 'detector.checkdir', '{ "dir": "%s", "valid": false}' % (theDir));
 
@@ -575,7 +588,7 @@ class PxMarServer:
                                 if errno != 17:
                                     qs = "select px.pusherror( 10004, 'Directory: %s, errno: %d, message: %s')" % (self.es(r["dsdir"]), int(errno), self.es(strerror))
                                     self.query( qs);
-                                    syslog.syslog("Error creating directory: %s" % (strerror))
+                                    syslog.syslog("serviceOut: Error creating directory: %s" % (strerror))
 
                             #
                             # set the kv pair for the directory and file name
@@ -593,7 +606,7 @@ class PxMarServer:
                             except OSError, (errno, strerror):
                                 # Don't complain if the file does not exist
                                 if errno != 2:
-                                    syslog.syslog("Error deleting old file: %s" % (strerror))
+                                    syslog.syslog("serviceOut: Error deleting old file: %s" % (strerror))
 
                         else:
                             # the shot was not found: send the data to the bit bucket but go through the motions of collecting
@@ -602,27 +615,28 @@ class PxMarServer:
                             self.queue.insert( 0, "readout,0,%s/%s" % (r["dsdir"],r["sfn"]))
                             qs = "select px.pusherror( 10005, '')"
                             self.query( qs);
-                            syslog.syslog("Could not determine either the filename or the directory: data sent to /dev/null instead")
+                            syslog.syslog("serviceOut: Could not determine either the filename or the directory: data sent to /dev/null instead")
 
                         #
                         # Wait for the detector movement
                         # Regardless of who started the detector, we try to move it if it is stopped and not in the right place
                         #
                         if not self.waitdist(r["sdist"]):
-                            syslog.syslog("Failed to move detector into position.")
+                            syslog.syslog("serviceOut: Failed to move detector into position.")
                             self.query( "select px.dropDetectorOn()")
                             #
                             # Possibly this wait is too long.
                             # It should be long enough so that the diffractometer notices and aborts the exposure
                             #
-                            syslog.syslog("Wait for MD2 to realize what's happened")
+                            syslog.syslog("serviceOut: Wait for MD2 to realize what's happened")
                             for i in range(10):
                                 time.sleep( 0.2)
-                            syslog.syslog("Done waiting")
+                            syslog.syslog("serviceOut: Done waiting")
                             self.query( "select px.setDetectorOn()")
                             return
 
 
+                        syslog.syslog("serviceOut:  xsize %s  xbin %s  ysize %s  ybin %s" % (self.xsize, self.xbin, self.ysize, self.ybin))
                         if self.xsize!=None and self.xbin!=None and self.ysize!=None and self.ybin!=None:
                             #
                             # get the beam center information
@@ -633,7 +647,7 @@ class PxMarServer:
                             beam_x = self.xsize/2.0 - float( r2["bcx"])/(self.xpixsize * self.xbin)
                             beam_y = self.ysize/2.0 - float( r2["bcy"])/(self.ypixsize * self.ybin)
                             dist = r2["dist"]
-                            syslog("beam_x: %s  beam_y: %s   distance: %s" % (beam_x, beam_y, dist))
+                            syslog.syslog("serviceOut: beam_x: %s  beam_y: %s   distance: %s" % (beam_x, beam_y, dist))
                         else:
                             beam_x = 2048
                             beam_y = 2048
@@ -641,6 +655,7 @@ class PxMarServer:
                             qr2 = self.query( qs2)
                             r2 = qr2.dictresult()[0]
                             dist = r2["dist"]
+                            syslog.syslog("serviceOut: (detector size was unknown) beam_x: %s  beam_y: %s   distance: %s" % (beam_x, beam_y, dist))
                             
                         self.redis.set( 'detector.beam_x', beam_x);
                         self.redis.set( 'detector.beam_y', beam_y);
@@ -649,7 +664,7 @@ class PxMarServer:
                         hs = "header,detector_distance=%s,beam_x=%.3f,beam_y=%.3f,exposure_time=%s,start_phi=%s,file_comments=detector='%s' LS_CAT_Beamline='%s' kappa=%s omega=%s,rotation_axis=%s,rotation_range=%s,source_wavelength=%s\n" % (
                             dist, beam_x, beam_y,r["sexpt"],r["sstart"],self.detector_info, self.beamline, r["skappa"],r["sstart"], "phi",r["swidth"],r["thelambda"]
                             )
-                        syslog.syslog(hs)
+                        syslog.syslog("serviceOut: %s" % (hs))
                         self.queue.insert( 0, hs)
                         
                         self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
@@ -658,7 +673,7 @@ class PxMarServer:
                         cmd = "start"
                         self.collectingFlag = True
                         self.flushStatus    = True
-                        syslog.syslog("found collect, changing to start, adding %s" % (self.queue[0]))
+                        syslog.syslog("serviceOut: Found collect, changing to start, adding %s" % (self.queue[0]))
                         
                     #
                     # finally, write the command to marccd
@@ -680,13 +695,13 @@ class PxMarServer:
             #
             # Save command in queue
             self.queue.append( cmd)
-            syslog.syslog("queued %s" % (cmd))
+            syslog.syslog("pushCmd: queued %s" % (cmd))
 
     def nextCmd( self):
         rtn = None
         if len(self.queue) > 0:
             rtn = self.queue.pop(0)
-            syslog.syslog("dequeued %s" % (rtn))
+            syslog.syslog("nextCmd: dequeued %s" % (rtn))
         return rtn
 
     def parseMar( self, ml):
@@ -699,21 +714,21 @@ class PxMarServer:
                 self.xsize=int(rsp[1])
                 self.ysize=int(rsp[2])
                 self.updatedDetectorInfo = False
-                syslog.syslog("SIZE: %s %s" % (self.xsize,self.ysize))
+                syslog.syslog("parseMar: SIZE: %s %s" % (self.xsize,self.ysize))
 
             if msg.find("is_bin")==0:
                 rsp = msg.split(",")
                 self.xbin=int(rsp[1])
                 self.ybin=int(rsp[2])
                 self.updatedDetectorInfo = False
-                syslog.syslog("BIN: %s %s" % (self.xbin,self.ybin))
+                syslog.syslog("parseMar: BIN: %s %s" % (self.xbin,self.ybin))
 
     def setStatus( self, msg):
         rsp = msg.split( ",")
         try:
             self.status = int(rsp[rsp.index("is_state")+1])
             if self.status & busyMask == 0 and self.status != self.previousStatus:
-                syslog.syslog("setStatus status: %s" %self.status)
+                syslog.syslog("setStatus status: %s" % (self.status))
                 self.previousStatus = self.status
         except:
             pass
@@ -775,6 +790,7 @@ class PxMarServer:
         """
 
         syslog.openlog("pxMarServer")
+        syslog.syslog("Welcome to pxMarServer.  Copyright 2008-2018 by Northwestern University. All rigths reserved.  Author: Keith Brister")
 
         #
         # Use redis to communicate state info to UI
@@ -864,7 +880,7 @@ class PxMarServer:
                 
             except select.error, (errno, strerror):
                 if errno == 4:
-                    syslog.syslog("pxMarServer.py poll: %s" % (strerror))
+                    syslog.syslog("run: pxMarServer.py poll: %s" % (strerror))
                 else:
                     raise
 
@@ -901,10 +917,10 @@ class PxMarServer:
                     self.ltime = time.time()
 
 
-        syslog.syslog("pxMarServer.py: cleaning up")
+        syslog.syslog("run: cleaning up")
         self.query( "select px.dropDetectorOn()")
         self.db.close()
-        syslog.syslog("pxMarServer.py: Exiting now.")
+        syslog.syslog("run: Exiting now.")
         self.redis.set( 'detector.running', False);
 
 #
