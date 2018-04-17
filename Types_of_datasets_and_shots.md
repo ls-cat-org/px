@@ -21,7 +21,7 @@ from the dataset.  No further modifcations are made for any `GridSearch` dataset
 
 So basically `GridSearch` means the centering and alignment stage positions have to be in the datasets while for everything else the positions have to be stored in the centering array.
 
-Shutterless data collection as implemented by `pgpmac` ignores the above table and only uses the centering array.  This means that "replayed" datasets will use what ever new centering points are in the array and ignore whatever might have been stored in the databaseL: Enabling retaking of shutterless frames will be confusing.
+`pgpmac` will set the centering array for `GridSearch`, and for the other modes whenever more than one centering point is defined.  Except in the explore mode and the Eiger.
 
 For the Eiger detector:
 *  Dataset type is `Shutterless`
