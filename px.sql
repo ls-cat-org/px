@@ -1630,6 +1630,16 @@ ALTER FUNCTION px.ds_get_oscaxis( text) OWNER TO lsadmin;
 
 
 --
+-- Type
+--
+CREATE OR REPLACE FUNCTION px.ds_set_type(token text, arg2 text) RETURNS void as $$
+  BEGIN
+    UPDATE px.datasets set dstype=coalesce(arg2, 'Normal') where dspid=token;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.ds_set_type(text, text) OWNER TO lsadmin;
+
+--
 -- Start
 --
 CREATE OR REPLACE FUNCTION px.ds_set_start( token text, arg2 numeric) RETURNS void as $$
@@ -8081,7 +8091,7 @@ CREATE OR REPLACE FUNCTION px.set_sample_esaf() returns void AS $$
   BEGIN
 
 
-  FOR the_lskey IN SELECT lskey FROM px.lastsamples LOOP
+  FOR the_lskey IN SELECT lskey FROM px.lastsamples where lsesaf is null  LOOP
     SELECT INTO our_esaf lesaf
       FROM px.logins
         LEFT JOIN px.lastsamples ON lstn = lsstn
