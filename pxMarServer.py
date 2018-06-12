@@ -177,7 +177,7 @@ class PxMarServer:
     ybin  = None
     updatedDetectorInfo = False # flag to indicate that we've updated the detectorinfo table
 
-    def hlPush( self, d, f, expt, shotKey):
+    def hlPush( self, d, f, idx, expt, shotKey):
         #
         #
         # Don't add something already in the list
@@ -188,12 +188,12 @@ class PxMarServer:
                 syslog.syslog("hlPush: Already have dir=%s and file=%s in link queue, ignoring" % (d, f))
                 return
 
-        self.hlList.append( (d, f, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
+        self.hlList.append( (d, f, idx, datetime.datetime.now() + datetime.timedelta( 0, expt), shotKey))
 
     def hlPop( self):
         cpy = list(self.hlList)
         for hl in cpy:
-            d,f,t,shotKey = hl
+            d,f,idx,t,shotKey = hl
             
             #
             # Watchout, hardwired timeout
@@ -220,7 +220,7 @@ class PxMarServer:
 
                 #
                 # Got it
-                syslog.syslog("hlPop: ====== Found it:  %s/%s  %d" % (d,f, int(shotKey)))
+                syslog.syslog("hlPop: ====== Found it:  %s/%s %d %d" % (d,f, int(idx), int(shotKey)))
                 #
                 qs = "select px.shots_set_path( %d, '%s')" % (int(shotKey), d+"/"+f)
                 self.query( qs)
@@ -301,7 +301,7 @@ class PxMarServer:
                     qs = "select px.shots_set_state( %d, '%s')" % (int(shotKey), 'Done')
                     self.query( qs)
 
-                    detector_state = '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, bud, bfn, self.sdspid)
+                    detector_state = '{ "skey": %d, "sstate": "Done", "msg": "", "dir": "%s", "fn": "%s", "frame": "%d", "bdir": "%s", "bfn": "%s", "sdspid": "%s"}' % (int(shotKey), d, f, int(idx), bud, bfn, self.sdspid)
 
                     syslog.syslog('hlPop: detector.state  %s' % (detector_state))
                     self.redis.set( 'detector.state', detector_state)
@@ -657,7 +657,7 @@ class PxMarServer:
                         syslog.syslog("serviceOut: %s" % (hs))
                         self.queue.insert( 0, hs)
                         
-                        self.hlPush( r["dsdir"], r["sfn"], int(r["sexpt"])+1, self.skey)
+                        self.hlPush( r["dsdir"], r["sfn"], r["sindex"], int(r["sexpt"])+1, self.skey)
                         
                         
                         cmd = "start"
