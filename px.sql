@@ -1832,10 +1832,14 @@ CREATE OR REPLACE FUNCTION px.ds_get_nframes( token text) RETURNS int AS $$
     SELECT INTO ds * FROM px.datasets WHERE dspid=token;
     IF FOUND THEN
       IF coalesce( ds.dsdelta, 0) > 0 THEN
-        IF ds.dsnwedge > 0 THEN
-          rtn := ((ds.dsend - ds.dsstart)/ds.dsdelta)::int * 2;
+        IF ds.dstype = 'GridSearch' THEN
+          SELECT INTO rtn count(*) FROM px.shots WHERE sdspid=token and stype='normal';
         ELSE
-          rtn := ((ds.dsend - ds.dsstart)/ds.dsdelta)::int;
+          IF ds.dsnwedge > 0 THEN
+            rtn := ((ds.dsend - ds.dsstart)/ds.dsdelta)::int * 2;
+          ELSE
+            rtn := ((ds.dsend - ds.dsstart)/ds.dsdelta)::int;
+          END IF;
         END IF;
       END IF;
     END IF;
@@ -2838,6 +2842,14 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       --  deleted since they'll never be taken.
       --
       IF ds.dstype = 'Shutterless' THEN
+        return;
+      END IF;
+
+      --
+      -- We really do not know how to make the grid search shots based
+      -- on the data set entries cause, well, how could we?
+      --
+      IF ds.dstype = 'GridSearch' THEN
         return;
       END IF;
 
