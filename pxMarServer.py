@@ -42,11 +42,11 @@ def pxMarSignalHandler( signum, frame):
 #    MAR Lock ---------+      +-------------------------
 #
 #
-#              MD2   MAR
-#               0     0  Not ready (Mar reading or dead, MD2 waiting, preparing, or dead)
-#               0     1  MAR ready for commands
-#               1     1  MD2 ready for exposure
-#               1     0  MAR Integrating
+#              MD2   MAR  state_machine
+#               0     0   Init 0 or Done 4    Not ready (Mar reading or dead, MD2 waiting, preparing, or dead)
+#               0     1   Ready 1             MAR ready for commands
+#               1     1   Arm   2             MD2 ready for exposure
+#               1     0   Armed 3             MAR Integrating
 #              repeat
 #
 #
@@ -728,12 +728,14 @@ class PxMarServer:
                 if not self.haveLock and (self.status & (aquireMask | readMask)) == 0:
                     syslog.syslog("Your wish is my command.  Waiting patiently for your instructions.")
                     self.query( "select px.lock_detector()")
+                    self.redis.set( "detector.state_machine", '{ "state": "Ready", "expires": 0 }'); 
                     self.haveLock = True
 
                 # if aquiring has started, signal MD2 we are integrating
                 if self.haveLock and ((self.status & aquiringMask) != 0):
                     syslog.syslog("Integrating...")
                     self.query( "select px.unlock_detector()")  # give up mar lock
+                    self.redis.set( "detector.state_machine", '{ "state": "Armed", "expires": 0 }'); 
                     self.haveLock      = False      # reset flags
                         
                     #
