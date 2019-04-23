@@ -151,7 +151,7 @@ CREATE OR REPLACE FUNCTION px.setbin( theStn int, binsize int) RETURNS VOID AS $
     FOR cmd IN SELECT miitem FROM px._marinit ORDER BY miorder LOOP
       perform px.pushqueue( theStn, cmd);
     END LOOP;
-    
+
   END;
 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -721,7 +721,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.lock_detector_test( int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_test_block( stn int) RETURNS void AS $$
-  -- 
+  --
   -- wait for detector to grab its lock then return
   -- we never return with the detector lock
   --
@@ -885,7 +885,7 @@ CREATE OR REPLACE FUNCTION px.seq_run_prep_OLD( shot_key bigint, kappa float, ph
     IF NOT FOUND THEN
       RAISE EXCEPTION 'The detector software does not appear to be running';
     END IF;
-    
+
     -- wait for the detector to grab its lock indicating that
     -- it is ready and willing to start integrating
     --
@@ -1085,7 +1085,7 @@ create index esaf_idx on px.datasets (dsesaf);
 
 CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
   DECLARE
-    
+
   BEGIN
     new.dseditts = now();               -- any change updates the time stamp
     new.dseditnum = old.dseditnum+1;    -- enumerate changes
@@ -1116,7 +1116,7 @@ CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text
     smp := (sample & x'000000ff'::int);
 
     rtn := prefix || '_' || dwr || '_' || cyl || '_' || trim(to_char(smp,'00'));
-    return rtn;    
+    return rtn;
 
   END
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -1135,7 +1135,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS
     SELECT INTO rtn md5( (nextval( 'px.datasets_dskey_seq')+random())::text);
     INSERT INTO px.datasets (dspid, dsstn, dsesaf, dsdir) VALUES (rtn, theStn, expid, (select stndataroot from px.stations where stnkey=theStn));
     PERFORM px.chkdir( theStn, rtn);
-    IF theStn = 1 THEN 
+    IF theStn = 1 THEN
       UPDATE px.datasets set dstype='Shutterless', dsrobopid=NULL WHERE dspid=rtn;
       PERFORM px.ds_set_start( rtn, 0);
       PERFORM px.ds_set_delta( rtn, 1);
@@ -1478,7 +1478,7 @@ CREATE OR REPLACE FUNCTION px.dfpList( thePid text, theStn bigint) returns xml A
     IF NOT FOUND THEN
       return xmlelement( name "dfpList");
     END IF;
-    
+
     FOR dss IN SELECT dspid, dsdir, dsfp, dsdonets FROM px.datasets WHERE dsstn=theStn and dsesaf=esaf and dsdonets is not null ORDER BY dsdonets desc LOOP
       PERFORM 1 FROM px.datasets WHERE dss.dsdir=dsdir and dss.dsfp=dsfp and dsdonets < dss.dsdonets;
       IF NOT FOUND THEN
@@ -1528,7 +1528,7 @@ ALTER FUNCTION px.ds_set_samples( text, int[]) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.ds_get_samples( token text) RETURNS setof int as $$
   DECLARE
-    samples int[];  
+    samples int[];
   BEGIN
     SELECT dspositions INTO samples FROM px.datasets WHERE dspid = token;
     IF FOUND THEN
@@ -1690,7 +1690,7 @@ ALTER FUNCTION px.ds_get_delta( text) OWNER TO lsadmin;
 
 --
 -- Frame Rate
--- 
+--
 CREATE OR REPLACE FUNCTION px.ds_set_frate( token text, arg2 numeric) RETURNS void as $$
   BEGIN
     UPDATE px.datasets set dsfrate = coalesce(arg2, 1.0) WHERE dspid=token;
@@ -1701,7 +1701,7 @@ ALTER FUNCTION px.ds_set_frate( text, numeric) OWNER TO lsadmin;
 
 --
 -- Spindle Rate
--- 
+--
 CREATE OR REPLACE FUNCTION px.ds_set_srate( token text, arg2 numeric) RETURNS void as $$
   BEGIN
     UPDATE px.datasets set dssrate = coalesce(arg2, 1.0) WHERE dspid=token;
@@ -1712,7 +1712,7 @@ ALTER FUNCTION px.ds_set_srate( text, numeric) OWNER TO lsadmin;
 
 --
 -- Range
--- 
+--
 CREATE OR REPLACE FUNCTION px.ds_set_range( token text, arg2 numeric) RETURNS void as $$
   BEGIN
     UPDATE px.datasets set dsrange = coalesce(arg2, 360.0) WHERE dspid=token;
@@ -1803,7 +1803,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_nframes( token text, nframes int) RETURNS v
     ds record;  -- the dataset entry
     d  numeric;     -- our version of delta
     e  numeric;     -- new end
-    
+
   BEGIN
     SELECT INTO ds * FROM px.datasets WHERE dspid=token;
     IF FOUND THEN
@@ -2049,7 +2049,7 @@ CREATE TABLE px.shots (
         sfsize   int            DEFAULT NULL,           -- size of the file in bytes
         stape    boolean        DEFAULT False,          -- true if file is known to be on a backup tape
     //  stats    json           DEFAULT NULL,           -- results of a statistical look at the frame (in JSON)
-    //  statsts  timestamp with time zone DEFAULT NULL 
+    //  statsts  timestamp with time zone DEFAULT NULL
         sjparams json           DEFAULT NULL,           -- miscellaneous parameters to keep from having to add new columns all the time
         sfrate numeric          DEFAULT NULL,           -- actual frame rate in images per degree
         ssrate numeric          DEFAULT NULL,           -- actual spindle rate in degrees per second
@@ -2086,7 +2086,7 @@ ALTER FUNCTION px.shots_init_stats( text, text, int) OWNER TO lsadmin;
 
 CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns void as $$
   DECLARE
-    prev json;    
+    prev json;
     nxt  text;
     pk   text;
     pv   text;
@@ -2118,7 +2118,7 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
     IF pk = k THEN
       CONTINUE;
     END IF;
-    
+
     IF needcomma THEN
       nxt = nxt || ',';
     ELSE
@@ -2130,9 +2130,9 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
   nxt = nxt || '}';
 
   UPDATE px.shot_status_table SET sstats = nxt::json, sstts = now() WHERE sstbup = bup;
-  
+
   PERFORM px.kvset( stn, 'detector.stats', '{ "sbupath": '|| bup || ', "sstats":' || nxt || '}');
-  
+
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO lsadmin;
@@ -2148,7 +2148,7 @@ CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kapp
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_params( bigint, numeric, numeric) OWNER TO lsadmin;
 
-CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) returns void as $$ 
+CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) returns void as $$
   UPDATE px.shots SET sts=now(),sstate=$2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
 ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO lsadmin;
@@ -2276,7 +2276,7 @@ ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
 
 drop type px.nextshot2type cascade;
 CREATE TYPE px.nextshot2type AS (
-       dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey bigint, sstart numeric, sfn text, 
+       dsdir text, dspid text, dsowidth numeric, dsoscaxis text, dsexp numeric, skey bigint, sstart numeric, sfn text,
        dsphi numeric, dsomega numeric, dskappa numeric, dsdist numeric, dsnrg numeric, dshpid int,
        cx numeric, cy numeric, ax numeric, ay numeric, az numeric, active int, sindex int, stype text,
        dsowidth2 numeric, dsoscaxis2 text, dsexp2 numeric, sstart2 numeric, dsphi2 numeric, dsomega2 numeric, dskappa2 numeric, dsdist2 numeric, dsnrg2 numeric,
@@ -2729,7 +2729,7 @@ ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.mkindexsnap( pid text, initialpos numeric, delta numeric, n int) RETURNS void AS $$
   BEGIN
-    
+
     FOR i IN 0..n-1 LOOP
       PERFORM px.mksnap( pid, initialpos + i::numeric * delta);
     END LOOP;
@@ -2740,7 +2740,7 @@ ALTER FUNCTION px.mkindexsnap( text, numeric, numeric, int) OWNER TO lsadmin;
 
 CREATE OR REPLACE FUNCTION px.mkorthoindexsnap( pid text, initialpos numeric, delta numeric, n int) RETURNS void AS $$
   BEGIN
-    
+
     FOR i IN 0..n-1 LOOP
       PERFORM px.mksnap( pid, initialpos + i::numeric * delta);
     END LOOP;
@@ -2857,7 +2857,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       -- get file prefix
       --
       fp := ds.dsfp;
-    
+
       --
       -- Delete untaken frames
       PERFORM 1 FROM px.nextshot() WHERE dspid=token;
@@ -2866,11 +2866,11 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       ELSE
         DELETE FROM px.shots WHERE sstate != 'Done' and sdspid=token;
       END IF;
-    
+
       --
       -- calculate delta and number of frames
       --
-      
+
       delta := ds.dsdelta;
 
       IF ds.dsend = ds.dsstart+ds.dsowidth THEN
@@ -2888,7 +2888,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
 
       UPDATE px.datasets set dsend=ds.dsstart+delta*nframes WHERE dspid=token;
       SELECT INTO ds.dsend dsend FROM px.datasets WHERE dspid=token;
-    
+
       --
       -- set the format for the frame numbers
       -- not general but it is unlikely we'll need to worry about 10,000 or more for a while
@@ -2896,7 +2896,7 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
       if nframes > 999 THEN
         fmt := '0999';
       END IF;
-    
+
       IF ds.dsnwedge = 0 THEN
         FOR i IN 1..nframes LOOP
           PERFORM skey FROM px.shots WHERE sdspid=token and sindex=i and stype='normal';
@@ -3412,7 +3412,7 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
      --  IF curtype = 'normal' THEN
       EXECUTE 'NOTIFY roboprocess_' || curpid;
     --  END IF;
-    
+
 
     DELETE FROM px.runqueue WHERE rqKey = curKey;
     i := 1;
@@ -3420,7 +3420,7 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
       UPDATE px.runqueue set rqOrder=i WHERE rqKey=rq.rqKey;
       i := i+1;
     END LOOP;
-    
+
     -- If this was a robot mounted sample part of a multiple select
     -- and no more multiple selects exist in the runqueue then add a
     -- "transfer 0" command to the md2 queue to dismount the sample at
@@ -3485,7 +3485,7 @@ CREATE TABLE px.epicsLink (
 --
         elKey  serial primary key,              -- table key
         elStn  bigint default NULL              -- station
-                references px.stations (stnkey),        
+                references px.stations (stnkey),
         elName text NOT NULL,                   -- our name for this variable
         elPV   text NOT NULL
 );
@@ -3500,7 +3500,7 @@ CREATE TABLE px.epicsPVMLink (
 --
         epvmlKey  serial primary key,           -- table key
         epvmlStn  bigint default NULL           -- station
-                references px.stations (stnkey),        
+                references px.stations (stnkey),
         epvmlName text NOT NULL,                        -- our name for this variable
         epvmlPV   text NOT NULL
                 references epics._pvmonitors (pvmName) ON UPDATE CASCADE
@@ -3844,7 +3844,7 @@ CREATE TABLE px._energyLookUp (
                 references epics._pvmonitors (pvmname) ON UPDATE CASCADE
 );
 ALTER TABLE px._energyLookUp OWNER TO lsadmin;
-        
+
 CREATE VIEW px.energyLookUp (eluKey, eluStn, eluValue) AS
         SELECT eluKey, eluStn,
                 CASE eluType
@@ -3973,7 +3973,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
     IF theIzero < 1 THEN
       theIzero = 0;
     END IF;
-    
+
     theCurrent := epics.caget( 'S:SRcurrentAI');
     IF theCurrent < 10.0 THEN
       rtn := '--';
@@ -4004,7 +4004,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0( stn bigint) returns text AS $$
     IF theIzero < 1 THEN
       theIzero = 0;
     END IF;
-    
+
     theCurrent := epics.caget( 'S:SRcurrentAI');
     IF theCurrent < 10.0 THEN
       rtn := '--';
@@ -4149,7 +4149,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
 
     --
     -- See if the puck is actually making contact with the switch
-    --  
+    --
 
     rtn := '';
     SELECT *  INTO itm FROM px.holderPositions WHERE hpId = theId;
@@ -4370,7 +4370,7 @@ INSERT INTO px.nextSamplesState (nss) VALUES ('DONE');
 INSERT INTO px.nextSamplesState (nss) VALUES ('GETPUT1');
 INSERT INTO px.nextSamplesState (nss) VALUES ('GETPUT2');
 
-CREATE TABLE px.nextSamples ( 
+CREATE TABLE px.nextSamples (
        nsKey serial primary key,
        nsStn int not null references px.stations (stnKey) on update cascade,
        nsState text default 'NEW'
@@ -4392,7 +4392,7 @@ ALTER FUNCTION px.nextsamples_insert_tf0() OWNER TO lsadmin;
 
 CREATE TRIGGER nextsamples_insert_trigger0 BEFORE INSERT ON px.nextsamples FOR EACH ROW EXECUTE PROCEDURE px.nextsamples_insert_tf0();
 
-CREATE TABLE px.lastSamples ( 
+CREATE TABLE px.lastSamples (
        lsKey serial primary key,
        lsts timestamp with time zone default now(),
        lsStn int not null references px.stations (stnKey) on update cascade,
@@ -4437,7 +4437,7 @@ CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
     SELECT nsId, nsKey INTO rtn, k FROM px.nextSamples WHERE nsStn=px.getstation() and (nsstate='NEW' or nsstate = 'GETPUT1')  ORDER BY nsstate, nsKey desc LIMIT 1;
     IF FOUND THEN
       --
-      -- Mark current one 
+      -- Mark current one
       -- get rid of others (if any)
       --
       UPDATE px.nextSamples set nsstate='WORKING' WHERE nsKey=k;
@@ -4566,7 +4566,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
       zz := round(1000 * ((mp.y - tp.tpTableY)  + (phiZ - tp.tpPhiAxisZ) + (cenY - tp.tpCenY)));
     END IF;
 
-    
+
     --
     -- E is upside down and tilted back 20°
     --
@@ -4581,8 +4581,8 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
       angr = 20.0 * PI()/180.0;
       xx = round( xx1);
       yy = round( yy1 * cos(angr)  + zz1*sin(angr));
-      zz = round(-yy1 * sin(angr)  + zz1*cos(angr)); 
-      
+      zz = round(-yy1 * sin(angr)  + zz1*cos(angr));
+
       raise notice 'xx1: %   yy1: %  zz1: %  xx: %   yy: %   zz: %', xx1, yy1, zz1, xx, yy, zz;
     END IF;
 
@@ -4652,7 +4652,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
     INSERT INTO px.transferArgs (taStn, taId, tacursam, taPresent, taXx, taYY, taZZ, taesttime, taDist) VALUES (px.getstation(), theId, cursam, present, xx, yy, zz, besttime, curdist);
 
     IF cursam = 0 and present THEN
-      -- manually mounted sample, 
+      -- manually mounted sample,
       PERFORM px.pusherror( 20002, 'A manually mounted sample is already present');
       return 0;
     END IF;
@@ -4730,7 +4730,7 @@ CREATE OR REPLACE FUNCTION px.endTransfer( bigstn bigint) RETURNS void AS $$
     SELECT cnotifyxfer INTO ntfy FROM px._config WHERE cstnkey=thestn;
     IF FOUND THEN
       EXECUTE 'NOTIFY ' || ntfy;
-    END IF;        
+    END IF;
     PERFORM px.pushError( thestn, 30000, 'Mounted Sample Changed');
     centers_length = px.kvget( thestn, 'centers.length')::int;
     FOR i IN 0 .. centers_length-1 LOOP
@@ -4746,7 +4746,7 @@ CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
   DECLARE
   BEGIN
     PERFORM pg_advisory_unlock( px.getstation(), 2);
-  END;    
+  END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.dropAirRights()  OWNER TO lsadmin;
 
@@ -4961,7 +4961,7 @@ CREATE OR REPLACE FUNCTION px.currentSampleDPS() returns text AS $$
   END;
 $$ LANGUAGE PLPGSQL SECURITY DEFINER;
 ALTER FUNCTION px.currentSampleDPS() OWNER TO lsadmin;
- 
+
 CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
   DECLARE
     res int;
@@ -5002,7 +5002,7 @@ CREATE TABLE px.holderPositions (
        --
        -- The ID is given by a 32 bit integer
        -- Bits  0 -  7 : sample number
-       -- Bits  8 - 15 : puck number 
+       -- Bits  8 - 15 : puck number
        -- Bits 16 - 23 : dewar number (diffractometer and tool each are considered a type of dewar and have a location defined in this table)
        -- Bits 24 - 31 : station number
        --
@@ -5095,7 +5095,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.holderHistoryUpdateTF() OWNER TO lsadmin;
 CREATE TRIGGER hh_update_trigger AFTER UPDATE ON px.holderhistory FOR EACH ROW EXECUTE PROCEDURE px.HolderHistoryUpdateTF();
 
-       
+
 CREATE OR REPLACE FUNCTION px.possibleChildren( expId int, theId int) returns setof text as $$
   DECLARE
     rtn text;
@@ -5136,7 +5136,7 @@ CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text, 
         INSERT INTO px.holders (hName, hBarCode, hRFID, hType) VALUES (theName, barcode, rfid, theType);
         INSERT INTO px.holderHistory (hhPosition, hhMaterial, hhHolder) VALUES (theId, theName, currval( 'px.holders_hKey_seq'));
         GET DIAGNOSTICS rtn = ROW_COUNT;
-      END IF; 
+      END IF;
 
     ELSE
       -- Cylinder
@@ -5530,7 +5530,7 @@ CREATE OR REPLACE FUNCTION px.ui_details( pid text, snapnorm text, theKey bigint
   DECLARE
     rtn px.ui_detailType;
   BEGIN
-    FOR rtn IN SELECT 
+    FOR rtn IN SELECT
           skey, sindex, sfn, coalesce(sstart,0) as sstart, coalesce(swidth,dsowidth,0) as swidth, coalesce(sexpt,dsexp,0) as sexpt,
           coalesce(sexpu,dsexpunit,'') as sexpu, coalesce(sphi,dsphi,0) as sphi, coalesce(somega,dsomega,0) as somega,
           coalesce(skappa,dskappa,0) as skappa, coalesce(sdist,dsdist,0) as sdist, coalesce(snrg,dsnrg,0) as snrg, coalesce(scmt,dscomment,'') as scmt,
@@ -5572,7 +5572,7 @@ CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, 
   BEGIN
     SELECT cttoolno INTO tool FROM cats.states LEFT JOIN cats._cylinder2tool ON ctToolName=csToolNumber WHERE csstn=px.getStation() ORDER BY csKey desc LIMIT 1;
     UPDATE cats._toolcorrection SET tcts=now(), tcx=0, tcy=0, tcz=0 WHERE tcstn=px.getStation() and tctool=tool;
-    INSERT INTO px.transferPoints( tpStn, tptool, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES 
+    INSERT INTO px.transferPoints( tpStn, tptool, tpTableX, tpTableY, tpTableZ, tpPhiAxisX, tpPhiAxisY, tpPhiAxisZ, tpCenX, tpCenY, tpOmega, tpKappa) VALUES
       ( px.getStation(), tool, tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -5823,7 +5823,7 @@ ALTER TABLE px.stnstatus OWNER TO lsadmin;
 CREATE TABLE px.uistatus (
        --
        -- Support to synchronize remote UI's
-       -- 
+       --
        uikey serial primary key,        -- our key
        uisskey bigint not null          -- the station status this is part of
                references px.stnstatus (sskey) on delete cascade,
@@ -5889,7 +5889,7 @@ CREATE OR REPLACE FUNCTION px.uistatus_get_xml( pid text, theStn bigint) returns
     IF NOT FOUND THEN
       return xmlelement( name uistatus, xmlattributes( 'false' as success, 'Access denied' as msg));
     END IF;
-    
+
     FOR k, v, n IN SELECT uik, uiv, uin FROM px.stnstatus LEFT JOIN px.uistatus ON sskey=uisskey WHERE ssstn = theStn and uik is not null LOOP
       tmp = xmlconcat( tmp, xmlelement( name kvpair, xmlattributes( k as name, v as value, n as nedit)));
     END LOOP;
@@ -6260,7 +6260,7 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
     notify_redis boolean;
   BEGIN
     raise exception 'px.kvupdate is obsolete  station %   variables %', thestn, kvps;
-    
+
     theSeq := NULL;     -- only set if there is a new value
     notify_epics := FALSE;    -- only send notify if we've changed something that is monitored
     notify_redis := FALSE;              -- make sure the value changes before telling redis aboutit
@@ -6315,7 +6315,7 @@ CREATE OR REPLACE FUNCTION px.kvdel( stn int, k text) returns void as $$
     SD["w"][2] = redis.StrictRedis(host="10.1.253.14",port=6379,db=0)
     SD["w"][3] = redis.StrictRedis(host="10.1.253.18",  port=6379,db=0)
     SD["w"][4] = redis.StrictRedis(host="10.1.253.19", port=6379,db=0)
-  
+
   lk   = k
   lstn = stn
   if k.find('stns.') != 0:
@@ -6360,7 +6360,7 @@ CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
 
   r    = SD["r"]
   return r[lstn].keys( lwc)
-  
+
 $$ language plpythonu SECURITY DEFINER;
 ALTER FUNCTION px.kvkeys( int, text) OWNER TO lsadmin;
 
@@ -6493,7 +6493,7 @@ CREATE OR REPLACE FUNCTION px.kvsetioc( k text, v text) returns void as $$
     IF NOT FOUND THEN
       raise notice 'md2 command not found for key %', thename;
       return;
-    END IF; 
+    END IF;
 
     md2string := themd2cmd || ' ' || v;
     PERFORM px.md2pushqueue( thestn, md2string);
@@ -6630,7 +6630,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
   DECLARE
     mm float;                   -- slope
     bb float;                   -- offset
-    n int;                      -- number of points 
+    n int;                      -- number of points
     s float;                    -- distance along path
     si int;                     -- segment index: identifies segment we are on
     total_length float;         -- length in mm of each path segment from the begining of the first segment
@@ -6640,7 +6640,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     the_dstype text;
 
   BEGIN
-    
+
     SELECT INTO  n px.kvget( thestn, 'centers.length')::int;
 
     --   raise notice 'stns.%.centers.length  (n) = %', thestn, n;
@@ -6651,7 +6651,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     IF NOT FOUND or n < 1 THEN
       RETURN NULL;
     END IF;
-    
+
     if n = 1 then
       rtn.active = 0; -- Don't "activate" if there is no second point
       select into rtn.cx, rtn.cy, rtn.ax, rtn.ay, rtn.az
@@ -6702,7 +6702,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
     END IF;
 
     -- raise notice 's = %,  si = %', s, si;
-    
+
     PERFORM 1 FROM interpolate_table WHERE k=si AND (dd < 1e-8 OR d < 1e-8);
     IF si = 1 OR (si>1 and FOUND) THEN
       -- raise notice 'Corner case: found=%, si=%', FOUND, si;
@@ -6794,7 +6794,7 @@ CREATE TABLE px.tunacode (
        tccendts   timestamptz default null,             -- time most recent iteration ended
        tcn        int default 0,                        -- Number of times this line has been run;
        tclevel    int default 0,                        -- Stack level to support loops
-       tcinstruction text default ''                    -- default instruction       
+       tcinstruction text default ''                    -- default instruction
 );
 ALTER TABLE px.tunacode OWNER TO lsadmin;
 
@@ -6839,7 +6839,7 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
      END IF;
 
     -- Check for control statements
-    WHILE stack >= 0 LOOP    
+    WHILE stack >= 0 LOOP
       SELECT tcinstruction, tcn INTO instruct,icount FROM px.tunacode WHERE tcKey=rtn;
       IF NOT FOUND THEN
        -- This is probably an error condition, like a line got deleted while running.
@@ -6900,7 +6900,7 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
         IF testResult THEN
           -- increment the program counter stack
           INSERT INTO px.tunapc (pcstn, pcpc, pcStack) VALUES (theStn, rtn, stack+1);
-          
+
           -- recurse to get the next line of executable code
           SELECT px.tunaNextPC( theStn) INTO rtn;
 
@@ -6927,7 +6927,7 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
 
         END IF;
       ELSEIF instruct = 'START' THEN
-        -- 
+        --
         -- START should never appear anywhere except as the first line of code
         -- and hence can never be the next statement
         --
@@ -6959,7 +6959,7 @@ CREATE OR REPLACE FUNCTION px.tunaLoadInit( theStn bigint) returns void as $$
     -- clear out the previous program, if any
     DELETE FROM px.tunapc   WHERE pcStn=theStn;
     DELETE FROM px.tunacode WHERE tcStn=theStn;
-    
+
     -- Add the start statement
     INSERT INTO px.tunacode (tcstn, tcinstruction, tclevel) VALUES (theStn, 'START', 0);
     INSERT INTO px.tunapc   (pcstn, pcpc, pcstack) VALUES (theStn, currval('px.tunacode_tckey_seq'), 0);
@@ -6996,7 +6996,7 @@ CREATE OR REPLACE FUNCTION px.tunaLoad( theStn bigint, istep text) returns void 
     IF istep like 'WHILE %' or istep like 'LOOP %' THEN
       theLevel := theLevel + 1;
     END IF;
-  
+
     --  Add the step
    INSERT INTO px.tunacode (tcstn, tcinstruction, tclevel) VALUES (theStn, istep, theLevel);
 
@@ -7020,7 +7020,7 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
     theI text;  -- the instruction
   BEGIN
     rtn := 0;
-    
+
     --
     -- Get the next program counter
     -- This function returns the address of an executable line, not a control structure
@@ -7040,7 +7040,7 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
     -- Update time stamp(s)
     --
     UPDATE px.tunacode SET tccstartts=coalesce( tccstartts,clock_timestamp()), tcstartts=clock_timestamp() WHERE tcKey=pc;
-    
+
     IF length( theI) > 0 THEN
       rtn := 1;
       --
@@ -7223,7 +7223,7 @@ CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, 
   DECLARE
     theIp inet;
     thePort int;
-    ntfy text; 
+    ntfy text;
  BEGIN
 
   SELECT coalesce( cip, '127.0.0.1'::inet), coalesce(cport,0) INTO theIp, thePort FROM px.centertable WHERE cstn=theStn ORDER BY ckey DESC LIMIT 1;
@@ -7354,7 +7354,7 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn int, thePid text, theIp inet, th
     ELSE
       --
       -- We get here if someone, like a super user, gets permission to run centering with no one logged in to the MD2.  Probably not a good idea.
-      -- 
+      --
       INSERT INTO px.centertable (cstn, cpid, cip, cport, czoom,cx,cy,cz,cb, ct0) VALUES (theStn, thePid, theIp, thePort, zoom, x, y, z, b, t0);
     END IF;
   END;
@@ -7408,7 +7408,7 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
   --  and calculates r, ø0, and b.
   --
   -- The UI then calculates the distance along the focus x and the vertical distance y that the centering stage must be moved
-  -- to center the crystal.  The distance to be moved along the spindle axis is calculated by taking an average of the three 
+  -- to center the crystal.  The distance to be moved along the spindle axis is calculated by taking an average of the three
   -- horizontal measurements of the crystal position.
   --
   -- x = r sin ø0
@@ -7416,7 +7416,7 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
   -- z = (average of three horizontal crystal positions)
   --
   -- As returned by the UI x and y are fractional screen positions (0,0 is upper left, 1,1 is lower right)
-  -- 
+  --
   -- We need to find the amount to move the x,y centering stage and the y (horizontal perpendicular to the beam) and z (vertical) alginment
   -- stage motions in real units (mm) to postiiont the crystal and rotation axis.  At this point the alignment stage x is a gimmie and
   -- should be set so the sample is in focus.  It's not completely a free parameter since we want the sample to remain in the cold stream.
@@ -7494,7 +7494,7 @@ CREATE TYPE px.centertype AS (pid text, ip inet, port int, zoom int, x float, y 
 
 CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS $$
   DECLARE
-    rtn px.centertype;  
+    rtn px.centertype;
   BEGIN
     SELECT    cpid,    cip,    cport,    czoom, round(cx::numeric,3), round(cy::numeric,3), round(cz::numeric,3), round(cb::numeric,3), round(ct0::numeric,3)
       INTO rtn.pid, rtn.ip, rtn.port, rtn.zoom,    rtn.x,                rtn.y,                rtn.z,                rtn.b,                rtn.t0
@@ -7690,6 +7690,30 @@ CREATE OR REPLACE FUNCTION px.hardlinks(esaf int) returns setof px.hardlinktype 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER FUNCTION px.hardlinks(int) OWNER TO lsadmin;
 
+CREATE OR REPLACE FUNCTION px.hardlinkdirs(esaf int, stn int) returns setof px.hardlinktype AS $$
+  DECLARE
+    rtn px.hardlinktype;
+    hd  text;
+    bud text;
+  BEGIN
+    hd  = esaf.esaf_home_directory(esaf);
+    bud = esaf.e2budir(esaf);
+
+    FOR rtn.src, rtn.dest IN
+        SELECT DISTINCT hd||'/'||dsdir, bud||'/'||dsdir
+          FROM px.datasets
+            LEFT JOIN px.shots ON dspid=sdspid
+          WHERE dsesaf=esaf
+            AND dsstn = stn
+            AND sstate='Done'
+          ORDER by hd||'/'||dsdir DESC
+    LOOP
+       return next rtn;
+    END LOOP;
+    return;
+  END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER FUNCTION px.hardlinkdirs(int,int) OWNER TO lsadmin;
 
 CREATE TYPE px.spotListType AS (bufn text, stats json);
 CREATE OR REPLACE FUNCTION px.spotList( thePid text) returns setof px.spotListType AS $$
@@ -7761,7 +7785,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as 
   IF NOT FOUND THEN
     return null;
   END IF;
-  
+
   theta := atan2( topd, px.rt_get_ndist( thestn))/2.0;    -- 2 theta from geometry
   rtn   := 6.1992092867/sin(theta)/px.rt_get_nenergy( thestn);  -- Bragg's law. hc/2 in units of keV⋅Å
 
@@ -7782,7 +7806,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_topres( thestn bigint, res numeric) returns
     IF NOT FOUND THEN
       return;
     END IF;
-  
+
     theta := asin( 6.199209867 / px.rt_get_nenergy( thestn) / res);  -- theta from Bragg's law
     d     := topd / tan( 2.0 * theta);
 
@@ -7893,7 +7917,7 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
       IF FOUND THEN
         CONTINUE;
       END IF;
-      
+
       rtn.duration = 0;
       rtn.shots    = 0;
       FOR thedate, thecount, thehours IN
@@ -7901,7 +7925,7 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
           FROM px.datasets
           LEFT JOIN px.shots ON dspid=sdspid
           WHERE sstate='Done' and dsesaf=rtn.esaf and dsstn=rtn.stn
-          GROUP BY sts::date 
+          GROUP BY sts::date
         LOOP
           rtn.duration = rtn.duration + thehours;
           rtn.shots    = rtn.shots    + thecount;
@@ -8056,7 +8080,7 @@ CREATE OR REPLACE FUNCTION px.raster_step(params jsonb) RETURNS BOOLEAN AS $$
     -- Get the current info for this dataset
     --
     SELECT dsdir, dsfp, dspid INTO cdir, cfp, thedspid FROM px.datasets LEFT JOIN px.stnstatus ON ssdsedit=dspid where ssstn=theStn LIMIT 1;
-    
+
     IF NOT FOUND or cdir != params->>'dir' or cfp != params->>'fp' THEN
       SELECT px.copydataset( theStn, thedspid, params->>'dir', params->>'fp') INTO thedspid;
       UPDATE px.datasets set dstype='Normal', dsrobopid=NULL WHERE dspid=thedspid;
@@ -8084,7 +8108,7 @@ CREATE OR REPLACE FUNCTION px.raster_step(params jsonb) RETURNS BOOLEAN AS $$
 
     END LOOP;
 
-    
+
 
 
     --PERFORM px.pushrunqueue( theStn, ssdsedit, 'normal') FROM px.stnstatus WHERE ssstn=theStn;
