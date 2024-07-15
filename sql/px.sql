@@ -35,7 +35,7 @@ CREATE TABLE px._marinit (
         miitem text not null,           -- initialzation command
         miorder int unique              -- order to run commands
 );
-ALTER TABLE px._marinit OWNER TO lsadmin;
+ALTER TABLE px._marinit OWNER TO administrators;
 
 INSERT INTO px._marinit (miorder,miitem) VALUES ( 1, 'set_thumbnail1,pgm,512,512');
 INSERT INTO px._marinit (miorder,miitem) VALUES ( 2, 'set_thumbnail2,pgm,64,64');
@@ -61,37 +61,37 @@ CREATE OR REPLACE FUNCTION px.marinit() RETURNS void AS $$
     EXECUTE 'NOTIFY ' || ntfy;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.marinit() OWNER TO lsadmin;
+ALTER FUNCTION px.marinit() OWNER TO administrators;
 
 --
 -- Detector lock tables
 --
 CREATE TABLE px._id21d_detectorLock ( d int);
-ALTER TABLE px._id21d_detectorLock OWNER TO lsadmin;
+ALTER TABLE px._id21d_detectorLock OWNER TO administrators;
 
 CREATE TABLE px._id21e_detectorLock ( d int);
-ALTER TABLE px._id21e_detectorLock OWNER TO lsadmin;
+ALTER TABLE px._id21e_detectorLock OWNER TO administrators;
 
 CREATE TABLE px._id21f_detectorLock ( d int);
-ALTER TABLE px._id21f_detectorLock OWNER TO lsadmin;
+ALTER TABLE px._id21f_detectorLock OWNER TO administrators;
 
 CREATE TABLE px._id21g_detectorLock ( d int);
-ALTER TABLE px._id21g_detectorLock OWNER TO lsadmin;
+ALTER TABLE px._id21g_detectorLock OWNER TO administrators;
 
 
 --
 -- Diffractometer lock tables
 CREATE TABLE px._id21d_diffractometerLock ( d int);
-ALTER TABLE px._id21d_diffractometerLock OWNER TO lsadmin;
+ALTER TABLE px._id21d_diffractometerLock OWNER TO administrators;
 
 CREATE TABLE px._id21e_diffractometerLock ( d int);
-ALTER TABLE px._id21e_diffractometerLock OWNER TO lsadmin;
+ALTER TABLE px._id21e_diffractometerLock OWNER TO administrators;
 
 CREATE TABLE px._id21f_diffractometerLock ( d int);
-ALTER TABLE px._id21f_diffractometerLock OWNER TO lsadmin;
+ALTER TABLE px._id21f_diffractometerLock OWNER TO administrators;
 
 CREATE TABLE px._id21g_diffractometerLock ( d int);
-ALTER TABLE px._id21g_diffractometerLock OWNER TO lsadmin;
+ALTER TABLE px._id21g_diffractometerLock OWNER TO administrators;
 
 CREATE TABLE px._marqueue (
 --
@@ -103,7 +103,7 @@ CREATE TABLE px._marqueue (
   mqstn int NOT NULL,       -- our station
         mqcmd text NOT NULL                             -- queued command
 );
-ALTER TABLE px._marqueue OWNER TO lsadmin;
+ALTER TABLE px._marqueue OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
 --
@@ -121,7 +121,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text) RETURNS VOID AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushqueue( text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushqueue( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pushqueue( theStn int, cmd text) RETURNS VOID AS $$
 --
@@ -139,7 +139,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( theStn int, cmd text) RETURNS VOID AS $
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushqueue( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushqueue( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setbin( theStn int, binsize int) RETURNS VOID AS $$
   DECLARE
@@ -156,14 +156,14 @@ CREATE OR REPLACE FUNCTION px.setbin( theStn int, binsize int) RETURNS VOID AS $
 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-ALTER FUNCTION px.setbin( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.setbin( int, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setbin( binsize int) RETURNS VOID AS $$
   BEGIN
     PERFORM px.setbin( px.getStation(), binsize);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setbin( int) OWNER TO lsadmin;
+ALTER FUNCTION px.setbin( int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
@@ -181,7 +181,7 @@ CREATE OR REPLACE FUNCTION px.pushqueue( cmd text, ca inet) RETURNS VOID AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushqueue( text, inet) OWNER TO lsadmin;
+ALTER FUNCTION px.pushqueue( text, inet) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.popqueue() RETURNS text AS $$
@@ -200,7 +200,7 @@ CREATE OR REPLACE FUNCTION px.popqueue() RETURNS text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.popqueue() OWNER TO lsadmin;
+ALTER FUNCTION px.popqueue() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.popqueue( cmd text) RETURNS text AS $$
@@ -219,7 +219,7 @@ CREATE OR REPLACE FUNCTION px.popqueue( cmd text) RETURNS text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.popqueue( text) OWNER TO lsadmin;
+ALTER FUNCTION px.popqueue( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.flushqueue() RETURNS VOID AS $$
@@ -231,7 +231,7 @@ CREATE OR REPLACE FUNCTION px.flushqueue() RETURNS VOID AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.flushqueue( ) OWNER TO lsadmin;
+ALTER FUNCTION px.flushqueue( ) OWNER TO administrators;
 
 
 CREATE TABLE px._mar (
@@ -248,7 +248,7 @@ CREATE TABLE px._mar (
         mcnt int default 1,                             -- number of times this string has been returned
         mrawstate int                                   -- state returned by get_state
 );
-ALTER TABLE px._mar OWNER TO lsadmin;
+ALTER TABLE px._mar OWNER TO administrators;
 --
 -- Need grants for direct access
 GRANT SELECT, INSERT, UPDATE ON px._mar TO PUBLIC;
@@ -277,7 +277,7 @@ CREATE OR REPLACE FUNCTION px._mar_insert_tf() RETURNS trigger AS $$
     RETURN NULL;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px._mar_insert_tf() OWNER TO lsadmin;
+ALTER FUNCTION px._mar_insert_tf() OWNER TO administrators;
 
 CREATE TRIGGER _mar_insert_trigger BEFORE INSERT ON px._mar FOR EACH ROW EXECUTE PROCEDURE px._mar_insert_tf();
 
@@ -305,7 +305,7 @@ CREATE OR REPLACE FUNCTION px.marstatus( status int) returns text as $$
     RETURN rtn;
    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.marstatus( status int) OWNER TO lsadmin;
+ALTER FUNCTION px.marstatus( status int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.martaskstatus( status int, task int) returns text as $$
 --
@@ -327,7 +327,7 @@ CREATE OR REPLACE FUNCTION px.martaskstatus( status int, task int) returns text 
     return rtn;
     END;
 $$ LANGUAGE plpgsql RETURNS NULL ON NULL INPUT SECURITY DEFINER;
-ALTER FUNCTION px.martaskstatus( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.martaskstatus( int, int) OWNER TO administrators;
 
 
 --
@@ -365,7 +365,7 @@ CREATE OR REPLACE FUNCTION px.marHeader( k bigint) returns px.marheadertype AS $
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.marHeader( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.marHeader( bigint) OWNER TO administrators;
 
 
 
@@ -379,7 +379,7 @@ CREATE TABLE px.stations (
         stndataroot  text not null,             -- default root data directory
         stnid        int references px.holderpositions (hpid)
 );
-ALTER TABLE px.stations OWNER TO lsadmin;
+ALTER TABLE px.stations OWNER TO administrators;
 GRANT SELECT ON px.stations TO PUBLIC;
 
 INSERT INTO px.stations (stnName, stnShortName, stnDataRoot) VALUES ( '21-ID-D', 'idd', 'd');
@@ -427,7 +427,7 @@ CREATE TABLE px._config (
   cnotifysample    text   not null,
         clustrepool      text   not null default 'pffs.pool_slow'
 );
-ALTER TABLE px._config OWNER TO lsadmin;
+ALTER TABLE px._config OWNER TO administrators;
 GRANT SELECT ON px._config TO PUBLIC;
 
 INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cdetectlocktable, cnotifykill, cnotifysnap, cnotifyrun, cnotifydetector, cnotifypause) VALUES (
@@ -449,7 +449,7 @@ CREATE TYPE px.getstationstype AS (skey int, sname text, sshortname text, sdatar
 CREATE OR REPLACE FUNCTION px.getstations() RETURNS setof px.getstationstype AS $$
   SELECT stnkey, stnname, stnshortname, stndataroot, stnid FROM px.stations order by stnkey;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getstations() OWNER TO lsadmin;
+ALTER FUNCTION px.getstations() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getstation( theip inet) RETURNS int AS $$
@@ -458,42 +458,42 @@ CREATE OR REPLACE FUNCTION px.getstation( theip inet) RETURNS int AS $$
 --
   SELECT  stnkey FROM px.stations left join px._config on stnname=cstation where $1=cdetector or $1=cdiffractometer or $1=crobot
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
-ALTER FUNCTION px.getstation( inet) OWNER TO lsadmin;
+ALTER FUNCTION px.getstation( inet) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getstation() RETURNS int AS $$
 --
 -- Returns the station key for this connection
   SELECT px.getstation( inet_client_addr());
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getstation() OWNER TO lsadmin;
+ALTER FUNCTION px.getstation() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getstation( thestn text) RETURNS int AS $$
 --
 -- Return the station key given the text (full or short) of the station name
   SELECT stnkey FROM px.stations where $1=stnname or $1=stnshortname;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getstation( text) OWNER TO lsadmin;
+ALTER FUNCTION px.getstation( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getstationname() returns text as $$
   SELECT cstation FROM px._config WHERE cstnkey=px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getstationname() OWNER TO lsadmin;
+ALTER FUNCTION px.getstationname() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getlustrepool() returns text as $$
   SELECT clustrepool FROM px._config WHERE cstnkey=px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getlustrepool() OWNER TO lsadmin;
+ALTER FUNCTION px.getlustrepool() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getcatsaddr() RETURNS text AS $$
   SELECT host(ccats) FROM px._config WHERE cstnkey = px.getStation();
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getcatsaddr() OWNER TO lsadmin;
+ALTER FUNCTION px.getcatsaddr() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getcatsaddr( thestn text) RETURNS text AS $$
   SELECT host(ccats) FROM px._config WHERE $1=cstation;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getcatsaddr( text) OWNER TO lsadmin;
+ALTER FUNCTION px.getcatsaddr( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
@@ -505,7 +505,7 @@ CREATE OR REPLACE FUNCTION px.inidetector() RETURNS void AS $$
   BEGIN
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.inidetector() OWNER TO lsadmin;
+ALTER FUNCTION px.inidetector() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
@@ -514,7 +514,7 @@ CREATE OR REPLACE FUNCTION px.demandDiffractometerOn() RETURNS void AS $$
   PERFORM pg_advisory_lock( px.getstation(), 1);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.demandDiffractometerOn() OWNER TO lsadmin;
+ALTER FUNCTION px.demandDiffractometerOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
   DECLARE
@@ -522,7 +522,7 @@ CREATE OR REPLACE FUNCTION px.dropDiffractometerOn() RETURNS void AS $$
   PERFORM pg_advisory_unlock( px.getstation(), 1);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.dropDiffractometerOn() OWNER TO lsadmin;
+ALTER FUNCTION px.dropDiffractometerOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
   --
@@ -538,7 +538,7 @@ CREATE OR REPLACE FUNCTION px.checkDiffractometerOn() RETURNS boolean AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
+ALTER FUNCTION px.checkDiffractometerOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.checkDiffractometerOn( thestn int) RETURNS boolean AS $$
   --
@@ -554,7 +554,7 @@ CREATE OR REPLACE FUNCTION px.checkDiffractometerOn( thestn int) RETURNS boolean
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.checkDiffractometerOn() OWNER TO lsadmin;
+ALTER FUNCTION px.checkDiffractometerOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
   DECLARE
@@ -567,7 +567,7 @@ CREATE OR REPLACE FUNCTION px.setDetectorOn() RETURNS void AS $$
   PERFORM pg_advisory_lock( px.getstation(), 5);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setDetectorOn() OWNER TO lsadmin;
+ALTER FUNCTION px.setDetectorOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setDetectorOn(stn int) RETURNS void AS $$
   DECLARE
@@ -579,7 +579,7 @@ CREATE OR REPLACE FUNCTION px.setDetectorOn(stn int) RETURNS void AS $$
   PERFORM pg_advisory_lock( stn, 5);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setDetectorOn(int) OWNER TO lsadmin;
+ALTER FUNCTION px.setDetectorOn(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.dropDetectorOn() RETURNS void AS $$
   DECLARE
@@ -592,7 +592,7 @@ CREATE OR REPLACE FUNCTION px.dropDetectorOn() RETURNS void AS $$
   PERFORM pg_advisory_unlock( px.getstation(), 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.dropDetectorOn() OWNER TO lsadmin;
+ALTER FUNCTION px.dropDetectorOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.checkDetectorOn() RETURNS int AS $$
   --
@@ -609,7 +609,7 @@ CREATE OR REPLACE FUNCTION px.checkDetectorOn() RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.checkDetectorOn() OWNER TO lsadmin;
+ALTER FUNCTION px.checkDetectorOn() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ininotifies( the_stn int) RETURNS text AS $$
 --
@@ -651,12 +651,12 @@ CREATE OR REPLACE FUNCTION px.ininotifies( the_stn int) RETURNS text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ininotifies( int) OWNER TO lsadmin;
+ALTER FUNCTION px.ininotifies( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ininotifies() RETURNS text AS $$
   SELECT px.ininotifies( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.ininotifies() OWNER TO lsadmin;
+ALTER FUNCTION px.ininotifies() OWNER TO administrators;
 
 
 
@@ -666,7 +666,7 @@ CREATE OR REPLACE FUNCTION px.lock_detector() RETURNS void AS $$
     PERFORM pg_advisory_lock( px.getstation(), 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector(stn int) RETURNS void AS $$
 -- indicate that the detector is ready for action but isn't doing anything right now
@@ -674,7 +674,7 @@ CREATE OR REPLACE FUNCTION px.lock_detector(stn int) RETURNS void AS $$
     PERFORM pg_advisory_lock( stn, 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector(int) OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS int AS $$
 -- test to see if the detector is integrating (1 means no but we are running)
@@ -688,7 +688,7 @@ CREATE OR REPLACE FUNCTION px.lock_detector_nowait() RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector_nowait() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector_nowait() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_test() RETURNS int AS $$
 -- test to see if the detector is integrating (1 means no but we are running)
@@ -703,7 +703,7 @@ CREATE OR REPLACE FUNCTION px.lock_detector_test() RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector_test() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector_test() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_test( stn int) RETURNS int AS $$
 -- test to see if the detector is integrating (1 means no but we are running)
@@ -718,7 +718,7 @@ CREATE OR REPLACE FUNCTION px.lock_detector_test( stn int) RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector_test( int) OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector_test( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_test_block( stn int) RETURNS void AS $$
   --
@@ -750,12 +750,12 @@ CREATE OR REPLACE FUNCTION px.lock_detector_test_block( stn int) RETURNS void AS
     END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector_test_block( int) OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector_test_block( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_detector_test_block() RETURNS void AS $$
   SELECT px.lock_detector_test_block( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.lock_detector_test_block() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_detector_test_block() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
 -- indicate the start of integration
@@ -763,7 +763,7 @@ CREATE OR REPLACE FUNCTION px.unlock_detector() RETURNS void AS $$
     PERFORM pg_advisory_unlock( px.getstation(), 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unlock_detector() OWNER TO lsadmin;
+ALTER FUNCTION px.unlock_detector() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unlock_detector(stn int) RETURNS void AS $$
 -- indicate the start of integration
@@ -771,7 +771,7 @@ CREATE OR REPLACE FUNCTION px.unlock_detector(stn int) RETURNS void AS $$
     PERFORM pg_advisory_unlock( stn, 3);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unlock_detector(int) OWNER TO lsadmin;
+ALTER FUNCTION px.unlock_detector(int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
@@ -780,7 +780,7 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer() RETURNS void AS $$
     PERFORM pg_advisory_lock( px.getstation(), 4);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_diffractometer() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_diffractometer() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer(stn int) RETURNS void AS $$
 -- indicate we are either exposing or are ready to start exposing
@@ -788,7 +788,7 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer(stn int) RETURNS void AS $$
     PERFORM pg_advisory_lock( stn, 4);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_diffractometer(int) OWNER TO lsadmin;
+ALTER FUNCTION px.lock_diffractometer(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS int AS $$
 -- test to see if the MD2 is ready to start exposing
@@ -802,7 +802,7 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer_nowait() RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_diffractometer_nowait() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_diffractometer_nowait() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer_test() RETURNS int AS $$
 -- test to see if the MD2 is ready to start exposing
@@ -817,7 +817,7 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer_test() RETURNS int AS $$
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_diffractometer_test() OWNER TO lsadmin;
+ALTER FUNCTION px.lock_diffractometer_test() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lock_diffractometer_test( stn int) RETURNS int AS $$
 -- test to see if the MD2 is ready to start exposing
@@ -832,7 +832,7 @@ CREATE OR REPLACE FUNCTION px.lock_diffractometer_test( stn int) RETURNS int AS 
     return 0;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lock_diffractometer_test( int) OWNER TO lsadmin;
+ALTER FUNCTION px.lock_diffractometer_test( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
   -- grabs the diffractometer lock indicating ready to start exposure
@@ -840,7 +840,7 @@ CREATE OR REPLACE FUNCTION px.unlock_diffractometer() RETURNS void AS $$
     PERFORM pg_advisory_unlock( px.getstation(), 4);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unlock_diffractometer() OWNER TO lsadmin;
+ALTER FUNCTION px.unlock_diffractometer() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unlock_diffractometer(stn int) RETURNS void AS $$
   -- grabs the diffractometer lock indicating ready to start exposure
@@ -848,7 +848,7 @@ CREATE OR REPLACE FUNCTION px.unlock_diffractometer(stn int) RETURNS void AS $$
     PERFORM pg_advisory_unlock( stn, 4);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unlock_diffractometer(int) OWNER TO lsadmin;
+ALTER FUNCTION px.unlock_diffractometer(int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
@@ -861,7 +861,7 @@ CREATE OR REPLACE FUNCTION px.seq_run_prep( shot_key bigint, kappa float, phi fl
     return;
    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION eiger.seq_run_prep( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION eiger.seq_run_prep( bigint, float, float, float, float, float, float, float) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.seq_run_prep_OLD( shot_key bigint, kappa float, phi float, cx float, cy float, ax float, ay float, az float) RETURNS void AS $$
   DECLARE
@@ -904,7 +904,7 @@ CREATE OR REPLACE FUNCTION px.seq_run_prep_OLD( shot_key bigint, kappa float, ph
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.seq_run_prep_OLD( bigint, float, float, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.seq_run_prep_OLD( bigint, float, float, float, float, float, float, float) OWNER TO administrators;
 
 
 CREATE TABLE px.axes (
@@ -920,7 +920,7 @@ CREATE TABLE px.axes (
         astn   int                      -- station where this axis is used
                 references px.stations (stnkey) ON UPDATE CASCADE
 );
-ALTER TABLE px.axes OWNER TO lsadmin;
+ALTER TABLE px.axes OWNER TO administrators;
 GRANT SELECT ON px.axes TO PUBLIC;
 
 INSERT INTO px.axes (aaxis, aepics, astn) VALUES ( 'omega', '', (select stnkey from px.stations where stnname='21-ID-D'));
@@ -933,7 +933,7 @@ CREATE TABLE px.shotstates (
 -- Allowed values for the shot state
         ssstate text primary key                -- the state of the shot
 );
-ALTER TABLE px.shotstates OWNER TO lsadmin;
+ALTER TABLE px.shotstates OWNER TO administrators;
 GRANT SELECT ON px.shotstates TO PUBLIC;
 
 INSERT INTO px.shotstates (ssstate) VALUES ( 'NotTaken');
@@ -953,7 +953,7 @@ INSERT INTO px.expunits (eu, eus) VALUES ( 'Io Counts', 'cnts');
 CREATE TABLE  px.oscsenses (
         os text primary key
 );
-ALTER TABLE px.oscsenses OWNER TO lsadmin;
+ALTER TABLE px.oscsenses OWNER TO administrators;
 GRANT SELECT ON px.oscsenses to PUBLIC;
 
 INSERT INTO px.oscsenses (os) VALUES ( '+');
@@ -968,7 +968,7 @@ INSERT INTO px.oscsenses (os) VALUES ( '-/+');
 CREATE OR REPLACE FUNCTION px.fix_fn( fn text) RETURNS text as $$
   SELECT regexp_replace( $1, '[^-._a-zA-Z0-9]*', '','g');
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.fix_fn( text) OWNER TO lsadmin;
+ALTER FUNCTION px.fix_fn( text) OWNER TO administrators;
 
 --
 -- fix_dir
@@ -987,7 +987,7 @@ CREATE OR REPLACE FUNCTION px.fix_dir( dir text) RETURNS text as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.fix_dir( text) OWNER TO lsadmin;
+ALTER FUNCTION px.fix_dir( text) OWNER TO administrators;
 
 CREATE TABLE px.dirstates (
         dirs text primary key
@@ -1001,22 +1001,22 @@ INSERT INTO px.dirstates (dirs) VALUES ('Wrong Permissions');
 CREATE OR REPLACE FUNCTION px.getdsdir(token text) returns text AS $$
   SELECT dsdir FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getdsdir(text) OWNER TO lsadmin;
+ALTER FUNCTION px.getdsdir(text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.chkdir( token text) returns void AS $$
   SELECT px.pushqueue( 'checkdir,'|| $1);
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.chkdir( text) OWNER TO lsadmin;
+ALTER FUNCTION px.chkdir( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.chkdir( theStn int, token text) returns void AS $$
   SELECT px.pushqueue( $1, 'checkdir,'|| $2);
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.chkdir( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.chkdir( int, text) OWNER TO administrators;
 
 CREATE TABLE px.datasettypes (
   dst text primary key
 );
-ALTER TABLE px.datasettypes OWNER TO lsadmin;
+ALTER TABLE px.datasettypes OWNER TO administrators;
 INSERT INTO px.datasettypes (dst) VALUES ('Normal');
 INSERT INTO px.datasettypes (dst) VALUES ('GridSearch');
 
@@ -1069,7 +1069,7 @@ CREATE TABLE px.datasets (
         dssrate numeric DEFAULT NULL,                           -- spindle rate in degrees per second
         dsrange numeric DEFAULT NULL                            -- full range of a shutterless data collection
 );
-ALTER TABLE px.datasets OWNER TO lsadmin;
+ALTER TABLE px.datasets OWNER TO administrators;
 CREATE INDEX dsTsIndex ON px.datasets (dscreatets);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.datasets TO PUBLIC;
@@ -1092,7 +1092,7 @@ CREATE OR REPLACE FUNCTION px.datasetsupdatetf() returns trigger as $$
     return new;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.datasetsupdatetf() OWNER TO lsadmin;
+ALTER FUNCTION px.datasetsupdatetf() OWNER TO administrators;
 
 CREATE TRIGGER datasetsUpdateTrigger BEFORE UPDATE ON px.datasets FOR EACH ROW EXECUTE PROCEDURE px.datasetsUpdateTF();
 
@@ -1120,7 +1120,7 @@ CREATE OR REPLACE FUNCTION px.next_prefix( prefix text, sample int) RETURNS text
 
   END
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.next_prefix( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.next_prefix( text, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS $$
@@ -1149,7 +1149,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( theStn int, expid int) RETURNS text AS
   END;
 
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.newdataset( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.newdataset( int, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
 --
@@ -1163,7 +1163,7 @@ CREATE OR REPLACE FUNCTION px.newdataset( expid int) RETURNS text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.newdataset( int ) OWNER TO lsadmin;
+ALTER FUNCTION px.newdataset( int ) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.copydataset( theStn int, token text, newDir text, newPrefix text) RETURNS text AS $$
@@ -1198,12 +1198,12 @@ CREATE OR REPLACE FUNCTION px.copydataset( theStn int, token text, newDir text, 
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( int, text, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.copydataset( int, text, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.copydataset( token text, newDir text, newPrefix text) RETURNS text AS $$
   SELECT px.copydataset( px.getstation(), $1, $2, $3);
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.copydataset( text, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.copydataset( text, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text AS $$
   --
@@ -1233,7 +1233,7 @@ CREATE OR REPLACE FUNCTION px.spawndataset( token text, sample int) RETURNS text
   RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.spawndataset( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.spawndataset( text, int) OWNER TO administrators;
 
 --
 -- getdataset returns one row for a given dataset
@@ -1241,7 +1241,7 @@ ALTER FUNCTION px.spawndataset( text, int) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getdataset( pid text) RETURNS SETOF px.datasets AS $$
   SELECT * FROM px.datasets where dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getdataset( text) OWNER TO lsadmin;
+ALTER FUNCTION px.getdataset( text) OWNER TO administrators;
 
 --
 -- getdatasets returns all dataset for the connecting client
@@ -1249,7 +1249,7 @@ ALTER FUNCTION px.getdataset( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getdatasets() RETURNS SETOF px.datasets AS $$
   SELECT * FROM px.datasets where dsstn=px.getstation() order by dsfp, dscreatets DESC;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getdatasets() OWNER TO lsadmin;
+ALTER FUNCTION px.getdatasets() OWNER TO administrators;
 
 
 --
@@ -1258,7 +1258,7 @@ ALTER FUNCTION px.getdatasets() OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getdatasets( expid int) RETURNS SETOF px.datasets AS $$
   SELECT * FROM px.datasets where dsstn=px.getstation() and dsesaf=$1 order by dsfp, dscreatets DESC;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getdatasets( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getdatasets( int) OWNER TO administrators;
 
 
 --
@@ -1267,7 +1267,7 @@ ALTER FUNCTION px.getdatasets( int) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.getdatasets( stnkey int, expid int) RETURNS SETOF px.datasets AS $$
   SELECT * FROM px.datasets where dsstn=$1 and dsesaf=$2 order by dsfp, dscreatets DESC;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getdatasets( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.getdatasets( int, int) OWNER TO administrators;
 
 CREATE TABLE px.editDStable (
        edsKey serial primary key,       -- our key
@@ -1276,7 +1276,7 @@ CREATE TABLE px.editDStable (
        edsFunc text not null,           -- the function to call
        edsQuotes boolean not null       -- need quotes?
 );
-ALTER TABLE px.editDStable OWNER TO lsadmin;
+ALTER TABLE px.editDStable OWNER TO administrators;
 
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'dir', 'px.ds_set_dir',         true);
 INSERT INTO px.editDStable (edsName, edsFunc, edsQuotes) VALUES ( 'fp',  'px.ds_set_fp',          true);
@@ -1356,7 +1356,7 @@ CREATE OR REPLACE FUNCTION px.editDS( thePid text, theStn bigint, theKey text, t
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.editDS( text, bigint, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.editDS( text, bigint, text, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text) RETURNS XML AS $$
@@ -1396,7 +1396,7 @@ CREATE OR REPLACE FUNCTION px.runDS( thePid text, theStn bigint, theType text) R
     return xmlelement( name "runDS", xmlattributes( 'true' as success));
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runDS( text, bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.runDS( text, bigint, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getCurrentToken( theStn bigint) returns text AS $$
@@ -1407,14 +1407,14 @@ CREATE OR REPLACE FUNCTION px.getCurrentToken( theStn bigint) returns text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentToken(bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentToken(bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getCurrentToken() returns text AS $$
   BEGIN
     return px.getCurrentToken( px.getStation());
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentToken() OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentToken() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.setCurrentToken( theStn bigint, token text) returns void AS $$
@@ -1424,14 +1424,14 @@ CREATE OR REPLACE FUNCTION px.setCurrentToken( theStn bigint, token text) return
     UPDATE px.stnstatus SET ssdsedit=token WHERE ssstn=theStn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setCurrentToken(bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.setCurrentToken(bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setCurrentToken( token text) returns void AS $$
   BEGIN
     PERFORM px.setCurrentToken( px.getStation(), token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setCurrentToken( text) OWNER TO lsadmin;
+ALTER FUNCTION px.setCurrentToken( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getDS( thePid text, theDspid text) returns xml AS $$
@@ -1459,7 +1459,7 @@ CREATE OR REPLACE FUNCTION px.getDS( thePid text, theDspid text) returns xml AS 
   return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getDS( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.getDS( text, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.dfpList( thePid text, theStn bigint) returns xml AS $$
@@ -1489,7 +1489,7 @@ CREATE OR REPLACE FUNCTION px.dfpList( thePid text, theStn bigint) returns xml A
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.dfpList( text, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.dfpList( text, bigint) OWNER TO administrators;
 
 
 
@@ -1500,12 +1500,12 @@ ALTER FUNCTION px.dfpList( text, bigint) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_esaf( token text, arg2 int) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsesaf=arg2 where dspid=token; end;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_esaf( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_esaf( text, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_esaf( token text) RETURNS int as $$
   SELECT dsesaf from px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_esaf( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_esaf( text) OWNER TO administrators;
 
 
 --
@@ -1516,7 +1516,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_sample( token text, arg2 int) RETURNS void 
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_sample( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_sample( text, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_set_samples( token text, arg2 int[]) RETURNS void AS $$
   BEGIN
@@ -1524,7 +1524,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_samples( token text, arg2 int[]) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_samples( text, int[]) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_samples( text, int[]) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_samples( token text) RETURNS setof int as $$
   DECLARE
@@ -1539,19 +1539,19 @@ CREATE OR REPLACE FUNCTION px.ds_get_samples( token text) RETURNS setof int as $
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_samples( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_samples( text) OWNER TO administrators;
 
 --
 -- WHO
 CREATE OR REPLACE FUNCTION px.ds_set_who( token text, arg2 bigint) RETURNS void as $$
   BEGIN UPDATE px.datasets set dswho=arg2 where dspid=token; end;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_who( text, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_who( text, bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_Get_who( token text) RETURNS bigint as $$
   SELECT dswho FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_Get_who( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_Get_who( text) OWNER TO administrators;
 
 
 
@@ -1560,12 +1560,12 @@ ALTER FUNCTION px.ds_Get_who( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_inst( token text, arg2 bigint) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsinst=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_inst( text, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_inst( text, bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_inst( token text) RETURNS bigint as $$
   SELECT dsinst FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_inst( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_inst( text) OWNER TO administrators;
 
 
 --
@@ -1577,19 +1577,19 @@ CREATE OR REPLACE FUNCTION px.ds_set_dir( token text, arg2 text) RETURNS void as
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_dir( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_dir( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_dir( token text) RETURNS text as $$
   SELECT dsdir FROM  px.datasets where dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_dir( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_dir( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_set_dirs( token text, arg2 text) RETURNS void as $$
   BEGIN
     UPDATE px.datasets SET dsdirs=arg2 WHERE dspid=token;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_dirs( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_dirs( text, text) OWNER TO administrators;
 
 
 --
@@ -1601,12 +1601,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_fp( token text, arg2 text) RETURNS void as 
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_fp( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_fp( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_fp( token text) RETURNS text as $$
   SELECT dsfp FROM px.datasets  where dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_fp( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_fp( text) OWNER TO administrators;
 
 
 --
@@ -1621,12 +1621,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_oscaxis( token text, arg2 text) RETURNS voi
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_oscaxis( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_oscaxis( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_oscaxis( token text) RETURNS text as $$
   SELECT dsoscaxis FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_oscaxis( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_oscaxis( text) OWNER TO administrators;
 
 
 --
@@ -1637,7 +1637,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_type(token text, arg2 text) RETURNS void as
     UPDATE px.datasets set dstype=coalesce(arg2, 'Normal') where dspid=token;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_type(text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_type(text, text) OWNER TO administrators;
 
 --
 -- Start
@@ -1648,12 +1648,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_start( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_start( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_start( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_start( token text) RETURNS numeric as $$
   SELECT dsstart FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_start( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_start( text) OWNER TO administrators;
 
 
 --
@@ -1665,12 +1665,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_owidth( token text, arg2 numeric) RETURNS v
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_owidth( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_owidth( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_owidth( token text) RETURNS numeric as $$
   SELECT dsowidth FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_owidth( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_owidth( text) OWNER TO administrators;
 
 --
 -- Delta
@@ -1681,12 +1681,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_delta( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_delta( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_delta( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_delta( token text) RETURNS numeric as $$
   SELECT dsdelta FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_delta( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_delta( text) OWNER TO administrators;
 
 --
 -- Frame Rate
@@ -1697,7 +1697,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_frate( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_frate( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_frate( text, numeric) OWNER TO administrators;
 
 --
 -- Spindle Rate
@@ -1708,7 +1708,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_srate( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_srate( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_srate( text, numeric) OWNER TO administrators;
 
 --
 -- Range
@@ -1719,7 +1719,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_range( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_range( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_range( text, numeric) OWNER TO administrators;
 
 
 
@@ -1732,12 +1732,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_noscs( token text, arg2 numeric) RETURNS vo
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_noscs( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_noscs( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_noscs( token text) RETURNS int as $$
   SELECT dsnoscs FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_noscs( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_noscs( text) OWNER TO administrators;
 
 --
 -- Osc Sense
@@ -1751,12 +1751,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_oscsense( token text, arg2 text) RETURNS vo
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_oscsense( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_oscsense( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_oscsense( token text) RETURNS text as $$
   SELECT dsoscsense FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_oscsense( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_oscsense( text) OWNER TO administrators;
 
 
 --
@@ -1769,13 +1769,13 @@ CREATE OR REPLACE FUNCTION px.ds_set_nwedge( token text, arg2 int) RETURNS void 
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_nwedge( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_nwedge( text, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_nwedge( token text) RETURNS int as $$
   UPDATE px.stnstatus  SET ssdsedit=$1 WHERE ssstn=px.getstation();
   SELECT dsnwedge FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_nwedge( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_nwedge( text) OWNER TO administrators;
 
 --
 -- End
@@ -1786,12 +1786,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_end( token text, arg2 numeric) RETURNS void
     PERFORM px.mkshots( token);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_end( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_end( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_end( token text) RETURNS numeric as $$
   SELECT dsend FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_end( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_end( text) OWNER TO administrators;
 
 --
 -- N Frames
@@ -1820,7 +1820,7 @@ CREATE OR REPLACE FUNCTION px.ds_set_nframes( token text, nframes int) RETURNS v
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_nframes( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_nframes( text, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.ds_get_nframes( token text) RETURNS int AS $$
@@ -1846,7 +1846,7 @@ CREATE OR REPLACE FUNCTION px.ds_get_nframes( token text) RETURNS int AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_nframes( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_nframes( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_nRemaining( token text, theType text) RETURNS int AS $$
   DECLARE
@@ -1856,7 +1856,7 @@ CREATE OR REPLACE FUNCTION px.ds_get_nRemaining( token text, theType text) RETUR
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_nRemaining( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_nRemaining( text, text) OWNER TO administrators;
 
 --
 -- Exposure Time
@@ -1866,12 +1866,12 @@ CREATE OR REPLACE FUNCTION px.ds_set_exp( token text, arg2 numeric) RETURNS void
     UPDATE px.datasets set dsexp=arg2 where dspid=token;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_exp( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_exp( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_exp( token text) RETURNS numeric as $$
   SELECT dsexp FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_exp( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_exp( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_et( token text, type text) RETURNS interval AS $$
 --
@@ -1880,7 +1880,7 @@ CREATE OR REPLACE FUNCTION px.ds_get_et( token text, type text) RETURNS interval
 --
   SELECT (px.ds_get_nRemaining( $1, $2) * (px.ds_get_exp( $1) + 1.5)) * interval '1 second';
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_et( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_et( text, text) OWNER TO administrators;
 
 
 --
@@ -1889,12 +1889,12 @@ ALTER FUNCTION px.ds_get_et( text, text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_expunit( token text, arg2 text) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsexpunit=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_expunit( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_expunit( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_expunit( token text) RETURNS text as $$
   SELECT dsexpunit FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_expunit( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_expunit( text) OWNER TO administrators;
 
 --
 -- Phi
@@ -1902,12 +1902,12 @@ ALTER FUNCTION px.ds_get_expunit( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_phi( token text, arg2 numeric) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsphi=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_phi( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_phi( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_phi( token text) RETURNS numeric as $$
   SELECT dsphi FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_phi( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_phi( text) OWNER TO administrators;
 
 --
 -- Omega
@@ -1915,12 +1915,12 @@ ALTER FUNCTION px.ds_get_phi( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_omega( token text, arg2 numeric) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsomega=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_omega( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_omega( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_omega( token text) RETURNS numeric as $$
   SELECT dsomega FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_omega( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_omega( text) OWNER TO administrators;
 
 --
 -- Kappa
@@ -1928,12 +1928,12 @@ ALTER FUNCTION px.ds_get_omega( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_kappa( token text, arg2 numeric) RETURNS void as $$
   BEGIN UPDATE px.datasets set dskappa=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_kappa( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_kappa( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_kappa( token text) RETURNS numeric as $$
   SELECT dskappa FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_kappa( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_kappa( text) OWNER TO administrators;
 
 --
 -- Distance
@@ -1941,12 +1941,12 @@ ALTER FUNCTION px.ds_get_kappa( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_dist( token text, arg2 numeric) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsdist=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_dist( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_dist( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_dist( token text) RETURNS numeric as $$
   SELECT dsdist FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_dist( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_dist( text) OWNER TO administrators;
 
 --
 -- Energy
@@ -1954,22 +1954,22 @@ ALTER FUNCTION px.ds_get_dist( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_energy( token text, arg2 numeric) RETURNS void as $$
   BEGIN UPDATE px.datasets set dsnrg=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_energy( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_energy( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_energy( token text) RETURNS numeric as $$
   SELECT dsnrg FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_energy( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_energy( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_set_wavelength( token text, arg2 numeric) RETURNS void as $$
   UPDATE px.datasets SET dsnrg=12.3984172/$2  WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_wavelength( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_wavelength( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_wavelength( token text) RETURNS numeric as $$
   SELECT 12.3984172/dsnrg FROM  px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_wavelength( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_wavelength( text) OWNER TO administrators;
 
 --
 -- Comment
@@ -1977,12 +1977,12 @@ ALTER FUNCTION px.ds_get_wavelength( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_comment( token text, arg2 text) RETURNS void as $$
   BEGIN UPDATE px.datasets set dscomment=arg2 where dspid=token; end; $$
 LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_comment( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_comment( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_comment( token text) RETURNS text as $$
   SELECT dscomment FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_comment( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_comment( text) OWNER TO administrators;
 
 
 --
@@ -1991,12 +1991,12 @@ ALTER FUNCTION px.ds_get_comment( text) OWNER TO lsadmin;
 CREATE OR REPLACE FUNCTION px.ds_set_jparams( token text, arg2 json) RETURNS VOID AS $$
   UPDATE px.datasets SET dsjparams=$2 WHERE dspid=$1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ds_set_jparams( text, json) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_set_jparams( text, json) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ds_get_jparams( token text) RETURNS json AS $$
   SELECT dsjparams FROM px.datasets WHERE dspid=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.ds_get_jparams( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ds_get_jparams( text) OWNER TO administrators;
 
 
 
@@ -2007,7 +2007,7 @@ ALTER FUNCTION px.ds_get_jparams( text) OWNER TO lsadmin;
 CREATE TABLE px.stypes (
         st text primary key
 );
-ALTER TABLE px.stypes OWNER TO lsadmin;
+ALTER TABLE px.stypes OWNER TO administrators;
 GRANT SELECT ON px.stypes TO PUBLIC;
 INSERT INTO px.stypes (st) VALUES ('normal');
 INSERT INTO px.stypes (st) VALUES ('snap');
@@ -2056,7 +2056,7 @@ CREATE TABLE px.shots (
         srange numeric          DEFAULT NULL            -- range of omega for shutterless data collection
         UNIQUE (sdspid, stype, sindex)
 );
-ALTER TABLE px.shots OWNER TO lsadmin;
+ALTER TABLE px.shots OWNER TO administrators;
 CREATE INDEX shotsTsIndex ON px.shots (sts);
 CREATE INDEX shotsFnIndex ON px.shots (sfn);
 GRANT SELECT, INSERT, UPDATE, DELETE ON px.shots TO PUBLIC;
@@ -2070,7 +2070,7 @@ CREATE TABLE px.shot_stats_table (
    sstts timestamp with time zone default now(),
    sststats json
 );
-ALTER TABLE px.shot_stats_table OWNER TO lsadmin;
+ALTER TABLE px.shot_stats_table OWNER TO administrators;
 CREATE INDEX shot_stats_table_dspid_index ON px.shot_stats_table (sstdspid);
 CREATE INDEX shot_stats_table_stn_index ON px.shot_stats_table (sststn);
 
@@ -2080,7 +2080,7 @@ CREATE OR REPLACE FUNCTION px.shots_init_stats( bup text, the_dspid text, the_st
     INSERT INTO px.shot_stats_table (sstbup, sstdspid, sststn) VALUES (bup, the_dspid, the_stn);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_init_stats( text, text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_init_stats( text, text, int) OWNER TO administrators;
 
 
 
@@ -2135,59 +2135,59 @@ CREATE or REPLACE FUNCTION px.shots_set_stats( bup text, k text, v text) returns
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_stats( text, text, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.shots_set_jparams( theKey bigint, the_params json) returns void as $$
   UPDATE px.shots SET sjparams = $2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_jparams( bigint, json) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_jparams( bigint, json) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_set_params( theKey bigint, phi numeric, kappa numeric) returns void as $$
   UPDATE px.shots SET sphi=$2, skappa=$3, sdist=( SELECT dsdist FROM px.datasets WHERE dspid=sdspid) WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_params( bigint, numeric, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_params( bigint, numeric, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_set_state( theKey bigint, newState text) returns void as $$
   UPDATE px.shots SET sts=now(),sstate=$2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_state( bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_set_energy( theKey bigint) returns void as $$
   UPDATE px.shots SET snrg = px.rt_get_nenergy( dsstn) FROM px.datasets WHERE sdspid = dspid and skey=$1
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_energy( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_energy( bigint) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.shots_count_done_snaps( thePid text) returns bigint as $$
   SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='snap' AND sstate='Done';
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_count_done_snaps( text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_count_done_snaps( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_count_snaps( thePid text) returns bigint as $$
   SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='snap';
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_count_snaps( text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_count_snaps( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_count_done_normals( thePid text) returns bigint as $$
   SELECT count(*) FROM px.shots WHERE sdspid=$1 AND stype='normal' AND sstate='Done';
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_count_done_normals( text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_count_done_normals( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_get_esaf( theKey bigint) returns int as $$
   SELECT dsesaf FROM px.datasets LEFT JOIN px.shots on dspid=sdspid WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_get_esaf( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_get_esaf( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_set_path( theKey bigint, theDir text) returns void as $$
   UPDATE px.shots SET spath=$2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_path( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_path( bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_set_bupath( theKey bigint, theDir text) returns void as $$
   UPDATE px.shots SET sbupath=$2 WHERE skey=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_bupath( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_bupath( bigint, text) OWNER TO administrators;
 
 CREATE TYPE px.shots_stats_type AS ( ntaken int, ntotal int);
 
@@ -2199,7 +2199,7 @@ CREATE OR REPLACE FUNCTION px.shots_get_snap_stats( token text) returns px.shots
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_get_snap_stats( text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_get_snap_stats( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shots_get_normal_stats( token text) returns px.shots_stats_type as $$
   DECLARE
@@ -2209,7 +2209,7 @@ CREATE OR REPLACE FUNCTION px.shots_get_normal_stats( token text) returns px.sho
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_get_normal_stats( text) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_get_normal_stats( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey bigint) returns void AS $$
@@ -2224,7 +2224,7 @@ CREATE OR REPLACE FUNCTION px.shots_set_expose( theKey bigint) returns void AS $
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shots_set_expose( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.shots_set_expose( bigint) OWNER TO administrators;
 
 
 
@@ -2271,7 +2271,7 @@ CREATE OR REPLACE FUNCTION px.nextshot() RETURNS SETOF px.nextshottype AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextshot() OWNER TO lsadmin;
+ALTER FUNCTION px.nextshot() OWNER TO administrators;
 
 
 drop type px.nextshot2type cascade;
@@ -2358,7 +2358,7 @@ CREATE OR REPLACE FUNCTION px.nextshot2() RETURNS SETOF px.nextshot2type AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextshot2() OWNER TO lsadmin;
+ALTER FUNCTION px.nextshot2() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shotsUpdateTF() RETURNS trigger AS $$
   DECLARE
@@ -2392,14 +2392,14 @@ CREATE OR REPLACE FUNCTION px.shotsUpdate0TF() returns trigger AS $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shotsUpdate0TF() OWNER TO lsadmin;
+ALTER FUNCTION px.shotsUpdate0TF() OWNER TO administrators;
 
 CREATE TRIGGER shotsUpdate0Trigger BEFORE UPDATE ON px.shots FOR EACH ROW EXECUTE PROCEDURE px.shotsUpdate0TF();
 
 CREATE OR REPLACE FUNCTION px.getshots( pid text, type text) RETURNS SETOF px.shots AS $$
   SELECT * FROM px.shots WHERE sdspid=$1 and stype=$2 ORDER BY sindex ASC;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getshots( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.getshots( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
   DECLARE
@@ -2436,72 +2436,72 @@ CREATE OR REPLACE FUNCTION px.getshots( pid text) RETURNS SETOF px.shots AS $$
     return;
   END;
 $$ LANGUAGE PLPGSQL SECURITY DEFINER;
-ALTER FUNCTION px.getshots( text) OWNER TO lsadmin;
+ALTER FUNCTION px.getshots( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_fn( pid text, type text, i int, arg_1 text) RETURNS void AS $$
   BEGIN UPDATE px.shots SET sfn=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_fn( text, text, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_fn( text, text, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_start( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET sstart=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_start( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_start( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_axis( pid text, type text, i int, arg_1 text) RETURNS void AS $$
   BEGIN UPDATE px.shots SET saxis=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_axis( text, text, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_axis( text, text, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_width( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET swidth=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_width( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_width( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_expt( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET sexpt=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_expt( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_expt( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_expu( pid text, type text, i int, arg_1 text) RETURNS void AS $$
   BEGIN UPDATE px.shots SET expu=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_expu( text, text, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_expu( text, text, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_phi( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET phi=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_phi( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_phi( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_omega( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET somega=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_omega( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_omega( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_kappa( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET skappa=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_kappa( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_kappa( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_dist( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET sdist=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_dist( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_dist( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_energy( pid text, type text, i int, arg_1 numeric) RETURNS void AS $$
   BEGIN UPDATE px.shots SET snrg=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_energy( text, text, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_energy( text, text, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_comment( pid text, type text, i int, arg_1 text) RETURNS void AS $$
   BEGIN UPDATE px.shots SET scmt=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_comment( text, text, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_comment( text, text, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.shot_set_state( pid text, type text, i int, arg_1 text) RETURNS void AS $$
   BEGIN UPDATE px.shots SET sstate=arg_1 where sdspid=pid and stype=type and sindex=i; END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.shot_set_state( text, text, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.shot_set_state( text, text, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.startsnap( token text) RETURNS void AS $$
   DECLARE
@@ -2512,7 +2512,7 @@ CREATE OR REPLACE FUNCTION px.startsnap( token text) RETURNS void AS $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startsnap( text) OWNER TO lsadmin;
+ALTER FUNCTION px.startsnap( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.retake( theKey bigint) RETURNS void AS $$
@@ -2532,7 +2532,7 @@ CREATE OR REPLACE FUNCTION px.retake( theKey bigint) RETURNS void AS $$
 --    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retake( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.retake( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.retake( thestn int, theKey bigint) RETURNS void AS $$
   DECLARE
@@ -2551,7 +2551,7 @@ CREATE OR REPLACE FUNCTION px.retake( thestn int, theKey bigint) RETURNS void AS
 --    END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retake( int, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.retake( int, bigint) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
@@ -2569,7 +2569,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retakerest( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.retakerest( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.retakerest( thestn int, theKey bigint) RETURNS void AS $$
   DECLARE
@@ -2586,7 +2586,7 @@ CREATE OR REPLACE FUNCTION px.retakerest( thestn int, theKey bigint) RETURNS voi
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.retakerest( int, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.retakerest( int, bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.delshots( pid text, type text, starti int, endi int) RETURNS void AS $$
   DECLARE
@@ -2594,7 +2594,7 @@ CREATE OR REPLACE FUNCTION px.delshots( pid text, type text, starti int, endi in
     DELETE FROM px.shots WHERE sdspid=pid and stype=type and sindex >= starti and sindex <= endi;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.delshots( text, text, int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.delshots( text, text, int, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void AS $$
@@ -2632,7 +2632,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( pid text, initialpos numeric) RETURNS void
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mksnap( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.mksnap( text, numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mkshutterless( theStn int, pid text) RETURNS void AS $$
@@ -2670,7 +2670,7 @@ CREATE OR REPLACE FUNCTION px.mkshutterless( theStn int, pid text) RETURNS void 
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkshutterless( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.mkshutterless( int, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeric) RETURNS void AS $$
@@ -2708,7 +2708,7 @@ CREATE OR REPLACE FUNCTION px.mksnap( theStn bigint, pid text, initialpos numeri
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mksnap( bigint, text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.mksnap( bigint, text, numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mkorthosnap( pid text, initialpos numeric) RETURNS void AS $$
@@ -2717,7 +2717,7 @@ CREATE OR REPLACE FUNCTION px.mkorthosnap( pid text, initialpos numeric) RETURNS
     PERFORM px.mksnap( pid, initialpos+90);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO lsadmin;
+ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.mkorthosnap( theStn bigint, pid text, initialpos numeric) RETURNS void AS $$
   BEGIN
@@ -2725,7 +2725,7 @@ CREATE OR REPLACE FUNCTION px.mkorthosnap( theStn bigint, pid text, initialpos n
     PERFORM px.mksnap( theStn, pid, initialpos+90);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO lsadmin;
+ALTER FUNCTION px.mkorthosnap( text, numeric ) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.mkindexsnap( pid text, initialpos numeric, delta numeric, n int) RETURNS void AS $$
   BEGIN
@@ -2735,7 +2735,7 @@ CREATE OR REPLACE FUNCTION px.mkindexsnap( pid text, initialpos numeric, delta n
     END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkindexsnap( text, numeric, numeric, int) OWNER TO lsadmin;
+ALTER FUNCTION px.mkindexsnap( text, numeric, numeric, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mkorthoindexsnap( pid text, initialpos numeric, delta numeric, n int) RETURNS void AS $$
@@ -2750,7 +2750,7 @@ CREATE OR REPLACE FUNCTION px.mkorthoindexsnap( pid text, initialpos numeric, de
     END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkorthoindexsnap( text, numeric, numeric, int) OWNER TO lsadmin;
+ALTER FUNCTION px.mkorthoindexsnap( text, numeric, numeric, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
@@ -2960,12 +2960,12 @@ CREATE OR REPLACE FUNCTION px.mkshots( token text) RETURNS void as $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.mkshots( text) OWNER TO lsadmin;
+ALTER FUNCTION px.mkshots( text) OWNER TO administrators;
 
 CREATE TABLE px.pauseStates (
        pss text primary key
 );
-ALTER TABLE px.pauseStates OWNER TO lsadmin;
+ALTER TABLE px.pauseStates OWNER TO administrators;
 INSERT INTO px.pauseStates (pss) values ('Please Pause');       -- request that the data collection pause
 INSERT INTO px.pauseStates (pss) values ('I Paused');           -- Notification that the data collection has paused
 INSERT INTO px.pauseStates (pss) values ('Not Paused');         -- We are not paused right now
@@ -2976,7 +2976,7 @@ CREATE TABLE px.pause (
        pStn int references px.stations (stnkey),        -- the station we are pausing for
        pps  text references px.pauseStates (pss)        -- the actual request
 );
-ALTER TABLE px.pause OWNER TO lsadmin;
+ALTER TABLE px.pause OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pauseUpdateTF()  returns trigger AS $$
   DECLARE
@@ -2991,24 +2991,24 @@ CREATE OR REPLACE FUNCTION px.pauseUpdateTF()  returns trigger AS $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pauseUpdateTF() OWNER TO lsadmin;
+ALTER FUNCTION px.pauseUpdateTF() OWNER TO administrators;
 
 CREATE TRIGGER paused_trigger BEFORE UPDATE ON px.pause FOR EACH ROW EXECUTE PROCEDURE px.pauseUpdateTF();
 
 CREATE OR REPLACE FUNCTION px.ispaused() RETURNS boolean AS $$
   SELECT pps != 'Not Paused' FROM px.pause WHERE pStn = px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ispaused() OWNER TO lsadmin;
+ALTER FUNCTION px.ispaused() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ispaused( thestn int) RETURNS boolean AS $$
   SELECT pps != 'Not Paused' FROM px.pause WHERE pStn = $1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ispaused(int) OWNER TO lsadmin;
+ALTER FUNCTION px.ispaused(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ispausedi() RETURNS int AS $$
   SELECT case when pps != 'Not Paused' then 1 else 0 end FROM px.pause WHERE pStn = px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.ispausedi() OWNER TO lsadmin;
+ALTER FUNCTION px.ispausedi() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.pauseRequest() RETURNS VOID AS $$
@@ -3025,7 +3025,7 @@ CREATE OR REPLACE FUNCTION px.pauseRequest() RETURNS VOID AS $$
     EXECUTE 'NOTIFY ' || ntfy;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pauseRequest() OWNER TO lsadmin;
+ALTER FUNCTION px.pauseRequest() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pauseRequest( theStn bigint) RETURNS VOID AS $$
   DECLARE
@@ -3041,7 +3041,7 @@ CREATE OR REPLACE FUNCTION px.pauseRequest( theStn bigint) RETURNS VOID AS $$
     EXECUTE 'NOTIFY ' || ntfy;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pauseRequest( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.pauseRequest( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pauseTell() RETURNS VOID AS $$
   DECLARE
@@ -3055,7 +3055,7 @@ CREATE OR REPLACE FUNCTION px.pauseTell() RETURNS VOID AS $$
     PERFORM px.kvset(px.getstation(),'running', '0');
     END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pauseTell() OWNER TO lsadmin;
+ALTER FUNCTION px.pauseTell() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unpause() RETURNS VOID AS $$
   DECLARE
@@ -3068,7 +3068,7 @@ CREATE OR REPLACE FUNCTION px.unpause() RETURNS VOID AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unpause() OWNER TO lsadmin;
+ALTER FUNCTION px.unpause() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unpause( stn bigint) RETURNS VOID AS $$
   DECLARE
@@ -3081,7 +3081,7 @@ CREATE OR REPLACE FUNCTION px.unpause( stn bigint) RETURNS VOID AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unpause( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.unpause( bigint) OWNER TO administrators;
 
 
 CREATE TABLE px.runqueue (
@@ -3095,7 +3095,7 @@ CREATE TABLE px.runqueue (
         references px.stypes (st) on update cascade,
     UNIQUE (rqStn, rqOrder)
 );
-ALTER TABLE px.runqueue OWNER TO lsadmin;
+ALTER TABLE px.runqueue OWNER TO administrators;
 --GRANT SELECT, INSERT, UPDATE, DELETE ON px.runqueue TO PUBLIC;
 
 CREATE OR REPLACE FUNCTION px.runqueue_delete_tf() RETURNS trigger AS $$
@@ -3111,7 +3111,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_delete_tf() RETURNS trigger AS $$
     RETURN NULL;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_delete_tf() OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_delete_tf() OWNER TO administrators;
 
 CREATE TRIGGER runqueue_delete_trigger AFTER DELETE ON px.runqueue FOR EACH STATEMENT EXECUTE PROCEDURE px.runqueue_delete_tf();
 
@@ -3148,7 +3148,7 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( token text, stype text) RETURNS void
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushrunqueue( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushrunqueue( text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pushrunqueue( theStn bigint, token text, stype text) RETURNS void AS $$
   --
@@ -3185,7 +3185,7 @@ CREATE OR REPLACE FUNCTION px.pushrunqueue( theStn bigint, token text, stype tex
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushrunqueue( bigint, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushrunqueue( bigint, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_up( theKey bigint) RETURNS void AS $$
 --
@@ -3202,7 +3202,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_up( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_up( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_up( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_down( theKey bigint) RETURNS void AS $$
 --
@@ -3221,7 +3221,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_down( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_down( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_down( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_top( theKey bigint) RETURNS void AS $$
 --
@@ -3245,7 +3245,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_top( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_top( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_top( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_bottom( theKey bigint) RETURNS void AS $$
 --
@@ -3272,7 +3272,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_bottom( theKey bigint) RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_bottom( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_bottom( bigint) OWNER TO administrators;
 
 
 
@@ -3298,7 +3298,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get() returns SETOF px.runqueuetype AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_get() OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_get() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_get( theStn bigint) returns SETOF px.runqueuetype AS $$
   DECLARE
@@ -3320,7 +3320,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get( theStn bigint) returns SETOF px.runq
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_get( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_get( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) returns xml AS $$
   DECLARE
@@ -3351,7 +3351,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_get_xml( thePid text, theStn bigint) retu
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_get_xml( text, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_get_xml( text, bigint) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
@@ -3366,7 +3366,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_remove( k bigint) RETURNS void AS $$
     END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_remove( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_remove( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_clear( theStn bigint) RETURNS void AS $$
   DECLARE
@@ -3374,17 +3374,17 @@ CREATE OR REPLACE FUNCTION px.runqueue_clear( theStn bigint) RETURNS void AS $$
     DELETE FROM px.runqueue WHERE rqStn=theStn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_clear( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_clear( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueuecount() RETURNS int AS $$
   SELECT count(*)::int FROM px.runqueue WHERE rqStn=px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.runqueuecount() OWNER TO lsadmin;
+ALTER FUNCTION px.runqueuecount() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getrunqueuetype() RETURNS text AS $$
   SELECT coalesce(rqType,'') FROM px.runqueue WHERE rqStn=px.getstation() ORDER BY rqCTS ASC limit 1;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.getrunqueuetype() OWNER TO lsadmin;
+ALTER FUNCTION px.getrunqueuetype() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
   --
@@ -3432,12 +3432,12 @@ CREATE OR REPLACE FUNCTION px.poprunqueue() RETURNS void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.poprunqueue() OWNER TO lsadmin;
+ALTER FUNCTION px.poprunqueue() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.clearrunqueue() RETURNS void AS $$
   DELETE FROM px.runqueue WHERE rqStn = px.getstation();
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.clearrunqueue() OWNER TO lsadmin;
+ALTER FUNCTION px.clearrunqueue() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.runqueue_has( pid text) returns BOOLEAN AS $$
   BEGIN
@@ -3448,7 +3448,7 @@ CREATE OR REPLACE FUNCTION px.runqueue_has( pid text) returns BOOLEAN AS $$
     return false;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.runqueue_has( text) OWNER TO lsadmin;
+ALTER FUNCTION px.runqueue_has( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.startrun() returns void AS $$
@@ -3462,7 +3462,7 @@ CREATE OR REPLACE FUNCTION px.startrun() returns void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startrun() OWNER TO lsadmin;
+ALTER FUNCTION px.startrun() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.startrun( theStn bigint) returns void AS $$
   DECLARE
@@ -3475,7 +3475,7 @@ CREATE OR REPLACE FUNCTION px.startrun( theStn bigint) returns void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startrun( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.startrun( bigint) OWNER TO administrators;
 
 
 
@@ -3489,7 +3489,7 @@ CREATE TABLE px.epicsLink (
         elName text NOT NULL,                   -- our name for this variable
         elPV   text NOT NULL
 );
-ALTER TABLE px.epicsLink OWNER TO lsadmin;
+ALTER TABLE px.epicsLink OWNER TO administrators;
 
 INSERT INTO px.epicsLink (elStn, elName, elPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'distance', '21:G1:DT:D');
 INSERT INTO px.epicsLink (elStn, elName, elPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-F'), 'distance', '21:F1:DT:D');
@@ -3505,7 +3505,7 @@ CREATE TABLE px.epicsPVMLink (
         epvmlPV   text NOT NULL
                 references epics._pvmonitors (pvmName) ON UPDATE CASCADE
 );
-ALTER TABLE px.epicsPVMLink OWNER TO lsadmin;
+ALTER TABLE px.epicsPVMLink OWNER TO administrators;
 
 INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-F'), 'Io', '21:F1:scaler1_cts3.A');
 INSERT INTO px.epicsPVMLink (epvmlStn, epvmlName, epvmlPV) VALUES ( (select stnKey from px.stations where stnname='21-ID-G'), 'Io', '21:G1:scaler1_cts3.A');
@@ -3543,14 +3543,14 @@ CREATE OR REPLACE FUNCTION px.isthere( thestn bigint, motion text, value numeric
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isthere( bigint, text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.isthere( bigint, text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.isthere( motion text, value numeric) returns boolean AS $$
   BEGIN
     return px.isthere( px.getstation(), motion, value);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isthere( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.isthere( text, numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
@@ -3561,7 +3561,7 @@ CREATE OR REPLACE FUNCTION px.isthere( motion text) RETURNS boolean AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isthere( text) OWNER TO lsadmin;
+ALTER FUNCTION px.isthere( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.isthere( stn int, motion text) RETURNS boolean AS $$
   DECLARE
@@ -3571,7 +3571,7 @@ CREATE OR REPLACE FUNCTION px.isthere( stn int, motion text) RETURNS boolean AS 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isthere( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.isthere( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.isstopped( thestn bigint, motion text) RETURNS boolean AS $$
   DECLARE
@@ -3582,7 +3582,7 @@ CREATE OR REPLACE FUNCTION px.isstopped( thestn bigint, motion text) RETURNS boo
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isstopped( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.isstopped( bigint, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
@@ -3590,7 +3590,7 @@ CREATE OR REPLACE FUNCTION px.isstopped( motion text) RETURNS boolean AS $$
     return px.isstopped( px.getstation(), motion);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.isstopped( text) OWNER TO lsadmin;
+ALTER FUNCTION px.isstopped( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric) RETURNS BOOLEAN AS $$
@@ -3620,7 +3620,7 @@ CREATE OR REPLACE FUNCTION px.moveit( theStn bigint, motion text, value numeric)
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.moveit( bigint, text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.moveit( bigint, text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS boolean AS $$
   DECLARE
@@ -3628,17 +3628,17 @@ CREATE OR REPLACE FUNCTION px.moveit( motion text, value numeric) RETURNS boolea
     return px.moveit( px.getStation(), motion, value);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.moveit( text, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.moveit( text, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dspeed( thestn int) returns text as $$
   SELECT epics.caget( epvmlpv) FROM px.epicspvmlink WHERE epvmlname='DSpeed' and epvmlstn=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_dspeed(int) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_dspeed(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dspeed() returns text as $$
   SELECT px.rt_get_dspeed(px.getStation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_dspeed() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_dspeed() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
   DECLARE
@@ -3648,7 +3648,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_bcx() returns text as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_bcx() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_bcx() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_bcy() returns text as $$
   DECLARE
@@ -3658,7 +3658,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_bcy() returns text as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_bcy() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_bcy() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns numeric as $$
   DECLARE
@@ -3668,17 +3668,17 @@ CREATE OR REPLACE FUNCTION px.rt_get_nbcy( thestn bigint) returns numeric as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_nbcy(bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_nbcy(bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_capdetected( thestn int) returns int as $$
   SELECT epics.caget( epvmlpv)::int FROM px.epicspvmlink WHERE epvmlname='capDetected' and epvmlstn=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_capdetected( int) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_capdetected( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_capdetected() returns int as $$
   SELECT epics.caget( epvmlpv)::int FROM px.epicspvmlink WHERE epvmlname='capDetected' and epvmlstn=px.getStation();
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_capdetected() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_capdetected() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
   DECLARE
@@ -3689,7 +3689,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_dist() returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_dist() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_dist() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_dist( stn bigint) returns text AS $$
   DECLARE
@@ -3700,7 +3700,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_dist( stn bigint) returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_dist( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_dist( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_ndist( stn bigint) returns numeric AS $$
   DECLARE
@@ -3710,12 +3710,12 @@ CREATE OR REPLACE FUNCTION px.rt_get_ndist( stn bigint) returns numeric AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_ndist( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_ndist( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_can_home_omega() returns boolean AS $$
   SELECT px.rt_get_dist() >= 100.0;
 $$ LANGUAGE sql SECURITY DEFINER;
-ALTER FUNCTION px.rt_can_home_omega() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_can_home_omega() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
   DECLARE
@@ -3724,7 +3724,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( d numeric) returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE PLPGSQL SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_dist( numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
   DECLARE
@@ -3733,7 +3733,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( d text) returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_dist( text) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_dist( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d text) returns void AS $$
   DECLARE
@@ -3742,7 +3742,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d text) returns void A
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_dist( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_dist( bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d numeric) returns void AS $$
   DECLARE
@@ -3751,7 +3751,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_dist( theStn bigint, d numeric) returns voi
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_dist( bigint, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_dist( bigint, numeric) OWNER TO administrators;
 
 
 CREATE TABLE px.distSaves (
@@ -3768,7 +3768,7 @@ CREATE TABLE px.distSaves (
         dsIn  numeric default 500,      -- saved data collection position
         dsOut numeric default 500       -- Position for detector out of the way
 );
-ALTER TABLE px.distSaves OWNER TO lsadmin;
+ALTER TABLE px.distSaves OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px._moveDetectorOut( pvmk bigint, value numeric) RETURNS void AS $$
 -- _moveDetectorOut
@@ -3791,7 +3791,7 @@ CREATE OR REPLACE FUNCTION px._moveDetectorOut( pvmk bigint, value numeric) RETU
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px._moveDetectorOut( bigint, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px._moveDetectorOut( bigint, numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px._moveDetectorIn( pvmk bigint, value numeric) RETURNS void AS $$
@@ -3812,12 +3812,12 @@ CREATE OR REPLACE FUNCTION px._moveDetectorIn( pvmk bigint, value numeric) RETUR
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px._moveDetectorIn( bigint, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px._moveDetectorIn( bigint, numeric) OWNER TO administrators;
 
 CREATE TABLE px._energyLookUpMethods (
         elum text primary key
 );
-ALTER TABLE px._energyLookUpMethods OWNER TO lsadmin;
+ALTER TABLE px._energyLookUpMethods OWNER TO administrators;
 INSERT INTO px._energyLookUpMethods (elum) VALUES ('table');
 INSERT INTO px._energyLookUpMethods (elum) VALUES ('epics');
 
@@ -3832,7 +3832,7 @@ CREATE TABLE px._energyHistory (
                 references px.stations (stnkey),
         ehValue numeric default NULL                    -- the actual value  (NULL signifies unknown value)
 );
-ALTER TABLE px._energyHistory OWNER TO lsadmin;
+ALTER TABLE px._energyHistory OWNER TO administrators;
 
 CREATE TABLE px._energyLookUp (
         eluKey serial primary key,      -- table key
@@ -3843,7 +3843,7 @@ CREATE TABLE px._energyLookUp (
         eluEpics text                   -- epics PV name of epics energy pv
                 references epics._pvmonitors (pvmname) ON UPDATE CASCADE
 );
-ALTER TABLE px._energyLookUp OWNER TO lsadmin;
+ALTER TABLE px._energyLookUp OWNER TO administrators;
 
 CREATE VIEW px.energyLookUp (eluKey, eluStn, eluValue) AS
         SELECT eluKey, eluStn,
@@ -3856,7 +3856,7 @@ CREATE VIEW px.energyLookUp (eluKey, eluStn, eluValue) AS
         LEFT JOIN epics._pvmonitors ON eluEpics=pvmname
         WHERE ehKey in (select max(ehkey) FROM px._energyHistory GROUP BY ehStn) OR pvmkey is not NULL;
 
-ALTER TABLE px.energyLookUp OWNER TO lsadmin;
+ALTER TABLE px.energyLookUp OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_wavelength() returns text AS $$
@@ -3874,7 +3874,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_wavelength() returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_wavelength() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_wavelength() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_wavelength( stn bigint) returns text AS $$
   DECLARE
@@ -3891,7 +3891,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_wavelength( stn bigint) returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_wavelength( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_wavelength( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_wavelength( lambda text) returns void AS $$
   DECLARE
@@ -3899,7 +3899,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_wavelength( lambda text) returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_wavelength( text) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_wavelength( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_energy() returns text AS $$
   DECLARE
@@ -3913,7 +3913,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy() returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_energy() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_energy() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_energy( stn bigint) returns text AS $$
   DECLARE
@@ -3927,7 +3927,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_energy( stn bigint) returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_energy( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_energy( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_nenergy( stn bigint) returns numeric AS $$
   --
@@ -3944,7 +3944,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_nenergy( stn bigint) returns numeric AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_nenergy( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_nenergy( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_energy( e text) returns void AS $$
   DECLARE
@@ -3952,7 +3952,7 @@ CREATE OR REPLACE FUNCTION px.rt_set_energy( e text) returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_energy( text) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_energy( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
 --
@@ -3983,7 +3983,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0() returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_ni0() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_ni0() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_ni0( stn bigint) returns text AS $$
 --
@@ -4014,7 +4014,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ni0( stn bigint) returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_ni0() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_ni0() OWNER TO administrators;
 
 
 CREATE TYPE px.locationType AS ( x numeric, y numeric, z numeric);
@@ -4040,7 +4040,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_magnetPosition() returns px.locationType AS
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_magnetPosition() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_magnetPosition() OWNER TO administrators;
 
 
 
@@ -4052,7 +4052,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_blstatus() returns text AS $$
     RETURN 'No Beam Today';
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_blstatus() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_blstatus() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_open_fes() returns void AS $$
 --
@@ -4062,7 +4062,7 @@ CREATE OR REPLACE FUNCTION px.rt_open_fes() returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_open_fes() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_open_fes() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_open_ss() returns void AS $$
 --
@@ -4072,7 +4072,7 @@ CREATE OR REPLACE FUNCTION px.rt_open_ss() returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_open_ss() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_open_ss() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_close_ss() returns void AS $$
 --
@@ -4082,7 +4082,7 @@ CREATE OR REPLACE FUNCTION px.rt_close_ss() returns void AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_close_ss() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_close_ss() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
@@ -4110,7 +4110,7 @@ CREATE OR REPLACE FUNCTION px.getName( theId int) returns text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getName( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getName( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getConfigFile( thePid text, theId int) returns text AS $$
   DECLARE
@@ -4131,7 +4131,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( thePid text, theId int) returns tex
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getConfigFile( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.getConfigFile( text, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
@@ -4211,7 +4211,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( theId int) returns text AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getConfigFile( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getConfigFile( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( thePid text, stn int) returns xml AS $$
   DECLARE
@@ -4224,7 +4224,7 @@ CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( thePid text, stn int) retu
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getAllPuckPositionsxml( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.getAllPuckPositionsxml( text, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( stn int) returns xml as $$
@@ -4254,7 +4254,7 @@ CREATE OR REPLACE FUNCTION px.getAllPuckPositionsxml( stn int) returns xml as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getAllPuckPositionsxml( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getAllPuckPositionsxml( int) OWNER TO administrators;
 
 
 
@@ -4275,7 +4275,7 @@ CREATE OR REPLACE FUNCTION px.getCurrentStationId() returns int as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentStationId() OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentStationId() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getCurrentStationId( theStn bigint) returns int as $$
   DECLARE
@@ -4293,7 +4293,7 @@ CREATE OR REPLACE FUNCTION px.getCurrentStationId( theStn bigint) returns int as
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentStationId( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentStationId( bigint) OWNER TO administrators;
 
 CREATE TYPE px.nextActionType AS ( key bigint, action text);
 
@@ -4332,7 +4332,7 @@ CREATE OR REPLACE FUNCTION px.nextAction() returns px.nextActionType as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextAction() OWNER TO lsadmin;
+ALTER FUNCTION px.nextAction() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint, val text) RETURNS VOID AS $$
   DECLARE
@@ -4340,7 +4340,7 @@ CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint, val text) RETURNS VOID
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2ReturnValue( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.md2ReturnValue( bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint) RETURNS VOID AS $$
   DECLARE
@@ -4348,7 +4348,7 @@ CREATE OR REPLACE FUNCTION px.md2ReturnValue( key bigint) RETURNS VOID AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2ReturnValue( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.md2ReturnValue( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2CallFailed( key bigint) RETURNS VOID  AS $$
   DECLARE
@@ -4356,14 +4356,14 @@ CREATE OR REPLACE FUNCTION px.md2CallFailed( key bigint) RETURNS VOID  AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2CallFailed( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.md2CallFailed( bigint) OWNER TO administrators;
 
 
 
 CREATE TABLE px.nextSamplesState (
        nss text primary key
 );
-ALTER TABLE px.nextSamplesState OWNER TO lsadmin;
+ALTER TABLE px.nextSamplesState OWNER TO administrators;
 INSERT INTO px.nextSamplesState (nss) VALUES ('NEW');
 INSERT INTO px.nextSamplesState (nss) VALUES ('WORKING');
 INSERT INTO px.nextSamplesState (nss) VALUES ('DONE');
@@ -4377,7 +4377,7 @@ CREATE TABLE px.nextSamples (
          references px.nextSamplesState (nss) ON UPDATE cascade,
        nsId int not null
 );
-ALTER TABLE px.nextSamples OWNER TO lsadmin;
+ALTER TABLE px.nextSamples OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
   DECLARE
@@ -4388,7 +4388,7 @@ CREATE OR REPLACE FUNCTION px.nextsamples_insert_tf0() returns trigger AS $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextsamples_insert_tf0() OWNER TO lsadmin;
+ALTER FUNCTION px.nextsamples_insert_tf0() OWNER TO administrators;
 
 CREATE TRIGGER nextsamples_insert_trigger0 BEFORE INSERT ON px.nextsamples FOR EACH ROW EXECUTE PROCEDURE px.nextsamples_insert_tf0();
 
@@ -4399,7 +4399,7 @@ CREATE TABLE px.lastSamples (
        lsId int not null,
        lsesaf int
 );
-ALTER TABLE px.lastSamples OWNER TO lsadmin;
+ALTER TABLE px.lastSamples OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lastSample( theStn bigint) returns int as $$
   DECLARE
@@ -4412,7 +4412,7 @@ CREATE OR REPLACE FUNCTION px.lastSample( theStn bigint) returns int as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lastSample( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.lastSample( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.lastSample() returns int as $$
   DECLARE
@@ -4420,7 +4420,7 @@ CREATE OR REPLACE FUNCTION px.lastSample() returns int as $$
     return px.lastSamples( px.getStation());
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lastSample() OWNER TO lsadmin;
+ALTER FUNCTION px.lastSample() OWNER TO administrators;
 
 
 
@@ -4452,7 +4452,7 @@ CREATE OR REPLACE FUNCTION px.nextSample() returns int as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextSample() OWNER TO lsadmin;
+ALTER FUNCTION px.nextSample() OWNER TO administrators;
 
 
 
@@ -4467,7 +4467,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( theId int) returns void AS $$
     PERFORM px.md2pushqueue( 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.requestTransfer( int) OWNER TO lsadmin;
+ALTER FUNCTION px.requestTransfer( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void AS $$
   DECLARE
@@ -4513,7 +4513,7 @@ CREATE OR REPLACE FUNCTION px.requestTransfer( stn int, theId int) returns void 
     PERFORM px.md2pushqueue( stn, 'transfer');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.requestTransfer( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.requestTransfer( int, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, estTime numeric) returns int AS $$
@@ -4592,7 +4592,7 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, phiX nu
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startTransfer( int, boolean, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.startTransfer( int, boolean, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO administrators;
 
 
 CREATE TABLE px.transferArgs (
@@ -4608,7 +4608,7 @@ CREATE TABLE px.transferArgs (
        taEstTime numeric,
        taDist numeric default NULL
 );
-ALTER TABLE px.transferArgs OWNER TO lsadmin;
+ALTER TABLE px.transferArgs OWNER TO administrators;
 
 
 CREATE TABLE px.previoussample (
@@ -4617,7 +4617,7 @@ CREATE TABLE px.previoussample (
   psstn int references px.stations (stnKey),
   psId  int
 );
-ALTER TABLE px.previoussample OWNER TO lsadmin;
+ALTER TABLE px.previoussample OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int, yy int, zz int, esttime numeric) returns int AS $$
   -- returns 1 if transfer is allowed, 0 if unknown sample is already present
@@ -4685,12 +4685,12 @@ CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean, xx int,
     return 1;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.startTransfer( int, boolean, int, int, int, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.startTransfer( int, boolean, int, int, int, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.startTransfer( theId int, present boolean) returns int AS $$
   SELECT px.startTransfer( $1, $2, 0, 0, 0);
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.startTransfer( int, boolean) OWNER TO lsadmin;
+ALTER FUNCTION px.startTransfer( int, boolean) OWNER TO administrators;
 
 
 
@@ -4700,7 +4700,7 @@ CREATE OR REPLACE FUNCTION px.lockCryo() RETURNS void AS $$
     PERFORM pg_advisory_lock( px.getstation(), 6);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lockCryo() OWNER TO lsadmin;
+ALTER FUNCTION px.lockCryo() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.unlockCryo() RETURNS void AS $$
   DECLARE
@@ -4708,7 +4708,7 @@ CREATE OR REPLACE FUNCTION px.unlockCryo() RETURNS void AS $$
     PERFORM pg_advisory_unlock( px.getstation(), 6);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.unlockCryo() OWNER TO lsadmin;
+ALTER FUNCTION px.unlockCryo() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.waitCryo() RETURNS void AS $$
   DECLARE
@@ -4717,7 +4717,7 @@ CREATE OR REPLACE FUNCTION px.waitCryo() RETURNS void AS $$
     PERFORM pg_advisory_unlock( px.getstation()::int, 6);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.waitCryo() OWNER TO lsadmin;
+ALTER FUNCTION px.waitCryo() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.endTransfer( bigstn bigint) RETURNS void AS $$
@@ -4740,7 +4740,7 @@ CREATE OR REPLACE FUNCTION px.endTransfer( bigstn bigint) RETURNS void AS $$
     PERFORM px.kvset( thestn,'centers.length', '1');
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.endTransfer(bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.endTransfer(bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
   DECLARE
@@ -4748,7 +4748,7 @@ CREATE OR REPLACE FUNCTION px.dropAirRights( ) returns VOID AS $$
     PERFORM pg_advisory_unlock( px.getstation(), 2);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.dropAirRights()  OWNER TO lsadmin;
+ALTER FUNCTION px.dropAirRights()  OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.demandAirRights( ) returns VOID AS $$
@@ -4756,7 +4756,7 @@ CREATE OR REPLACE FUNCTION px.demandAirRights( ) returns VOID AS $$
     PERFORM pg_advisory_lock( px.getstation(), 2);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.demandAirRights() OWNER TO lsadmin;
+ALTER FUNCTION px.demandAirRights() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.checkAirRights( ) returns boolean AS $$
   DECLARE
@@ -4769,7 +4769,7 @@ CREATE OR REPLACE FUNCTION px.checkAirRights( ) returns boolean AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.checkAirRights() OWNER TO lsadmin;
+ALTER FUNCTION px.checkAirRights() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.requestAirRights( ) returns boolean AS $$
@@ -4780,7 +4780,7 @@ CREATE OR REPLACE FUNCTION px.requestAirRights( ) returns boolean AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.requestAirRights() OWNER TO lsadmin;
+ALTER FUNCTION px.requestAirRights() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
@@ -4830,7 +4830,7 @@ CREATE OR REPLACE FUNCTION px.requestRobotAirRights( ) returns boolean AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.requestRobotAirRights() OWNER TO lsadmin;
+ALTER FUNCTION px.requestRobotAirRights() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
   --
@@ -4892,7 +4892,7 @@ CREATE OR REPLACE FUNCTION px.dropRobotAirRights( ) returns void AS $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.dropRobotAirRights() OWNER TO lsadmin;
+ALTER FUNCTION px.dropRobotAirRights() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
@@ -4916,7 +4916,7 @@ CREATE OR REPLACE FUNCTION px.getCurrentSampleID() returns int as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentSampleID() OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentSampleID() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getCurrentSampleID( theStn bigint) returns int as $$
   DECLARE
@@ -4939,7 +4939,7 @@ CREATE OR REPLACE FUNCTION px.getCurrentSampleID( theStn bigint) returns int as 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getCurrentSampleID( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.getCurrentSampleID( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.currentSampleDPS() returns text AS $$
   DECLARE
@@ -4960,7 +4960,7 @@ CREATE OR REPLACE FUNCTION px.currentSampleDPS() returns text AS $$
     return rtn;
   END;
 $$ LANGUAGE PLPGSQL SECURITY DEFINER;
-ALTER FUNCTION px.currentSampleDPS() OWNER TO lsadmin;
+ALTER FUNCTION px.currentSampleDPS() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
   DECLARE
@@ -4982,13 +4982,13 @@ CREATE OR REPLACE FUNCTION px.getContents( theId int) returns setof int as $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getContents( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getContents( int) OWNER TO administrators;
 
 
 CREATE TABLE px.holderstates (
        ss text primary key
 );
-ALTER TABLE px.holderstates OWNER TO lsadmin;
+ALTER TABLE px.holderstates OWNER TO administrators;
 
 INSERT INTO px.holderstates (ss) VALUES ('Unknown');
 INSERT INTO px.holderstates (ss) VALUES ('Present');
@@ -5023,13 +5023,13 @@ CREATE TABLE px.holderPositions (
        hpImageMaskURL text default NULL,        -- Image, if any, to use for the selection mask for position contained herein
        hpTempLoc int default 0                  -- current location id of sample normally stored here (0 means item not in temp storage)
        );
-ALTER TABLE px.holderPositions OWNER TO lsadmin;
+ALTER TABLE px.holderPositions OWNER TO administrators;
 
 
 CREATE TABLE px.holderTypes (
        ht text primary key
 );
-ALTER TABLE px.holdertypes OWNER TO lsadmin;
+ALTER TABLE px.holdertypes OWNER TO administrators;
 INSERT INTO px.holdertypes (ht) VALUES ('Station');
 INSERT INTO px.holdertypes (ht) VALUES ('Dewar');
 INSERT INTO px.holdertypes (ht) VALUES ('SPINE Basket');
@@ -5048,7 +5048,7 @@ CREATE TABLE px.holders (
        hBarCode text unique,            -- unique id for this sample: NULL means we don't know or don't care
        hRFID text unique                -- unique id for this sample: NULL means we don't know or don't care
 );
-ALTER TABLE px.holders OWNER TO lsadmin;
+ALTER TABLE px.holders OWNER TO administrators;
 
 
 CREATE TABLE px.holderHistory (
@@ -5061,7 +5061,7 @@ CREATE TABLE px.holderHistory (
        hhStart timestamp with time zone default now(),
        hhLast  timestamp with time Zone default now()
 );
-ALTER TABLE px.holderHistory OWNER TO lsadmin;
+ALTER TABLE px.holderHistory OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.holderHistoryInsertTF() returns trigger as $$
@@ -5074,7 +5074,7 @@ CREATE OR REPLACE FUNCTION px.holderHistoryInsertTF() returns trigger as $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.holderHistoryInsertTF() OWNER TO lsadmin;
+ALTER FUNCTION px.holderHistoryInsertTF() OWNER TO administrators;
 CREATE TRIGGER hh_insert_trigger BEFORE INSERT ON px.holderhistory FOR EACH ROW EXECUTE PROCEDURE px.holderHistoryInsertTF();
 
 CREATE OR REPLACE FUNCTION px.holderHistoryUpdateTF() returns trigger as $$
@@ -5092,7 +5092,7 @@ CREATE OR REPLACE FUNCTION px.holderHistoryUpdateTF() returns trigger as $$
     RETURN NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.holderHistoryUpdateTF() OWNER TO lsadmin;
+ALTER FUNCTION px.holderHistoryUpdateTF() OWNER TO administrators;
 CREATE TRIGGER hh_update_trigger AFTER UPDATE ON px.holderhistory FOR EACH ROW EXECUTE PROCEDURE px.HolderHistoryUpdateTF();
 
 
@@ -5114,7 +5114,7 @@ CREATE OR REPLACE FUNCTION px.possibleChildren( expId int, theId int) returns se
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.possibleChildren( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.possibleChildren( int, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text, theType text, barcode text, rfid text) returns int as $$
@@ -5154,12 +5154,12 @@ CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text, 
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.insertHolder( int, int, text, text, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.insertHolder( int, int, text, text, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.insertHolder( expId int, theId int, theName text) returns int as $$
   SELECT px.insertHolder( $1, $2, $3, NULL, NULL, NULL);
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.insertHolder( int, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.insertHolder( int, int, text) OWNER TO administrators;
 
 
 CREATE  OR REPLACE FUNCTION px.insertPuck( expId int, theId int, theName text, barcode text, rfid text, addsamples boolean) RETURNS int AS $$
@@ -5183,7 +5183,7 @@ CREATE  OR REPLACE FUNCTION px.insertPuck( expId int, theId int, theName text, b
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO lsadmin;
+ALTER FUNCTION px.insertPuck( int, int, text, text, text, boolean) OWNER TO administrators;
 
 
 
@@ -5193,7 +5193,7 @@ CREATE TABLE px._md2queue (
        md2Stn int not null,   -- station number
        md2Cmd text not null             -- the Command
 );
-ALTER TABLE px._md2queue OWNER TO lsadmin;
+ALTER TABLE px._md2queue OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
   DECLARE
@@ -5214,7 +5214,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( cmd text) RETURNS VOID AS $$
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2pushqueue( text) OWNER TO lsadmin;
+ALTER FUNCTION px.md2pushqueue( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2pushqueue( stn int, cmd text) RETURNS VOID AS $$
   DECLARE
@@ -5235,7 +5235,7 @@ CREATE OR REPLACE FUNCTION px.md2pushqueue( stn int, cmd text) RETURNS VOID AS $
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2pushqueue( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.md2pushqueue( int, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
@@ -5250,18 +5250,18 @@ CREATE OR REPLACE FUNCTION px.md2popqueue() returns px._md2queue AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.md2popqueue() OWNER TO lsadmin;
+ALTER FUNCTION px.md2popqueue() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.md2clearqueue( the_stn int) returns VOID AS $$
  DELETE FROM px._md2queue WHERE md2stn = $1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.md2clearqueue( int) OWNER TO lsadmin;
+ALTER FUNCTION px.md2clearqueue( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.md2clearqueue() returns VOID AS $$
  DELETE FROM px._md2queue WHERE md2stn=px.getstation();
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.md2clearqueue() OWNER TO lsadmin;
+ALTER FUNCTION px.md2clearqueue() OWNER TO administrators;
 
 
 
@@ -5292,14 +5292,14 @@ CREATE OR REPLACE FUNCTION px.getHolderPositionState( theId int) returns text as
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getHolderPositionState( int) OWNER TO lsadmin;
+ALTER FUNCTION px.getHolderPositionState( int) OWNER TO administrators;
 
 
 CREATE TABLE px.errorSeverity (
        es text primary key,             -- text version of message
        ess int not null unique          -- sort order of severity (0=message, 2=fatal)
 );
-ALTER TABLE px.errorSeverity OWNER TO lsadmin;
+ALTER TABLE px.errorSeverity OWNER TO administrators;
 INSERT INTO px.errorSeverity (ess, es) VALUES ( 0, 'message');
 INSERT INTO px.errorSeverity (ess, es) VALUES ( 1, 'warning');
 INSERT INTO px.errorSeverity (ess, es) VALUES ( 2, 'fatal');
@@ -5311,7 +5311,7 @@ CREATE TABLE px.errors (
        eTerse text not null,                                    -- terse error
        eVerbose text not null                                   -- long winded version of the error
 );
-ALTER TABLE px.errors OWNER TO lsadmin;
+ALTER TABLE px.errors OWNER TO administrators;
 
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('message', 1, 'Test Message 1', 'This message is here to test the error handling severity 0');
 INSERT INTO px.errors (eSeverity, eid, eTerse, eVerbose) VALUES ('message', 2, 'Test Message 2', 'This alternate message is here to test the error handling severity 0');
@@ -5341,7 +5341,7 @@ CREATE TABLE px.activeErrors (
        eaTsLast timestamp with time zone not null default now(), -- last occurance of this error
        eaCount int not null default 1                            -- number of errors yet to be ackknowledged
 );
-ALTER TABLE px.activeErrors OWNER TO lsadmin;
+ALTER TABLE px.activeErrors OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.activeErrorInsertTF() returns trigger as $$
   DECLARE
@@ -5355,7 +5355,7 @@ CREATE OR REPLACE FUNCTION px.activeErrorInsertTF() returns trigger as $$
     return NEW;
   END;
 $$ LANGUAGE PLPGSQL SECURITY DEFINER;
-ALTER FUNCTION px.activeerrorinserttf() OWNER TO lsadmin;
+ALTER FUNCTION px.activeerrorinserttf() OWNER TO administrators;
 CREATE TRIGGER activeErrorsInsertTrigger BEFORE INSERT ON px.activeerrors FOR EACH ROW EXECUTE PROCEDURE px.activeerrorinserttf();
 
 
@@ -5376,7 +5376,7 @@ CREATE OR REPLACE FUNCTION px.nextErrors() returns setof px.errorType AS $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextErrors() OWNER TO lsadmin;
+ALTER FUNCTION px.nextErrors() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.nextErrors( theStn bigint) returns setof px.errorType AS $$
@@ -5394,7 +5394,7 @@ CREATE OR REPLACE FUNCTION px.nextErrors( theStn bigint) returns setof px.errorT
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.nextErrors( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.nextErrors( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.acknowledgeError( theId int) RETURNS VOID AS $$
   DECLARE
@@ -5402,7 +5402,7 @@ CREATE OR REPLACE FUNCTION px.acknowledgeError( theId int) RETURNS VOID AS $$
     UPDATE px.activeErrors SET eaAcknowledged=True WHERE eaId=theId and eaStn=px.getstation();
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.acknowledgeError( int) OWNER TO lsadmin;
+ALTER FUNCTION px.acknowledgeError( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pushError( theId int, theDetails text) RETURNS VOID AS $$
   DECLARE
@@ -5426,7 +5426,7 @@ CREATE OR REPLACE FUNCTION px.pushError( theId int, theDetails text) RETURNS VOI
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushError( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushError( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pushError( theStn bigint, theId int, theDetails text) RETURNS VOID AS $$
   DECLARE
@@ -5450,7 +5450,7 @@ CREATE OR REPLACE FUNCTION px.pushError( theStn bigint, theId int, theDetails te
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.pushError( bigint, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.pushError( bigint, int, text) OWNER TO administrators;
 
 
 
@@ -5470,7 +5470,7 @@ CREATE OR REPLACE FUNCTION px.ui_stations( esaf int) returns SETOF px.ui_station
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ui_stations( int) OWNER TO lsadmin;
+ALTER FUNCTION px.ui_stations( int) OWNER TO administrators;
 
 CREATE TYPE px.ui_prefixType AS ( fp text, pid text);
 CREATE OR REPLACE FUNCTION px.ui_prefixes( esaf int, station int) returns setof px.ui_prefixType AS $$
@@ -5487,7 +5487,7 @@ CREATE OR REPLACE FUNCTION px.ui_prefixes( esaf int, station int) returns setof 
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ui_prefixes( int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ui_prefixes( int, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.ui_snapNorms( pid text) returns setof text as $$
   DECLARE
@@ -5503,7 +5503,7 @@ CREATE OR REPLACE FUNCTION px.ui_snapNorms( pid text) returns setof text as $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ui_snapNorms( text) OWNER TO lsadmin;
+ALTER FUNCTION px.ui_snapNorms( text) OWNER TO administrators;
 
 CREATE TYPE px.ui_shotType AS ( skey bigint, sfn text);
 CREATE OR REPLACE FUNCTION px.ui_shots( pid text, typ text) returns setof px.ui_shotType AS $$
@@ -5520,7 +5520,7 @@ CREATE OR REPLACE FUNCTION px.ui_shots( pid text, typ text) returns setof px.ui_
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ui_shots( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.ui_shots( text, text) OWNER TO administrators;
 
 CREATE TYPE px.ui_detailType AS ( skey bigint, sindex int, sfn text, sstart numeric, swidth numeric, sexpt numeric, sexpu text, sphi numeric, somega numeric,
        skappa numeric, sdist numeric, snrg numeric, scmt text, sstate text, sposition int, sts timestamptz, dsdir text);
@@ -5545,7 +5545,7 @@ CREATE OR REPLACE FUNCTION px.ui_details( pid text, snapnorm text, theKey bigint
      return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.ui_details( text, text, bigint, int) OWNER TO lsadmin;
+ALTER FUNCTION px.ui_details( text, text, bigint, int) OWNER TO administrators;
 
 
 CREATE TABLE px.transferPoints (
@@ -5564,7 +5564,7 @@ CREATE TABLE px.transferPoints (
        tpOmega numeric,
        tpKappa numeric
 );
-ALTER TABLE px.transferPoints OWNER TO lsadmin;
+ALTER TABLE px.transferPoints OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, tableZ numeric, phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric, omega numeric, kappa numeric) returns void as $$
   DECLARE
@@ -5576,7 +5576,7 @@ CREATE OR REPLACE FUNCTION px.SetTransferPoint( tableX numeric, tableY numeric, 
       ( px.getStation(), tool, tableX, tableY, tableZ, phiX, phiY, phiZ, cenX, cenY, omega, kappa);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.SetTransferPoint( phiX numeric, phiY numeric, phiZ numeric, cenX numeric, cenY numeric) returns void AS $$
   DECLARE
@@ -5586,7 +5586,7 @@ CREATE OR REPLACE FUNCTION px.SetTransferPoint( phiX numeric, phiY numeric, phiZ
     PERFORM px.setTransferPoint( mp.x, mp.y, mp.z, phiX, phiY, phiZ, cenX, cenY, 0.0, 0.0);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.SetTransferPoint( numeric, numeric, numeric, numeric, numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.abortTransfer() returns void AS $$
@@ -5595,26 +5595,26 @@ CREATE OR REPLACE FUNCTION px.abortTransfer() returns void AS $$
   return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.abortTransfer() OWNER TO lsadmin;
+ALTER FUNCTION px.abortTransfer() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.logmagnetstate( boolean) returns void AS $$
 -- OK, maybe this should be in the cats schema instead of the px schema, but here it is
   INSERT INTO cats.magnetstates (msStn, msSamplePresent) VALUES ( px.getStation(), $1);
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.logmagnetstate( boolean) OWNER TO lsadmin;
+ALTER FUNCTION px.logmagnetstate( boolean) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getmagnetstate() returns boolean AS $$
 --  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=px.getStation() ORDER BY msKey DESC LIMIT 1;
   SELECT px.rt_get_capdetected(px.getStation()::int)=1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getmagnetstate() OWNER TO lsadmin;
+ALTER FUNCTION px.getmagnetstate() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getmagnetstate( bigint) returns boolean AS $$
 --  SELECT msSamplePresent FROM cats.magnetstates WHERE msStn=$1 ORDER BY msKey DESC LIMIT 1;
   SELECT px.rt_get_capdetected($1::int)=1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getmagnetstate( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.getmagnetstate( bigint) OWNER TO administrators;
 
 
 
@@ -5623,12 +5623,12 @@ CREATE TABLE px.lockstates  (
        lsstate int not null unique,
        lstext text
 );
-ALTER TABLE px.lockstates OWNER TO lsadmin;
+ALTER TABLE px.lockstates OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.locks( theStn bigint) returns int AS $$
   SELECT bit_or((2^(objid::int-1))::int) FROM pg_locks as a LEFT JOIN pg_stat_activity as b ON a.pid=b.pid WHERE locktype='advisory' and classid=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.locks( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.locks( bigint) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
@@ -5661,7 +5661,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml() returns xml AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.stnstatusxml() OWNER TO lsadmin;
+ALTER FUNCTION px.stnstatusxml() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
   DECLARE
@@ -5749,7 +5749,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( thePid text) returns xml AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.stnstatusxml( text) OWNER TO lsadmin;
+ALTER FUNCTION px.stnstatusxml( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.stnstatusxml( theExpNo int) returns xml AS $$
@@ -5786,13 +5786,13 @@ CREATE OR REPLACE FUNCTION px.stnstatusxml( theExpNo int) returns xml AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.stnstatusxml( int) OWNER TO lsadmin;
+ALTER FUNCTION px.stnstatusxml( int) OWNER TO administrators;
 
 
 CREATE TABLE px.stnmodes (
        sm text primary key
 );
-ALTER TABLE px.stnmodes OWNER TO lsadmin;
+ALTER TABLE px.stnmodes OWNER TO administrators;
 
 INSERT INTO px.stnmodes (sm) VALUES ('CollectState');
 INSERT INTO px.stnmodes (sm) VALUES ('CenterState');
@@ -5818,7 +5818,7 @@ CREATE TABLE px.stnstatus (
                references px.stnmodes (sm) on update cascade on delete set null,
         sscvhash text default null              -- centering video hash, if any
 );
-ALTER TABLE px.stnstatus OWNER TO lsadmin;
+ALTER TABLE px.stnstatus OWNER TO administrators;
 
 CREATE TABLE px.uistatus (
        --
@@ -5831,7 +5831,7 @@ CREATE TABLE px.uistatus (
        uik text,                        -- the k of the kv pair
        uiv text                         -- the v of the kv pair
 );
-ALTER TABLE px.uistatus OWNER TO lsadmin;
+ALTER TABLE px.uistatus OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.uistatusUpdateTF() returns trigger as $$
   --
@@ -5843,7 +5843,7 @@ CREATE OR REPLACE FUNCTION px.uistatusUpdateTF() returns trigger as $$
     return new;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.uistatusUpdateTF() OWNER TO lsadmin;
+ALTER FUNCTION px.uistatusUpdateTF() OWNER TO administrators;
 
 CREATE TRIGGER uistatusUpdateTrigger BEFORE UPDATE ON px.uistatus FOR EACH ROW EXECUTE PROCEDURE px.uistatusUpdateTF();
 
@@ -5875,7 +5875,7 @@ CREATE OR REPLACE FUNCTION px.uistatus_set( pid text, theStn bigint, theKey text
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.uistatus_set( text, bigint, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.uistatus_set( text, bigint, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.uistatus_get_xml( pid text, theStn bigint) returns xml as $$
   DECLARE
@@ -5897,7 +5897,7 @@ CREATE OR REPLACE FUNCTION px.uistatus_get_xml( pid text, theStn bigint) returns
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.uistatus_get_xml( text, bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.uistatus_get_xml( text, bigint) OWNER TO administrators;
 
 
 
@@ -5913,7 +5913,7 @@ CREATE TABLE px.esafstatus (
         esdsedit text default null references px.datasets (dspid)
         unique (esesaf,esstn)
 );
-ALTER TABLE px.esafstatus OWNER TO lsadmin;
+ALTER TABLE px.esafstatus OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.esafstatusInsertTF() returns trigger AS $$
@@ -5936,7 +5936,7 @@ CREATE OR REPLACE FUNCTION px.esafstatusInsertTF() returns trigger AS $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.esafstatusInsertTF() OWNER TO lsadmin;
+ALTER FUNCTION px.esafstatusInsertTF() OWNER TO administrators;
 CREATE TRIGGER esafstatusInsertTrigger BEFORE INSERT ON px.esafstatus FOR EACH ROW EXECUTE PROCEDURE px.esafstatusInsertTF();
 
 
@@ -5948,7 +5948,7 @@ CREATE OR REPLACE FUNCTION px.stnstatusUpdateTF() returns trigger AS $$
     return NEW;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.stnstatusUpdateTF() OWNER TO lsadmin;
+ALTER FUNCTION px.stnstatusUpdateTF() OWNER TO administrators;
 CREATE TRIGGER stnstatusUpdateTrigger BEFORE UPDATE ON px.stnstatus FOR EACH ROW EXECUTE PROCEDURE px.stnstatusUpdateTF();
 
 
@@ -5959,7 +5959,7 @@ CREATE TABLE px.logins (
        lstn int not null,
        lesaf int not null
 );
-ALTER TABLE px.logins OWNER TO lsadmin;
+ALTER TABLE px.logins OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as $$
@@ -5970,7 +5970,7 @@ CREATE OR REPLACE FUNCTION px.login( expid int, thepwd text) returns boolean as 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.login( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.login( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.login( theStn int, expid int, thepwd text) returns boolean as $$
   DECLARE
@@ -6002,7 +6002,7 @@ CREATE OR REPLACE FUNCTION px.login( theStn int, expid int, thepwd text) returns
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.login( int, int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.login( int, int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.logout() returns void as $$
   DECLARE
@@ -6010,7 +6010,7 @@ CREATE OR REPLACE FUNCTION px.logout() returns void as $$
     PERFORM px.logout( px.getstation());
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.logout() OWNER TO lsadmin;
+ALTER FUNCTION px.logout() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.logout( theStn int) returns void as $$
   DECLARE
@@ -6021,7 +6021,7 @@ CREATE OR REPLACE FUNCTION px.logout( theStn int) returns void as $$
     PERFORM px.autologinnotify( theStn);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.logout( int) OWNER TO lsadmin;
+ALTER FUNCTION px.logout( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.who( thestn int) RETURNS INT AS $$
   DECLARE
@@ -6031,7 +6031,7 @@ CREATE OR REPLACE FUNCTION px.who( thestn int) RETURNS INT AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.who( int) OWNER TO lsadmin;
+ALTER FUNCTION px.who( int) OWNER TO administrators;
 
 
 
@@ -6047,23 +6047,23 @@ CREATE OR REPLACE FUNCTION px.detectorvncinit( thestn int) returns void as $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.detectorvncinit( int) OWNER TO lsadmin;
+ALTER FUNCTION px.detectorvncinit( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.detectorvncinit() returns void as $$
   SELECT px.detectorvncinit( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.detectorvncinit() OWNER TO lsadmin;
+ALTER FUNCTION px.detectorvncinit() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.currentesaf( thestn int) returns int as $$
   SELECT ssesaf FROM px.stnstatus WHERE ssstn=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.currentesaf( int) OWNER TO lsadmin;
+ALTER FUNCTION px.currentesaf( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.currentesaf() RETURNS int as $$
   SELECT px.currentesaf( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.currentesaf() OWNER TO lsadmin;
+ALTER FUNCTION px.currentesaf() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.whoami( theStn bigint) returns text AS $$
@@ -6077,12 +6077,12 @@ CREATE OR REPLACE FUNCTION px.whoami( theStn bigint) returns text AS $$
     return NULL;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.whoami( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.whoami( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.whoami() returns text AS $$
   SELECT px.whoami( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.whoami() OWNER TO lsadmin;
+ALTER FUNCTION px.whoami() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_twitter() returns text AS $$
@@ -6117,7 +6117,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_twitter() returns text AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_twitter() OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_twitter() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as $$
   --
@@ -6148,7 +6148,7 @@ CREATE OR REPLACE FUNCTION px.getShotsXml( pid text, token text) returns xml as 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getShotsXml( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.getShotsXml( text, text) OWNER TO administrators;
 
 
 CREATE TABLE px.kvs (
@@ -6169,7 +6169,7 @@ CREATE TABLE px.kvs (
        kvnotify text[] default null     -- list of notifies to send on change
        UNIQUE( kvname)
 );
-ALTER TABLE px.kvs OWNER TO lsadmin;
+ALTER TABLE px.kvs OWNER TO administrators;
 CREATE INDEX kvsNameIndex ON px.kvs (kvname);
 CREATE INDEX kvsStnIndex ON px.kvs (kvstn);
 
@@ -6183,7 +6183,7 @@ CREATE OR REPLACE FUNCTION px.kvtype( thename text, thetype int) returns void as
     PERFORM px.kvtype( px.getstation(), thename, thetype);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvtype( text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.kvtype( text, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvtype( thestn int, thename text, thetype int) returns void as $$
   --
@@ -6196,7 +6196,7 @@ CREATE OR REPLACE FUNCTION px.kvtype( thestn int, thename text, thetype int) ret
     UPDATE px.kvs SET kvdbrtype = thetype WHERE kvname=n and kvstn=thestn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvtype( int, text, int) OWNER TO lsadmin;
+ALTER FUNCTION px.kvtype( int, text, int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvspvupdate() returns void as $$
@@ -6235,7 +6235,7 @@ CREATE OR REPLACE FUNCTION px.kvspvupdate() returns void as $$
     END LOOP;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvspvupdate() OWNER TO lsadmin;
+ALTER FUNCTION px.kvspvupdate() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
@@ -6244,7 +6244,7 @@ CREATE OR REPLACE FUNCTION px.kvupdate( kvps text[]) returns void as $$
     PERFORM px.kvupdate( px.getstation(), kvps);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvupdate( text[]) OWNER TO lsadmin;
+ALTER FUNCTION px.kvupdate( text[]) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as $$
   --
@@ -6301,7 +6301,7 @@ CREATE OR REPLACE FUNCTION px.kvupdate( thestn int, kvps text[]) returns void as
     RETURN;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvupdate( int, text[]) OWNER TO lsadmin;
+ALTER FUNCTION px.kvupdate( int, text[]) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvdel( stn int, k text) returns void as $$
   if not SD.has_key( "redis"):
@@ -6331,7 +6331,7 @@ CREATE OR REPLACE FUNCTION px.kvdel( stn int, k text) returns void as $$
   return
 
 $$ language plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.kvdel( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvdel( int, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
@@ -6362,7 +6362,7 @@ CREATE OR REPLACE FUNCTION px.kvkeys( stn int, wc text) returns setof text as $$
   return r[lstn].keys( lwc)
 
 $$ language plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.kvkeys( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvkeys( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvpv_inp( pv text) RETURNS text as $$
   if not SD.has_key( "redis"):
@@ -6386,7 +6386,7 @@ CREATE OR REPLACE FUNCTION px.kvpv_inp( pv text) RETURNS text as $$
 
   return None
 $$ language plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.kvpv_inp( text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvpv_inp( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvgetpy( stn int, k text) returns text as $$
@@ -6417,7 +6417,7 @@ CREATE OR REPLACE FUNCTION px.kvgetpy( stn int, k text) returns text as $$
   rtn = r[lstn].hget( lk, "VALUE")
   return rtn
 $$ LANGUAGE plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.kvgetpy( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvgetpy( int, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvsetpy( stn int, k text, v text) returns void as $$
@@ -6452,20 +6452,20 @@ CREATE OR REPLACE FUNCTION px.kvsetpy( stn int, k text, v text) returns void as 
   pipe.execute()
 
 $$ LANGUAGE plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.kvsetpy( int, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvsetpy( int, text, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.kvget( thestn int, k text) returns text as $$
   SELECT px.kvgetpy( $1, $2);
  --  SELECT  kvvalue FROM px.kvs WHERE kvname='stns.'||$1::text||'.'||$2 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.kvget( int, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvget( int, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvget( k text) returns text as $$
   SELECT px.kvgetpy( -1, k);
   --SELECT  kvvalue FROM px.kvs WHERE kvname=$1 LIMIT 1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.kvget( text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvget( text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvsetioc( k text, v text) returns void as $$
   --
@@ -6499,7 +6499,7 @@ CREATE OR REPLACE FUNCTION px.kvsetioc( k text, v text) returns void as $$
     PERFORM px.md2pushqueue( thestn, md2string);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvsetioc(text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvsetioc(text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void as $$
   --
@@ -6579,21 +6579,21 @@ CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) returns void 
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvset(int, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvset(int, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvset( maybestn int, k text, v text) RETURNS void AS $$
   BEGIN
     PERFORM px.kvsetpy( maybestn, k, v);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvset( int, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvset( int, text, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.kvset( k text, v text) RETURNS void AS $$
   BEGIN
     PERFORM px.kvsetpy( -1, k, v);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.kvset( text, text) OWNER TO administrators;
 
 
 --CREATE TYPE px.redis_kv_type AS ( rname text, rvalue text, rseq int, rdbrtype int);
@@ -6607,7 +6607,7 @@ ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
 --    return;
 --  END;
 --$$ LANGUAGE plpgsql SECURITY DEFINER;
---ALTER FUNCTION px.redis_kv_init() OWNER TO lsadmin;
+--ALTER FUNCTION px.redis_kv_init() OWNER TO administrators;
 
 --CREATE OR REPLACE FUNCTION px.redis_kv_update( oldseq int) returns setof px.redis_kv_type AS $$
 --  DECLARE
@@ -6618,13 +6618,13 @@ ALTER FUNCTION px.kvset( text, text) OWNER TO lsadmin;
 --    END LOOP;
 --  END;
 --$$ LANGUAGE plpgsql SECURITY DEFINER;
---ALTER FUNCTION px.redis_kv_update(int) OWNER TO lsadmin;
+--ALTER FUNCTION px.redis_kv_update(int) OWNER TO administrators;
 
 
 
 drop type px.center_interpolate_type cascade;
 CREATE TYPE px.center_interpolate_type AS ( cx float, cy float, ax float, ay float, az float, active int);
-ALTER TYPE px.center_interpolate_type OWNER TO lsadmin;
+ALTER TYPE px.center_interpolate_type OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, nframes int) returns px.center_interpolate_type AS $$
   DECLARE
@@ -6733,7 +6733,7 @@ CREATE OR REPLACE FUNCTION px.center_interpolate( thestn int, maybe_frame int, n
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.center_interpolate( int, int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.center_interpolate( int, int, int) OWNER TO administrators;
 
 
 CREATE TABLE px.tunamemory (
@@ -6751,7 +6751,7 @@ CREATE TABLE px.tunamemory (
        mV   text default null,                          -- value
        UNIQUE( mStn, mK)                                -- only single values are permitted
 );
-ALTER TABLE px.tunamemory OWNER TO lsadmin;
+ALTER TABLE px.tunamemory OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.tunamemoryget( theStn bigint, k text) returns text as $$
   DECLARE
@@ -6766,7 +6766,7 @@ CREATE OR REPLACE FUNCTION px.tunamemoryget( theStn bigint, k text) returns text
     return null;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunamemoryget( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.tunamemoryget( bigint, text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.tunamemoryset( theStn bigint, k text, v text) returns void as $$
   DECLARE
@@ -6779,7 +6779,7 @@ CREATE OR REPLACE FUNCTION px.tunamemoryset( theStn bigint, k text, v text) retu
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunamemoryset( bigint, text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.tunamemoryset( bigint, text, text) OWNER TO administrators;
 
 
 CREATE TABLE px.tunacode (
@@ -6796,7 +6796,7 @@ CREATE TABLE px.tunacode (
        tclevel    int default 0,                        -- Stack level to support loops
        tcinstruction text default ''                    -- default instruction
 );
-ALTER TABLE px.tunacode OWNER TO lsadmin;
+ALTER TABLE px.tunacode OWNER TO administrators;
 
 CREATE TABLE px.tunapc (
        -- tuna program counter
@@ -6808,7 +6808,7 @@ CREATE TABLE px.tunapc (
        pcpc bigint references px.tunacode,      -- pointer to our program
        UNIQUE( pcStn, pcStack)                  -- only allow one pointer per stack level
 );
-ALTER TABLE px.tunapc OWNER TO lsadmin;
+ALTER TABLE px.tunapc OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
   DECLARE
@@ -6951,7 +6951,7 @@ CREATE OR REPLACE FUNCTION px.tunaNextPC( theStn bigint) returns bigint as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunaNextPC( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.tunaNextPC( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.tunaLoadInit( theStn bigint) returns void as $$
   DECLARE
@@ -6966,7 +6966,7 @@ CREATE OR REPLACE FUNCTION px.tunaLoadInit( theStn bigint) returns void as $$
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunaLoadInit( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.tunaLoadInit( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.tunaLoad( theStn bigint, istep text) returns void as $$
   DECLARE
@@ -7002,7 +7002,7 @@ CREATE OR REPLACE FUNCTION px.tunaLoad( theStn bigint, istep text) returns void 
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunaLoad( bigint, text) OWNER TO lsadmin;
+ALTER FUNCTION px.tunaLoad( bigint, text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
@@ -7055,7 +7055,7 @@ CREATE OR REPLACE FUNCTION px.tunaStep( theStn bigint) returns int as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.tunaStep( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.tunaStep( bigint) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int, wtime int) returns void AS $$
@@ -7148,7 +7148,7 @@ CREATE OR REPLACE FUNCTION px.testSamples( theStn int, samples int[], ntimes int
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.testSamples( int, int[], int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.testSamples( int, int[], int, int) OWNER TO administrators;
 
 
 CREATE TABLE px.trigcamtable (
@@ -7161,7 +7161,7 @@ CREATE TABLE px.trigcamtable (
        tcStartAngle float,
        tcSpeed float
 );
-ALTER TABLE px.trigcamtable OWNER TO lsadmin;
+ALTER TABLE px.trigcamtable OWNER TO administrators;
 
 drop type px.trigcamtype cascade;
 CREATE TYPE px.trigcamtype AS ( ip inet, port int, ts timestamptz, zoom int, startAngle float, speed float, fullpath text, esaf int, uid int, gid int, hash text);
@@ -7191,7 +7191,7 @@ CREATE OR REPLACE FUNCTION px.gettrigcam( theStn int) RETURNS px.trigcamtype AS 
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.gettrigcam( int) OWNER TO lsadmin;
+ALTER FUNCTION px.gettrigcam( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.gettrigcam() RETURNS px.trigcamtype AS $$
   DECLARE
@@ -7201,7 +7201,7 @@ CREATE OR REPLACE FUNCTION px.gettrigcam() RETURNS px.trigcamtype AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.gettrigcam() OWNER TO lsadmin;
+ALTER FUNCTION px.gettrigcam() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.gettrigcam( ntfy text) RETURNS px.trigcamtype AS $$
   DECLARE
@@ -7216,7 +7216,7 @@ CREATE OR REPLACE FUNCTION px.gettrigcam( ntfy text) RETURNS px.trigcamtype AS $
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.gettrigcam(text) OWNER TO lsadmin;
+ALTER FUNCTION px.gettrigcam(text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, startAngle float, speed float) RETURNS VOID AS $$
@@ -7239,14 +7239,14 @@ CREATE OR REPLACE FUNCTION px.trigcam( theStn bigint, ts timestamptz, zoom int, 
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.trigcam( bigint, timestamptz, int, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.trigcam( bigint, timestamptz, int, float, float) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.trigcam( ts timestamptz, zoom int, startAngle float, speed float) RETURNS VOID AS $$
   BEGIN
     PERFORM px.trigcam(px.getStation(), ts, zoom, startAngle, speed);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.trigcam( timestamptz, int, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.trigcam( timestamptz, int, float, float) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.trigcamdone( hash text) returns void as $$
   DECLARE
@@ -7286,7 +7286,7 @@ CREATE OR REPLACE FUNCTION px.trigcamdone( hash text) returns void as $$
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.trigcamdone( text) OWNER TO lsadmin;
+ALTER FUNCTION px.trigcamdone( text) OWNER TO administrators;
 
 CREATE TABLE px.centertable (
        ckey serial primary key,
@@ -7314,7 +7314,7 @@ CREATE TABLE px.centertable (
        cabskappa float, -- absolute value of kappa after applying changes
        cabsphi float    -- absolute value of phi after applying changes
 );
-ALTER TABLE px.centertable OWNER TO lsadmin;
+ALTER TABLE px.centertable OWNER TO administrators;
 CREATE INDEX centertableStn ON px.centertable (cstn);
 CREATE INDEX centertableCv  ON px.centertable (ctcv);
 
@@ -7359,14 +7359,14 @@ CREATE OR REPLACE FUNCTION px.setcenter( theStn int, thePid text, theIp inet, th
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( int, text, inet, int, int, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( int, text, inet, int, int, float, float, float, float, float) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setcenter( thePid text, theIp inet, thePort int, zoom int, x float, y float, z float, b float, t0 float) returns void AS $$
   BEGIN
     PERFORM px.setcenter( px.getStation(), thePid, theIp, thePort, zoom, x, y, z, ax, ay, b, t0);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.setcenter( text, inet, int, int, float, float, float, float, float, float, float) OWNER TO administrators;
 
 
 drop type px.centertype2 cascade;
@@ -7480,13 +7480,13 @@ CREATE OR REPLACE FUNCTION px.getcenter2( theStn int) returns px.centertype2 AS 
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getcenter2(int) OWNER TO lsadmin;
+ALTER FUNCTION px.getcenter2(int) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.getcenter2() returns px.centertype2 AS $$
   SELECT * from px.getcenter2( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.getcenter2() OWNER TO lsadmin;
+ALTER FUNCTION px.getcenter2() OWNER TO administrators;
 
 
 DROP TYPE px.centertype CASCADE;
@@ -7517,7 +7517,7 @@ CREATE OR REPLACE FUNCTION px.getcenter( theStn bigint) returns px.centertype AS
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getcenter( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.getcenter( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getcenter() returns px.centertype AS $$
   DECLARE
@@ -7527,7 +7527,7 @@ CREATE OR REPLACE FUNCTION px.getcenter() returns px.centertype AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getcenter() OWNER TO lsadmin;
+ALTER FUNCTION px.getcenter() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.getcenter( ntfy text) returns px.centertype AS $$
   DECLARE
@@ -7542,7 +7542,7 @@ CREATE OR REPLACE FUNCTION px.getcenter( ntfy text) returns px.centertype AS $$
     RETURN rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.getcenter( text) OWNER TO lsadmin;
+ALTER FUNCTION px.getcenter( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.applycenter( thestn int, acx float, acy float, aax float, aay float, aaz float, akappa float, aphi float) returns void as $$
@@ -7572,14 +7572,14 @@ CREATE OR REPLACE FUNCTION px.applycenter( thestn int, acx float, acy float, aax
     UPDATE px.centertable SET cabscx=acx, cabscy=acy, cabsax=aax, cabsay=aay, cabsaz=aaz, cabskappa=akappa, cabsphi=aphi WHERE ckey=ourkey;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.applycenter( int, float, float, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.applycenter( int, float, float, float, float, float, float, float) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.applycenter( cx float, cy float, ax float, ay float, az float, kappa float, phi float) returns void as $$
   BEGIN
     PERFORM px.applycenter( px.getstation(), cx, cy, ax, ay, az, kappa, phi);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.applycenter( float, float, float, float, float, float, float) OWNER TO lsadmin;
+ALTER FUNCTION px.applycenter( float, float, float, float, float, float, float) OWNER TO administrators;
 
 
 
@@ -7594,12 +7594,12 @@ CREATE OR REPLACE FUNCTION px.autologininit( theStn bigint) returns void as $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.autologininit( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.autologininit( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.autologininit() returns void as $$
   SELECT px.autologininit( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.autologininit() OWNER TO lsadmin;
+ALTER FUNCTION px.autologininit() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.autologinlisten( theStn int) returns void as $$
   DECLARE
@@ -7611,7 +7611,7 @@ CREATE OR REPLACE FUNCTION px.autologinlisten( theStn int) returns void as $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.autologinlisten( int) OWNER TO lsadmin;
+ALTER FUNCTION px.autologinlisten( int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.autologinnotify( theStn bigint) returns void as $$
   DECLARE
@@ -7623,12 +7623,12 @@ CREATE OR REPLACE FUNCTION px.autologinnotify( theStn bigint) returns void as $$
     END IF;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.autologinnotify( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.autologinnotify( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.autologinnotify() returns void as $$
   SELECT px.autologinnotify( px.getstation());
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.autologinnotify() OWNER TO lsadmin;
+ALTER FUNCTION px.autologinnotify() OWNER TO administrators;
 
 
 drop type px.lnnamestype cascade;
@@ -7664,7 +7664,7 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text) returns setof px.lnnamestype AS
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lnnames( text) OWNER TO lsadmin;
+ALTER FUNCTION px.lnnames( text) OWNER TO administrators;
 
 CREATE TYPE px.hardlinktype AS (src text, dest text);
 CREATE OR REPLACE FUNCTION px.hardlinks(esaf int) returns setof px.hardlinktype AS $$
@@ -7688,7 +7688,7 @@ CREATE OR REPLACE FUNCTION px.hardlinks(esaf int) returns setof px.hardlinktype 
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.hardlinks(int) OWNER TO lsadmin;
+ALTER FUNCTION px.hardlinks(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.hardlinkdirs(esaf int, stn int) returns setof px.hardlinktype AS $$
   DECLARE
@@ -7713,13 +7713,13 @@ CREATE OR REPLACE FUNCTION px.hardlinkdirs(esaf int, stn int) returns setof px.h
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.hardlinkdirs(int,int) OWNER TO lsadmin;
+ALTER FUNCTION px.hardlinkdirs(int,int) OWNER TO administrators;
 
 CREATE TYPE px.spotListType AS (bufn text, stats json);
 CREATE OR REPLACE FUNCTION px.spotList( thePid text) returns setof px.spotListType AS $$
   SELECT sstbup, sststats FROM px.shot_stats_table WHERE sstdspid=$1 order by sstbup;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.spotList( text) OWNER TO lsadmin;
+ALTER FUNCTION px.spotList( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.lnnames( pid text, the_type text) returns setof px.lnnamestype AS $$
@@ -7732,7 +7732,7 @@ CREATE OR REPLACE FUNCTION px.lnnames( pid text, the_type text) returns setof px
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.lnnames( text, text) OWNER TO lsadmin;
+ALTER FUNCTION px.lnnames( text, text) OWNER TO administrators;
 
 
 
@@ -7749,7 +7749,7 @@ CREATE TABLE px.detectorinfo (
        diysize int,
        dibin int        -- bin mode
 );
-ALTER TABLE px.detectorinfo OWNER TO lsadmin;
+ALTER TABLE px.detectorinfo OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setdetectorinfo( thestn bigint, info text, xpixsize numeric, ypixsize numeric, xsize int, ysize int, bin int) returns void as $$
   DECLARE
@@ -7765,14 +7765,14 @@ CREATE OR REPLACE FUNCTION px.setdetectorinfo( thestn bigint, info text, xpixsiz
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setdetectorinfo( bigint, text, numeric, numeric, int, int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.setdetectorinfo( bigint, text, numeric, numeric, int, int, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.setdetectorinfo( info text, xpixsize numeric, ypixsize numeric, xsize int, ysize int, bin int) returns void as $$
   BEGIN
     PERFORM px.setdetectorinfo( px.getstation(), info, xpixsize, ypixsize, xsize, ysize, bin);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.setdetectorinfo( text, numeric, numeric, int, int, int) OWNER TO lsadmin;
+ALTER FUNCTION px.setdetectorinfo( text, numeric, numeric, int, int, int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as $$
   DECLARE
@@ -7792,7 +7792,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_ntopres( thestn bigint) returns numeric as 
   return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_ntopres( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_ntopres( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_topres( thestn bigint, res numeric) returns void as $$
   DECLARE
@@ -7814,14 +7814,14 @@ CREATE OR REPLACE FUNCTION px.rt_set_topres( thestn bigint, res numeric) returns
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_topres( bigint, numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_topres( bigint, numeric) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_set_topres( res numeric) returns void as $$
   BEGIN
     PERFORM px.rt_set_topres( px.getstation(), res);
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_set_topres( numeric) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_set_topres( numeric) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.rt_get_topres( thestn bigint ) returns text as $$
@@ -7832,7 +7832,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_topres( thestn bigint ) returns text as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_topres( bigint) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_topres( bigint) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.rt_get_topres( ) returns text as $$
   DECLARE
@@ -7842,7 +7842,7 @@ CREATE OR REPLACE FUNCTION px.rt_get_topres( ) returns text as $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.rt_get_topres( ) OWNER TO lsadmin;
+ALTER FUNCTION px.rt_get_topres( ) OWNER TO administrators;
 
 
 
@@ -7874,7 +7874,7 @@ CREATE OR REPLACE FUNCTION px._dstimes() RETURNS setof px._dstimestype as $$
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px._dstimes() OWNER TO lsadmin;
+ALTER FUNCTION px._dstimes() OWNER TO administrators;
 
 DROP TYPE IF EXISTS px.dstimestype CASCADE;
 CREATE TYPE px.dstimestype AS ( stn int, srate numeric, proprietary text, ndatasets int, avg_overhead numeric, stddev_overhead numeric);
@@ -7884,7 +7884,7 @@ CREATE OR REPLACE FUNCTION px.dstimes() RETURNS setof px.dstimestype as $$
   GROUP BY stn, proprietary, srate
   ORDER BY  stn, proprietary, count(*) desc;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.dstimes() OWNER TO lsadmin;
+ALTER FUNCTION px.dstimes() OWNER TO administrators;
 
 DROP TYPE IF EXISTS px.blusagetype CASCADE;
 CREATE TYPE px.blusagetype AS (stn int, esaf int, piln text, pifn text, piemail text, institution text, funding text, duration numeric, shots int);
@@ -7945,25 +7945,25 @@ CREATE OR REPLACE FUNCTION px.blusage( therun text) returns setof px.blusagetype
     return;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.blusage( text) OWNER TO lsadmin;
+ALTER FUNCTION px.blusage( text) OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.obfuscate_dsdir_dsfp(the_esaf int) RETURNS VOID AS $$
   UPDATE px.datasets SET dsdir=md5(dsdir), dsfp=md5(dsfp), dsobfuscated=true
     WHERE dsesaf=$1 AND NOT dsobfuscated;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.obfuscate_dsdir_dsfp(int) OWNER TO lsadmin;
+ALTER FUNCTION px.obfuscate_dsdir_dsfp(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.obfuscate_sfn_spath_sbupath(the_dspid text) RETURNS VOID AS $$
   UPDATE px.shots SET sfn=md5(sfn), spath=md5(spath), sbupath=md5(sbupath), sobfuscated=true
   WHERE sdspid=$1 AND NOT sobfuscated;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.obfuscate_sfn_spath_sbupath(text) OWNER TO lsadmin;
+ALTER FUNCTION px.obfuscate_sfn_spath_sbupath(text) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.active_datasets(esaf int) returns setof text AS $$
   SELECT DISTINCT dspid  FROM px.datasets LEFT JOIN px.shots ON sdspid=dspid WHERE skey is not null AND sstate='Done' and dsesaf=$1;
 $$ LANGUAGE SQL SECURITY DEFINER;
-ALTER FUNCTION px.active_datasets(int) OWNER TO lsadmin;
+ALTER FUNCTION px.active_datasets(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.delete_all_inactive_frames() RETURNS int AS $$
   --
@@ -7986,7 +7986,7 @@ CREATE OR REPLACE FUNCTION px.delete_all_inactive_frames() RETURNS int AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.delete_all_inactive_frames() OWNER TO lsadmin;
+ALTER FUNCTION px.delete_all_inactive_frames() OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.delete_inactive_frames(stn int) RETURNS int AS $$
   --
@@ -8017,7 +8017,7 @@ CREATE OR REPLACE FUNCTION px.delete_inactive_frames(stn int) RETURNS int AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.delete_inactive_frames(int) OWNER TO lsadmin;
+ALTER FUNCTION px.delete_inactive_frames(int) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.pymodules() returns text as $$
 
@@ -8040,7 +8040,7 @@ import redis
 return sys.path
 
 $$ language plpythonu SECURITY DEFINER;
-ALTER FUNCTION px.pymodules() OWNER TO lsadmin;
+ALTER FUNCTION px.pymodules() OWNER TO administrators;
 
 
 CREATE OR REPLACE FUNCTION px.raster_step(params jsonb) RETURNS BOOLEAN AS $$
@@ -8118,7 +8118,7 @@ CREATE OR REPLACE FUNCTION px.raster_step(params jsonb) RETURNS BOOLEAN AS $$
     return rtn;
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.raster_step(jsonb) OWNER TO lsadmin;
+ALTER FUNCTION px.raster_step(jsonb) OWNER TO administrators;
 
 CREATE OR REPLACE FUNCTION px.set_sample_esaf() returns void AS $$
   DECLARE
@@ -8142,4 +8142,4 @@ CREATE OR REPLACE FUNCTION px.set_sample_esaf() returns void AS $$
 
   END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-ALTER FUNCTION px.set_sample_esaf() OWNER TO lsadmin;
+ALTER FUNCTION px.set_sample_esaf() OWNER TO administrators;
