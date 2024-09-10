@@ -329,7 +329,7 @@ class PxMarServer:
             self.dbfd = None
 
     def open( self):
-        self.db       = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
+        self.db       = pg.connect(dbname='ls',user='lsuser', host='postgres.ls-cat.net')
         self.dbfd     = self.db.fileno()
         self.p.register( self.dbfd, select.POLLIN | select.POLLPRI | select.POLLERR | select.POLLHUP | select.POLLNVAL)
 

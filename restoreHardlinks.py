@@ -37,8 +37,8 @@ class restoreHardlinks:
     bd  = None  # our user's backup directory
 
     def __init__( self):
-        self.db = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
-        self.l  = ldap.initialize( "ldap://ldap.ls-cat.org")
+        self.db = pg.connect(dbname='ls',user='lsuser', host='postgres.ls-cat.net')
+        self.l  = ldap.initialize( "ldap://ldap.ls-cat.net")
 
     def setUser( self, esaf):
         # get the ldap response tuple list of ls-cat.org enties with uid, uidNumber, gidNumber, and homeDirectory all defined

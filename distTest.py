@@ -19,7 +19,7 @@ class _Q:
     db = None   # our database connection
 
     def open( self):
-        self.db = pg.connect( dbname="ls", host="contrabass.ls-cat.org", user="lsuser" )
+        self.db = pg.connect( dbname="ls", host="postgres.ls-cat.net", user="lsuser" )
 
     def close( self):
         self.db.close()

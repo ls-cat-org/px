@@ -10,10 +10,10 @@ import time
 import sys
 
 stn_config = [
-    {'stn': 1, 'host': 'mung-2.ls-cat.org'},
-    {'stn': 2, 'host': 'orange-2.ls-cat.org'},
-    {'stn': 3, 'host': 'kiwi-2.ls-cat.org'},
-    {'stn': 4, 'host': 'mango-2.ls-cat.org'}
+    {'stn': 1, 'host': 'ioc-d.ls-cat.net'},
+    {'stn': 2, 'host': 'ioc-e.ls-cat.net'},
+    {'stn': 3, 'host': 'ioc-f.ls-cat.org'},
+    {'stn': 4, 'host': 'ioc-g.ls-cat.org'}
 ]
     
 stn_status = {}
@@ -82,7 +82,7 @@ class ESAF_Watcher:
 if __name__ == '__main__':
 
 
-    db = pg.connect(dbname='ls',user='lsuser', host='contrabass.ls-cat.org')
+    db = pg.connect(dbname='ls',user='lsuser', host='postgres.ls-cat.net')
 
     watchers = []
     for z in stn_config:
