@@ -219,14 +219,14 @@ int main( int argc, char **argv) {
   //
   // 
   fprintf( stderr, "getting db connection\n");
-  db = PQconnectdb( "dbname=ls user=lsuser host=10.1.0.3");
+  db = PQconnectdb( "dbname=ls user=lsuser host=postgres.ls-cat.net");
   if( PQstatus( db) != CONNECTION_OK) {
     fprintf( stderr, "Connection 1 failed\n");
     exit( 1);
   }
 
   fprintf( stderr, "getting dblock connection\n");
-  dblock = PQconnectdb( "dbname=ls user=lsuser host=10.1.0.3");
+  dblock = PQconnectdb( "dbname=ls user=lsuser host=postgres.ls-cat.net");
   if( PQstatus( dblock) != CONNECTION_OK) {
     fprintf( stderr, "Connection 1 failed\n");
     exit( 1);

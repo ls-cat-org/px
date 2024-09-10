@@ -72,7 +72,7 @@ marccd_version=`/opt/marccd/bin/marccd -v | awk '{print $3}'`
 #
 # Find out who has logged into the MD2 and who we are running as
 #
-currentuser=`psql -qAn --pset tuples_only -h 10.1.0.3 -U lsuser -c "select * from px.whoami()" ls`
+currentuser=`psql -qAn --pset tuples_only -h postgres.ls-cat.net -U lsuser -c "select * from px.whoami()" ls`
 iam=`whoami`
 
 #

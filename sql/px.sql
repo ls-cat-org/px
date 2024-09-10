@@ -441,7 +441,7 @@ INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cd
 --
 -- Testing: Mung on contrabass test program
 INSERT INTO px._config (cdetector, cdiffractometer, cstation, cdifflocktable, cdetectlocktable, cnotifykill, cnotifysnap, cnotifyrun, cnotifydetector, cnotifypause) VALUES (
-  inet '10.1.0.3', inet '10.1.252.164', '21-ID-E', 'px._id21e_diffractometerLock', 'px._id21e_detectorLock', 'id21e_kill', 'id21e_snap', 'id21e_run', 'id21e_det', 'id21e_pause'
+  inet 'contrabass.ls-cat.net', inet '10.1.252.164', '21-ID-E', 'px._id21e_diffractometerLock', 'px._id21e_detectorLock', 'id21e_kill', 'id21e_snap', 'id21e_run', 'id21e_det', 'id21e_pause'
 );
 
 
