@@ -96,7 +96,7 @@ fi
 #  (This construct changes to the MD2 user's home directory or, in case currentuser is empty,
 #   the home directory of the user running marccd)
 #
-theHomeDirectory=`ldapsearch -x -h ldap.ls-cat.org "(cn=$currentuser)" "homeDirectory" | grep 'homeDirectory:' | gawk '{print $2}'`
+theHomeDirectory=`ldapsearch -x -h ldap.ls-cat.net "(cn=$currentuser)" "homeDirectory" | grep 'homeDirectory:' | gawk '{print $2}'`
 cd ${theHomeDirectory}
 
 #
