@@ -5,7 +5,6 @@
 # Automatically run marccd as the right user in the right directory
 #
 
-import json             # decode sentinels
 import os               # process management (fork, uid/gid, kill, etc)
 import pwd              # get UID from username
 import redis            # our no-sql database
@@ -16,15 +15,25 @@ import sys              # for it's normal exit routing
 import tempfile         # stderr and stdout create for now
 import time             # Log message timestamps and sleep function
 
-from redis.sentinel import Sentinel
-
 class AutoDetector:
     """
     Start up marccd in it own x window using Xvnc or Xnest.  This program keeps an eye on who is logged
     into the station to collect data and restarts marccd in the correct directory as the correct user
     accordingly.
     """
-    
+
+    # This is the historical host alias for the marCCD computer running this script.
+    #   For station F, that is "vanilla.ls-cat.org".
+    #   For station G, this is "vinegar.ls-cat.org".
+    #
+    # This alias is used as a redis key, e.g. 'config.vinegar.ls-cat.org'.
+    hostAlias = None
+
+    redisHost = None    # Hostname of the IOC redis server
+    rClient   = None    # Connection to the IOC's redis
+    rSub      = None    # Subscriber handle to IOC's redis
+    childShouldKillProcess = False # Used for job control
+
     currentEsafUser = None  # user currently logged into MD2
     db            = None         # Database connection
     p             = None         # poll object
@@ -32,6 +41,16 @@ class AutoDetector:
     myuid         = None         # Our uid
     Xvnc          = None         # Our Xvnc home for the marccd display
     forkedPID     = None         # Our forked process
+
+    #
+    # Redis hashes/keys/values
+    #
+    config    = None    # config.(vanilla|vinegar).ls-cat.org
+    head      = None    # stns.(3|4)
+    masterName = None   # stns.(3|4).master
+    esafKey   = None    # stns.(3|4).esaf
+    esaf      = None    # rclient.hget(self.esafKey, 'VALUE')
+    lastEsaf  = None    # Previous value of esaf
 
     def getCurrentEsaf(self):
         esaf = None
@@ -56,38 +75,26 @@ class AutoDetector:
 
 
     def __init__( self):
+        # Hardcoded alias mappings.
+        whichRedis = {
+            'vidalia.ls-cat.org' : 'ioc-d.ls-cat.net',
+            'venison.ls-cat.org' : 'ioc-e.ls-cat.net',
+            'vanilla.ls-cat.org' : 'ioc-f.ls-cat.net',
+            'vinegar.ls-cat.org' : 'ioc-g.ls-cat.net'
+        }
+        self.hostAlias = os.getenv('LS_MARCCD_HOST_ALIAS', socket.gethostname().replace('.net', '.org'))
+        self.redisHost = os.getenv('LS_IOC_REDIS_HOST', whichRedis[self.hostAlias])
+        self.rClient = redis.StrictRedis(self.redisHost)
 
-        #
-        # We only need this configRedis for a short time to read
-        # 'head' and find the redis sentinels
-        #
-        # This is a chicken and egg problem: we need to find the
-        # master's name before we can attach to the correct redis
-        # server.  TODO: configure a single "station configuration
-        # redis".
-        #
-        configRedis = redis.StrictRedis();
-        configKey = 'config.%s' % (socket.gethostname())
-        self.config = configRedis.hgetall(configKey)
+        configKey = 'config.%s' % (self.hostAlias)
+        self.config = self.rClient.hgetall(configKey)
         if not self.config.has_key('HEAD'):
-            print 'Could not discover configuration for "%s"' % (configKey)
+            print 'Incomplete config params in redis @%s, %s; missing "HEAD" subkey' % (self.redisHost, configKey)
             sys.exit(-1)
 
         self.head = self.config['HEAD']
         self.masterName = self.head+'.master'
         self.esaf_key   = self.head+'.esaf'
-
-        ss = json.loads(configRedis.get('sentinels'))
-        sentinels = []
-        for s in ss:
-            sentinels.append((s['host'],s['port']))
-
-        # We would close the configRedis connection if we knew
-        # how... TODO: learn how to close the connection and do so.
-
-        self.sentinel = Sentinel(sentinels, socket_timeout=0.1);
-
-        self.rClient = self.sentinel.slave_for( self.masterName, socket_timeout=0.1)
 
         self.rSub = self.rClient.pubsub(ignore_subscribe_messages=True)
         self.rSub.subscribe( **{ 'REDIS_PG_CONNECTOR': self.messageHandler} )
@@ -96,7 +103,6 @@ class AutoDetector:
         self.esaf      = None
         self.lastEsaf  = None
         self.childShouldKillProcess = False
-
         self.getCurrentEsaf();
 
     def spawnedSignalHandler(self, signum, stack_frame):

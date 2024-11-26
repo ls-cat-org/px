@@ -88,23 +88,31 @@ class PxMarError( Exception):
 
 
 class _R:
-    r       = None      # our connection
+    # This is the historical host alias for the mar computer running this script.
+    #   For station F, that is "vanilla.ls-cat.org".
+    #   For station G, this is "vinegar.ls-cat.org".
+    #
+    # This alias is used as a redis key, e.g. 'config.vinegar.ls-cat.org'.
+    hostalias = None
+
+    redishost = None    # Hostname of the IOC redis server
+
+    r       = None      # our redis connection
     rdy     = False     # true when it looks like our connection is ok and redis is configured
     head    = None      # the start of all our keys in the redis database
     robopub = None      # our pen name
     ourKVs  = {}        # a list of our KV pairs
 
     def getconfig( self):
-        hn = socket.gethostname()
         try:
-            self.head = self.r.hget( 'config.%s' % (hn), 'HEAD')
+            self.head = self.r.hget( 'config.%s' % (self.hostalias), 'HEAD')
             if self.head == None or self.head == '':
-                print >> sys.stderr, 'Redis is not configured for this host "%s"' % (hn)
+                print >> sys.stderr, 'Redis is not configured for this host "%s"' % (self.hostalias)
                 self.rdy = False
                 self.head = None
                 return
 
-            self.robopub = self.r.hget( 'config.%s' % (hn), 'ROBOPUB')
+            self.robopub = self.r.hget( 'config.%s' % (self.hostalias), 'ROBOPUB')
 
         except redis.exceptions.ConnectionError:
             print >> sys.stderr, 'Redis connection error.  Is it running?'
@@ -114,15 +122,16 @@ class _R:
 
 
     def __init__( self):
+        # Hardcoded alias mappings.
         whichRedis = {
-            'vidalia.ls-cat.org' : 'mung-2.ls-cat.org',
-            'venison.ls-cat.org' : 'orange-2.ls-cat.org',
-            'vanilla.ls-cat.org' : 'kiwi-2.ls-cat.org',
-            'vinegar.ls-cat.org' : 'mango-2.ls-cat.org'
+            'vidalia.ls-cat.org' : 'ioc-d.ls-cat.net',
+            'venison.ls-cat.org' : 'ioc-e.ls-cat.net',
+            'vanilla.ls-cat.org' : 'ioc-f.ls-cat.net',
+            'vinegar.ls-cat.org' : 'ioc-g.ls-cat.net'
         }
-                       
-        
-        self.r = redis.Redis( whichRedis[socket.gethostname()]);
+        self.hostalias = os.getenv('LS_MARCCD_HOST_ALIAS', socket.gethostname().replace('.net', '.org'))
+        self.redishost = os.getenv('LS_IOC_REDIS_HOST', whichRedis[self.hostalias])
+        self.r = redis.Redis(self.redishost)
         self.getconfig()
 
     def set( self, k, v):
@@ -359,12 +368,15 @@ class PxMarServer:
         # ignore null queries since we can't tell these from connection errors
         if qs == '':
             return rtn
+
         if self.db.status == 0:
             self.reset()
+
         try:
             rtn = self.db.query( qs)
+            syslog.syslog("pxMarServer SQL query succeeded: %s" % (qs))
         except:
-            syslog.syslog("query: Failed db.query %s" % (qs))
+            syslog.syslog("pxMarServer SQL query failed: %s" % (qs))
             self.reset()
             rtn = self.db.query( qs)
 
@@ -736,20 +748,18 @@ class PxMarServer:
                     syslog.syslog("Integrating...")
                     self.query( "select px.unlock_detector()")  # give up mar lock
                     self.redis.set( "detector.state_machine", '{ "state": "Armed", "expires": 0 }'); 
-                    self.haveLock      = False      # reset flags
+                    self.haveLock = False # reset flags
                         
-                    #
-                    # this is the exposure, command blocks until md2 is done (or dead)
+                    # Command blocks until md2 is done (or dead)
                     # assume the readout command is already queued up
                     syslog.syslog("Waiting for exposure to end...")
                     self.query( "select px.lock_diffractometer()")
                     syslog.syslog("Exposure ended")
 
-                    # eventually we'll get the lock, give it up immediately
+                    # Eventually we'll get the lock, give it up immediately.
                     self.query( "select px.unlock_diffractometer()")
                     syslog.syslog("Diffractometer unlocked")
 
-                    #
                     # Signal we are done collecting
                     self.collectingFlag = False
 
