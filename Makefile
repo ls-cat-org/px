@@ -15,7 +15,7 @@ dist:
 	rm -f pxMarServer-$(VERSION)
 
 install:
-	install -p marccd_server_v1.conf /opt/marccd/configuration/marccd_server_v1.conf
+	install -m 0644 -p marccd_server_v1.conf /opt/marccd/configuration/marccd_server_v1.conf
 	install -p pxMarServer.py /usr/local/bin
 	install -p startMarccd /usr/local/bin
 	install -p fixMarccdLog /usr/local/bin
