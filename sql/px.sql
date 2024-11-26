@@ -4126,7 +4126,7 @@ CREATE OR REPLACE FUNCTION px.getConfigFile( thePid text, theId int) returns tex
     -- KLUDGE: assume that anything using this function needs
     -- URL's changed from 'contrabass.ls-cat.org' to 'ls-cat.org' for the images
     --
-    rtn = replace( rtn, 'http://contrabass.ls-cat.org', 'http://ls-cat.org');
+    rtn = replace( rtn, 'http://contrabass.ls-cat.org', 'https://ls-cat.org');
 
     RETURN rtn;
   END;
